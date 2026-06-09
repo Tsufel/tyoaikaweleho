@@ -347,23 +347,10 @@ class App(ctk.CTk):
     # ── Icon & splash ─────────────────────────────────────────────
 
     def _setup_icon(self):
-        """Set window/taskbar icon from toolbar.png.
-        Auto-generates icon.ico on first run if it doesn't exist yet."""
+        """Set window/taskbar icon from icon.ico (preferred) or toolbar.png."""
         app_dir = _get_app_dir()
         ico_path = os.path.join(app_dir, "icon.ico")
         png_path = os.path.join(app_dir, "toolbar.png")
-
-        # Auto-generate icon.ico from toolbar.png if needed
-        if not os.path.exists(ico_path) and os.path.exists(png_path):
-            try:
-                from PIL import Image
-                img = Image.open(png_path).convert("RGBA")
-                img.save(ico_path, format="ICO",
-                         sizes=[(16, 16), (32, 32), (48, 48),
-                                 (64, 64), (128, 128), (256, 256)])
-            except Exception:
-                pass
-
         try:
             if os.path.exists(ico_path):
                 self.iconbitmap(ico_path)

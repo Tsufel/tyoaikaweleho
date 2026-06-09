@@ -20,6 +20,11 @@ Output/
 .vscode/
 .idea/
 
+# ── Pytest / coverage artifacts ───────────────────────────────
+.pytest_cache/
+htmlcov/
+.coverage
+
 # ── Misc ──────────────────────────────────────────────────────
 *.log
 Thumbs.db
