@@ -31,15 +31,14 @@ CloseApplications=yes
 RestartApplications=yes
 ; Wizard appearance
 WizardStyle=modern
-SetupIconFile=
+SetupIconFile=icon.ico
 
 [Files]
-; App bundle from PyInstaller --onedir
-; Flags: ignoreversion — always overwrite (needed for updates)
-; User data (data.json, shifts.txt, image_ocr.py) is NOT listed here
-; so it is never touched by install or update.
-Source: "dist\{#AppName}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "dist\{#AppName}\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Entire PyInstaller --onedir bundle (exe + _internal\ + splash.png + toolbar.png + icon.ico)
+; ignoreversion — always overwrite on update
+; User data (data.json, shifts.txt, session.json, image_ocr.py) is NOT produced
+; by the build so it never appears here — it survives updates automatically.
+Source: "dist\{#AppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 ; Start Menu

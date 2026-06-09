@@ -15,6 +15,14 @@ if errorlevel 1 (
     pause & exit /b 1
 )
 
+:: ── Generate icon.ico from toolbar.png ──────────────────────────────────────
+if exist toolbar.png (
+    echo [1b/3] Generating icon.ico from toolbar.png...
+    python -c "from PIL import Image; img=Image.open('toolbar.png').convert('RGBA'); img.save('icon.ico', format='ICO', sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)]); print('  icon.ico created')"
+) else (
+    echo [1b/3] WARNING: toolbar.png not found - skipping icon.ico generation
+)
+
 :: ── PyInstaller: one-directory bundle ────────────────────────────────────────
 echo [2/3] Building app bundle (--onedir)...
 pyinstaller --onedir --windowed --name "Tyoaikaweleho" ^
@@ -25,6 +33,9 @@ pyinstaller --onedir --windowed --name "Tyoaikaweleho" ^
     --hidden-import winrt.windows.graphics.imaging ^
     --hidden-import winrt.windows.foundation ^
     --hidden-import winrt.runtime ^
+    --add-data "splash.png;." ^
+    --add-data "toolbar.png;." ^
+    --add-data "icon.ico;." ^
     main.py
 if errorlevel 1 (
     echo ERROR: PyInstaller build failed.

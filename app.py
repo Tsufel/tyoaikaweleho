@@ -60,6 +60,14 @@ def _is_valid_time(t: str) -> bool:
     return _parse_time_input(t) is not None
 
 
+def _get_app_dir() -> str:
+    """Directory where app assets (splash.png, toolbar.png, icon.ico) live.
+    Works both when running from source and when frozen by PyInstaller."""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
 class MonthPickerDialog(ctk.CTkToplevel):
     def __init__(self, parent, current_year: int, current_month: int):
         super().__init__(parent)
@@ -344,6 +352,7 @@ class App(ctk.CTk):
         self.title("Työaikaweleho")
         self.geometry("860x700")
         self.minsize(700, 560)
+        self.withdraw()  # hidden until splash finishes
 
         self._timer = timer_module.WorkTimer()
         today = date.today()
@@ -356,8 +365,9 @@ class App(ctk.CTk):
         self._tick()
         self.bind("<F5>", lambda _e: self._stop_timer() if self._timer.is_running else self._start_timer(None))
         self.protocol("WM_DELETE_WINDOW", self._on_close)
-        # Crash recovery runs after mainloop starts so the window is visible
-        self.after(200, self._check_for_crash_recovery)
+        self._setup_icon()
+        # Splash reveals the main window and triggers crash recovery when done
+        self.after(50, self._show_splash)
         # Background update check (silently ignored if network unavailable)
         try:
             from version import __version__
@@ -365,6 +375,73 @@ class App(ctk.CTk):
             _updater_mod.check_for_update(__version__, self._on_update_available)
         except Exception:
             pass
+
+    # ── Icon & splash ─────────────────────────────────────────────
+
+    def _setup_icon(self):
+        """Set window/taskbar icon from toolbar.png.
+        Auto-generates icon.ico on first run if it doesn't exist yet."""
+        app_dir = _get_app_dir()
+        ico_path = os.path.join(app_dir, "icon.ico")
+        png_path = os.path.join(app_dir, "toolbar.png")
+
+        # Auto-generate icon.ico from toolbar.png if needed
+        if not os.path.exists(ico_path) and os.path.exists(png_path):
+            try:
+                from PIL import Image
+                img = Image.open(png_path).convert("RGBA")
+                img.save(ico_path, format="ICO",
+                         sizes=[(16, 16), (32, 32), (48, 48),
+                                 (64, 64), (128, 128), (256, 256)])
+            except Exception:
+                pass
+
+        try:
+            if os.path.exists(ico_path):
+                self.iconbitmap(ico_path)
+            elif os.path.exists(png_path):
+                from PIL import Image, ImageTk
+                img = Image.open(png_path).resize((64, 64), Image.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self._icon_photo = photo  # keep reference to prevent GC
+                self.iconphoto(True, photo)
+        except Exception:
+            pass
+
+    def _show_splash(self):
+        """Show splash.png for 2.5 s, then reveal the main window and run crash recovery."""
+        png_path = os.path.join(_get_app_dir(), "splash.png")
+
+        def _finish():
+            self.deiconify()
+            self.lift()
+            self.after(100, self._check_for_crash_recovery)
+
+        if not os.path.exists(png_path):
+            _finish()
+            return
+
+        try:
+            from PIL import Image, ImageTk
+            size = 500
+            img = Image.open(png_path).resize((size, size), Image.LANCZOS)
+            photo = ImageTk.PhotoImage(img)
+
+            splash = tk.Toplevel(self)
+            splash.overrideredirect(True)   # borderless window
+            splash.resizable(False, False)
+            splash._photo = photo           # prevent GC
+
+            tk.Label(splash, image=photo, bd=0).pack()
+
+            sw = splash.winfo_screenwidth()
+            sh = splash.winfo_screenheight()
+            splash.geometry(f"{size}x{size}+{(sw - size) // 2}+{(sh - size) // 2}")
+            splash.lift()
+            splash.after(2500, lambda: (splash.destroy(), _finish()))
+
+        except Exception:
+            _finish()
 
     # ── Table style ──────────────────────────────────────────────
 
