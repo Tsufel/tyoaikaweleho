@@ -12,6 +12,7 @@ __pycache__/
 # ── PyInstaller output ────────────────────────────────────────
 dist/
 build/
+Output/
 *.spec
 
 # ── Local tooling / IDE ───────────────────────────────────────

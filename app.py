@@ -276,11 +276,16 @@ class SettingsDialog(ctk.CTkToplevel):
             return
 
         url  = f"https://raw.githubusercontent.com/{GITHUB_REPO}/dlc/image_ocr.py"
-        dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "image_ocr.py")
+        # When frozen the DLC must live next to the .exe; otherwise next to the .py
+        dest = os.path.join(
+            os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+            else os.path.dirname(os.path.abspath(__file__)),
+            "image_ocr.py",
+        )
 
         prog = ctk.CTkToplevel(self)
         prog.title("Installing DLC")
-        prog.geometry("360x120")
+        prog.geometry("360x110")
         prog.resizable(False, False)
         prog.grab_set()
         lbl = ctk.CTkLabel(prog, text="Downloading image_ocr.py…")
@@ -292,15 +297,6 @@ class SettingsDialog(ctk.CTkToplevel):
 
         try:
             urllib.request.urlretrieve(url, dest)
-            lbl.configure(text="Installing winocr & Pillow…")
-            prog.update()
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install",
-                 "winocr", "pillow", "--quiet"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr or "pip install failed")
             bar.stop()
             prog.destroy()
             messagebox.showinfo(
@@ -362,6 +358,13 @@ class App(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         # Crash recovery runs after mainloop starts so the window is visible
         self.after(200, self._check_for_crash_recovery)
+        # Background update check (silently ignored if network unavailable)
+        try:
+            from version import __version__
+            import updater as _updater_mod
+            _updater_mod.check_for_update(__version__, self._on_update_available)
+        except Exception:
+            pass
 
     # ── Table style ──────────────────────────────────────────────
 
@@ -682,6 +685,28 @@ class App(ctk.CTk):
         t = storage.get_default_start_time()
         h, m = map(int, t.split(":"))
         self._start_timer(datetime.now().replace(hour=h, minute=m, second=0, microsecond=0))
+
+    # ── Auto-update ──────────────────────────────────────────────
+
+    def _on_update_available(self, new_ver: str, url: str):
+        # Called from a background thread — marshal to UI thread
+        self.after(0, lambda: self._show_update_dialog(new_ver, url))
+
+    def _show_update_dialog(self, new_ver: str, url: str):
+        try:
+            from version import __version__
+            current = __version__
+        except Exception:
+            current = "unknown"
+        if messagebox.askyesno(
+            "Update available",
+            f"Version {new_ver} is available (you have {current}).\n\n"
+            "Download and install now?\n\n"
+            "(The app will close and relaunch automatically.)",
+            parent=self,
+        ):
+            import updater as _updater_mod
+            _updater_mod.apply_update(url)
 
     def _open_settings(self):
         dlg = SettingsDialog(self)

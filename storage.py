@@ -1,12 +1,17 @@
 import json
 import os
 import shutil
+import sys
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import date, time
 
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, "frozen", False):
+    # Running as PyInstaller bundle — data lives next to the .exe
+    DATA_DIR = os.path.dirname(sys.executable)
+else:
+    DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
 
 _APPDATA_FILE = os.path.join(

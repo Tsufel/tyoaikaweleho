@@ -51,20 +51,20 @@ def _is_newer(latest: str, current: str) -> bool:
 
 
 def apply_update(download_url: str):
-    """Download new .exe, swap it in, and restart. No-op when running as .py source."""
+    """Download the new installer and run it silently.
+
+    The Inno Setup installer handles overwriting the app, closing the running
+    instance (/CLOSEAPPLICATIONS), and relaunching afterwards
+    (/RESTARTAPPLICATIONS).  No-op when running from Python source.
+    """
     if not getattr(sys, "frozen", False):
         return
 
-    exe = sys.executable
-    new_exe = exe + ".new"
-    old_exe = exe + ".old"
-
-    urllib.request.urlretrieve(download_url, new_exe)
-
-    if os.path.exists(old_exe):
-        os.remove(old_exe)
-    os.rename(exe, old_exe)
-    os.rename(new_exe, exe)
-
-    subprocess.Popen([exe])
+    import tempfile
+    tmp = tempfile.mktemp(suffix=".exe")
+    urllib.request.urlretrieve(download_url, tmp)
+    # /SILENT      — no wizard UI
+    # /CLOSEAPPLICATIONS — gracefully closes the running instance before install
+    # /RESTARTAPPLICATIONS — relaunches the app after install completes
+    subprocess.Popen([tmp, "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"])
     sys.exit(0)
