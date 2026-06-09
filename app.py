@@ -242,11 +242,11 @@ class SettingsDialog(ctk.CTkToplevel):
 
         try:
             urllib.request.urlretrieve(url, dest)
-            lbl.configure(text="Installing pytesseract & Pillow…")
+            lbl.configure(text="Installing winocr & Pillow…")
             prog.update()
             result = subprocess.run(
                 [sys.executable, "-m", "pip", "install",
-                 "pytesseract", "pillow", "--quiet"],
+                 "winocr", "pillow", "--quiet"],
                 capture_output=True, text=True, timeout=120,
             )
             if result.returncode != 0:
@@ -257,9 +257,9 @@ class SettingsDialog(ctk.CTkToplevel):
                 "DLC installed",
                 "Image OCR DLC installed! ✅\n\n"
                 "Restart the app to activate the 📷 Import from Image button.\n\n"
-                "NOTE: Tesseract-OCR must also be installed separately:\n"
-                "https://github.com/UB-Mannheim/tesseract/wiki\n"
-                "(During setup: check Add to PATH + Finnish language data)",
+                "Uses Windows built-in OCR — no extra software needed.\n"
+                "For best results with Finnish timesheets, ensure Finnish\n"
+                "is added in Windows Settings → Language.",
                 parent=self)
             self.changed = True
             self.destroy()
