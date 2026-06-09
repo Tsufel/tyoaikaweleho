@@ -95,7 +95,7 @@ def new_entry_id() -> str:
 
 
 SHIFTS_FILE = os.path.join(DATA_DIR, "shifts.txt")
-_DEFAULT_SHIFTS = ["GPSR", "Sales", "Sales/Support", "Support", "Training", "Onboarding"]
+_DEFAULT_SHIFTS = ["Sales", "Support", "Warehouse", "GPSR", "Sales/Support", "Training", "Onboarding"]
 
 
 def _ensure_shifts_file():
@@ -122,6 +122,18 @@ def get_job_shift_list() -> list[str]:
 def get_job_shift_history() -> list[str]:
     """Alias for get_job_shift_list() — kept for backward compat."""
     return get_job_shift_list()
+
+
+def add_job_shift(js: str) -> bool:
+    """Append *js* to shifts.txt. Returns True if added, False if already present."""
+    _ensure_shifts_file()
+    with open(SHIFTS_FILE, "r", encoding="utf-8") as f:
+        existing = [ln.strip() for ln in f if ln.strip()]
+    if any(e.lower() == js.lower() for e in existing):
+        return False
+    with open(SHIFTS_FILE, "a", encoding="utf-8") as f:
+        f.write(js + "\n")
+    return True
 
 
 def get_default_job_shift() -> str:

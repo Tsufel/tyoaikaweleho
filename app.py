@@ -176,7 +176,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Settings")
-        self.geometry("320x490")
+        self.geometry("320x520")
         self.resizable(False, False)
         self.grab_set()
         self.changed = False
@@ -198,9 +198,21 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="Default job / shift",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         self._job_var = ctk.StringVar(value=storage.get_default_job_shift())
-        ctk.CTkComboBox(self, variable=self._job_var,
-                        values=storage.get_job_shift_list(),
-                        width=272).pack(padx=24)
+        self._job_combo = ctk.CTkComboBox(self, variable=self._job_var,
+                              values=storage.get_job_shift_list(), width=272)
+        self._job_combo.pack(padx=24)
+
+        add_row = ctk.CTkFrame(self, fg_color="transparent")
+        add_row.pack(padx=24, pady=(4, 0), fill="x")
+        self._new_shift_var = ctk.StringVar()
+        _shift_entry = ctk.CTkEntry(add_row, textvariable=self._new_shift_var,
+                                    placeholder_text="Add new shift…", width=206)
+        _shift_entry.pack(side="left")
+        _shift_entry.bind("<Return>", lambda _e: self._add_shift())
+        ctk.CTkButton(add_row, text="+ Add", width=62,
+                      fg_color=_GREEN, hover_color=_GREEN_HOVER,
+                      command=self._add_shift).pack(side="left", padx=(4, 0))
+
         ctk.CTkButton(self, text="Edit shifts.txt  →", width=272,
                       fg_color="#2c3e50", hover_color="#1a252f",
                       command=lambda: os.startfile(storage.SHIFTS_FILE)).pack(
@@ -237,6 +249,18 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkButton(row, text="Cancel", width=120,
                       fg_color=_GRAY, hover_color="#636e72",
                       command=self.destroy).pack(side="left", padx=6)
+
+    def _add_shift(self):
+        js = self._new_shift_var.get().strip()
+        if not js:
+            return
+        if storage.add_job_shift(js):
+            self._job_combo.configure(values=storage.get_job_shift_list())
+            self._job_var.set(js)
+            self._new_shift_var.set("")
+        else:
+            messagebox.showinfo("Already exists",
+                                f"'{js}' is already in the shift list.", parent=self)
 
     def _install_image_ocr(self):
         try:
