@@ -45,7 +45,7 @@ def _get_tess_config() -> str:
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-_KNOWN_SHIFTS = {"GPSR", "Sales", "Sales/Support", "Support", "Training"}
+_KNOWN_SHIFTS = {"GPSR", "Sales", "Sales/Support", "Support", "Training", "Onboarding"}
 _GRAY         = "#7f8c8d"
 _PURPLE       = "#6c3483"
 _PURPLE_HOVER = "#512e5f"
@@ -61,7 +61,7 @@ _TIME_PAIR = re.compile(
 )
 _TIME_SOLO = re.compile(r'\b(\d{1,2}[:.]\d{2})\b')
 _SHIFT_PAT = re.compile(
-    r'\b(GPSR|Sales[/ ]?Support|Sales|Support|Training)\b', re.IGNORECASE
+    r'\b(GPSR|Sales[/ ]?Support|Sales|Support|Training|Onboarding)\b', re.IGNORECASE
 )
 
 
