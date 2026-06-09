@@ -135,7 +135,7 @@ def set_default_job_shift(js: str):
 
 
 def get_export_format() -> str:
-    """Return saved export format: 'Simple' or 'Full (EAS)'. Default: 'Simple'."""
+    """Return saved export format: 'Simple' or 'Full'. Default: 'Simple'."""
     return _load_raw().get("export_format", "Simple")
 
 

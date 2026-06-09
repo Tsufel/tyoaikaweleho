@@ -26,11 +26,11 @@ def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str
     """Export *entries* to an Excel file at *save_path*.
 
     fmt:         "Simple" → clean minimal table (default)
-                 "Full (EAS)" → original elaborate EAS layout
+                 "Full" → original elaborate EAS layout
     include_pay: when True and fmt=="Simple", append Rate + Earned rows
     pay_rate:    hourly rate used for the earnings calculation
     """
-    if fmt == "Full (EAS)":
+    if fmt == "Full":
         _export_full(entries, year, month, save_path, pay_rate)
     else:
         _export_simple(entries, year, month, save_path, include_pay, pay_rate)
@@ -124,7 +124,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
     wb.save(save_path)
 
 
-# ── Full (EAS) layout ──────────────────────────────────────────────────────────
+# ── Full layout ──────────────────────────────────────────────────────────
 
 def _export_full(entries: list[WorkEntry], year: int, month: int,
                  save_path: str, pay_rate: float):

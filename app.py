@@ -211,7 +211,7 @@ class SettingsDialog(ctk.CTkToplevel):
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         self._fmt_var = ctk.StringVar(value=storage.get_export_format())
         ctk.CTkOptionMenu(self, variable=self._fmt_var,
-                          values=["Simple", "Full (EAS)"],
+                          values=["Simple", "Full"],
                           width=272).pack(padx=24)
         self._pay_chk_var = ctk.BooleanVar(value=storage.get_export_include_pay())
         ctk.CTkCheckBox(self, text="Include total pay in export",
