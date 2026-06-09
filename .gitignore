@@ -1,6 +1,7 @@
 # ── Runtime data (personal — never commit) ───────────────────
 data.json
 session.json
+shifts.txt
 
 # ── Python bytecode ───────────────────────────────────────────
 __pycache__/

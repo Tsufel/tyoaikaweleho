@@ -94,15 +94,62 @@ def new_entry_id() -> str:
     return str(uuid.uuid4())
 
 
-def get_job_shift_history() -> list[str]:
+SHIFTS_FILE = os.path.join(DATA_DIR, "shifts.txt")
+_DEFAULT_SHIFTS = ["GPSR", "Sales", "Sales/Support", "Support", "Training", "Onboarding"]
+
+
+def _ensure_shifts_file():
+    """Create shifts.txt with defaults if it doesn't exist."""
+    if not os.path.exists(SHIFTS_FILE):
+        with open(SHIFTS_FILE, "w", encoding="utf-8") as f:
+            f.write("\n".join(_DEFAULT_SHIFTS) + "\n")
+
+
+def get_job_shift_list() -> list[str]:
+    """Load shift list from shifts.txt (created with defaults if missing).
+    Also appends any previously-used shifts not already in the file."""
+    _ensure_shifts_file()
+    with open(SHIFTS_FILE, "r", encoding="utf-8") as f:
+        lines = [ln.strip() for ln in f if ln.strip()]
     data = _load_raw()
-    seen = []
     for e in data["entries"]:
         js = e.get("job_shift", "").strip()
-        if js and js not in seen:
-            seen.append(js)
-    defaults = ["GPSR", "Sales", "Sales/Support"]
-    for d in defaults:
-        if d not in seen:
-            seen.append(d)
-    return seen
+        if js and js not in lines:
+            lines.append(js)
+    return lines
+
+
+def get_job_shift_history() -> list[str]:
+    """Alias for get_job_shift_list() — kept for backward compat."""
+    return get_job_shift_list()
+
+
+def get_default_job_shift() -> str:
+    return _load_raw().get("default_job_shift", "GPSR")
+
+
+def set_default_job_shift(js: str):
+    data = _load_raw()
+    data["default_job_shift"] = js
+    _save_raw(data)
+
+
+def get_export_format() -> str:
+    """Return saved export format: 'Simple' or 'Full (EAS)'. Default: 'Simple'."""
+    return _load_raw().get("export_format", "Simple")
+
+
+def set_export_format(fmt: str):
+    data = _load_raw()
+    data["export_format"] = fmt
+    _save_raw(data)
+
+
+def get_export_include_pay() -> bool:
+    return bool(_load_raw().get("export_include_pay", False))
+
+
+def set_export_include_pay(val: bool):
+    data = _load_raw()
+    data["export_include_pay"] = val
+    _save_raw(data)

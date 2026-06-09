@@ -176,12 +176,14 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Settings")
-        self.geometry("320x320")
+        self.geometry("320x490")
         self.resizable(False, False)
         self.grab_set()
         self.changed = False
 
         pad = {"padx": 24, "pady": (8, 2)}
+
+        # ── Timer ──────────────────────────────────────────────
         ctk.CTkLabel(self, text="Default start time",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         self._start_time_var = ctk.StringVar(value=storage.get_default_start_time())
@@ -191,6 +193,30 @@ class SettingsDialog(ctk.CTkToplevel):
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         self._pay_rate_var = ctk.StringVar(value=str(storage.get_pay_rate()))
         ctk.CTkEntry(self, textvariable=self._pay_rate_var, width=272).pack(padx=24)
+
+        # ── Job / Shift ────────────────────────────────────────
+        ctk.CTkLabel(self, text="Default job / shift",
+                     font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
+        self._job_var = ctk.StringVar(value=storage.get_default_job_shift())
+        ctk.CTkComboBox(self, variable=self._job_var,
+                        values=storage.get_job_shift_list(),
+                        width=272).pack(padx=24)
+        ctk.CTkButton(self, text="Edit shifts.txt  →", width=272,
+                      fg_color="#2c3e50", hover_color="#1a252f",
+                      command=lambda: os.startfile(storage.SHIFTS_FILE)).pack(
+                          padx=24, pady=(4, 0))
+
+        # ── Output ────────────────────────────────────────────
+        ctk.CTkLabel(self, text="Output",
+                     font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
+        self._fmt_var = ctk.StringVar(value=storage.get_export_format())
+        ctk.CTkOptionMenu(self, variable=self._fmt_var,
+                          values=["Simple", "Full (EAS)"],
+                          width=272).pack(padx=24)
+        self._pay_chk_var = ctk.BooleanVar(value=storage.get_export_include_pay())
+        ctk.CTkCheckBox(self, text="Include total pay in export",
+                        variable=self._pay_chk_var).pack(
+                            padx=24, pady=(6, 0), anchor="w")
 
         # ── DLC Store ──────────────────────────────────────────
         ctk.CTkLabel(self, text="DLC Store",
@@ -204,7 +230,7 @@ class SettingsDialog(ctk.CTkToplevel):
                           command=self._install_image_ocr).pack(padx=24, pady=(2, 6))
 
         row = ctk.CTkFrame(self, fg_color="transparent")
-        row.pack(pady=(6, 16))
+        row.pack(pady=(8, 16))
         ctk.CTkButton(row, text="Save", width=120,
                       fg_color=_GREEN, hover_color=_GREEN_HOVER,
                       command=self._save).pack(side="left", padx=6)
@@ -285,6 +311,9 @@ class SettingsDialog(ctk.CTkToplevel):
             return
         storage.set_default_start_time(t)
         storage.set_pay_rate(rate)
+        storage.set_default_job_shift(self._job_var.get().strip())
+        storage.set_export_format(self._fmt_var.get())
+        storage.set_export_include_pay(self._pay_chk_var.get())
         self.changed = True
         self.destroy()
 
@@ -386,17 +415,6 @@ class App(ctk.CTk):
             inner, text="Press START to begin tracking",
             font=ctk.CTkFont(size=11), text_color=_GRAY)
         self._start_time_label.pack(pady=(0, 10))
-
-        shift_row = ctk.CTkFrame(inner, fg_color="transparent")
-        shift_row.pack(pady=(0, 10))
-        ctk.CTkLabel(shift_row, text="Job / Shift:",
-                     font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 8))
-        self._shift_options = storage.get_job_shift_history()
-        self._shift_var = ctk.StringVar(value=self._shift_options[0])
-        self._shift_combo = ctk.CTkComboBox(
-            shift_row, variable=self._shift_var,
-            values=self._shift_options, width=200)
-        self._shift_combo.pack(side="left")
 
         # Button slot — holds either two start buttons or the stop button
         _btn_slot = ctk.CTkFrame(inner, fg_color="transparent")
@@ -549,11 +567,7 @@ class App(ctk.CTk):
         answer = messagebox.askyesnocancel("Recover shift", msg, parent=self)
 
         if answer is True:      # Resume
-            if job_shift not in self._shift_options:
-                self._shift_options.insert(0, job_shift)
-                self._shift_combo.configure(values=self._shift_options)
-            self._shift_var.set(job_shift)
-            self._start_timer(start_time=start_dt)
+            self._start_timer(start_time=start_dt, job_shift=job_shift)
             self._view_year  = start_dt.year
             self._view_month = start_dt.month
             self._refresh_table()
@@ -613,8 +627,9 @@ class App(ctk.CTk):
             self._earnings_label.configure(text=f"~€{earned:.2f} earned so far")
         self.after(60_000, self._tick)
 
-    def _start_timer(self, start_time: datetime | None):
-        self._timer.start(self._shift_var.get().strip() or "—", start_time=start_time)
+    def _start_timer(self, start_time: datetime | None, job_shift: str | None = None):
+        js = (job_shift or storage.get_default_job_shift() or "—").strip()
+        self._timer.start(js, start_time=start_time)
         self._running_ui()
         self._start_time_label.configure(
             text=f"Started at {self._timer.start_time_str()}  —  running…",
@@ -632,8 +647,6 @@ class App(ctk.CTk):
                 time_out=result["time_out"],
             )
             storage.save_entry(entry)
-            self._shift_options = storage.get_job_shift_history()
-            self._shift_combo.configure(values=self._shift_options)
             self._refresh_table()
         self._idle_ui()
         self._elapsed_label.configure(text="00:00")
@@ -819,8 +832,6 @@ class App(ctk.CTk):
         self.wait_window(dlg)
         if dlg.result:
             storage.save_entry(dlg.result)
-            self._shift_options = storage.get_job_shift_history()
-            self._shift_combo.configure(values=self._shift_options)
             self._refresh_table()
 
     def _edit_selected(self):
@@ -867,8 +878,6 @@ class App(ctk.CTk):
             except Exception as exc:
                 errors.append(f"{path}: {exc}")
 
-        self._shift_options = storage.get_job_shift_history()
-        self._shift_combo.configure(values=self._shift_options)
         self._refresh_table()
 
         n = len(paths)
@@ -918,8 +927,6 @@ class App(ctk.CTk):
 
         if dlg.confirmed_entries:
             imported, skipped = _image_ocr_dlc.save_confirmed_entries(dlg.confirmed_entries)
-            self._shift_options = storage.get_job_shift_history()
-            self._shift_combo.configure(values=self._shift_options)
             self._refresh_table()
             msg = f"Imported {imported} entr{'y' if imported == 1 else 'ies'}."
             if skipped:
@@ -932,10 +939,10 @@ class App(ctk.CTk):
 
     def _export_excel(self):
         entries = storage.load_month(self._view_year, self._view_month)
-        month_str = date(self._view_year, self._view_month, 1).strftime("%Y-%m")
+        month_name = date(self._view_year, self._view_month, 1).strftime("%B %Y")
         path = filedialog.asksaveasfilename(
             parent=self,
-            initialfile=f"EAS_timesheet_{month_str}.xlsx",
+            initialfile=f"Hours {month_name}.xlsx",
             defaultextension=".xlsx",
             filetypes=[("Excel files", "*.xlsx")],
             title="Save timesheet as…",
@@ -943,15 +950,14 @@ class App(ctk.CTk):
         if not path:
             return
 
-        pay_rate = storage.get_pay_rate()
-
         excel_export.export_month(
             entries=entries,
             year=self._view_year,
             month=self._view_month,
-            employee_name="",
-            pay_rate=pay_rate,
             save_path=path,
+            fmt=storage.get_export_format(),
+            include_pay=storage.get_export_include_pay(),
+            pay_rate=storage.get_pay_rate(),
         )
         messagebox.showinfo("Exported", f"Timesheet saved to:\n{path}", parent=self)
 
