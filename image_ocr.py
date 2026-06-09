@@ -3,22 +3,22 @@ Optional — drop this file in the app folder and restart to activate the
 'Import from Image' button.
 
 Requirements:
-    pip install winocr pillow
-    Uses Windows 10+ built-in OCR — no extra binary or admin rights needed.
-    OCR language follows your Windows language settings (Finnish works if
-    Finnish is installed in Windows Settings → Language).
+    pip install pytesseract pillow
+    Tesseract-OCR binary: https://github.com/UB-Mannheim/tesseract/wiki
+    (During Tesseract setup, tick Add to PATH + Finnish language data)
 """
 import re
 import os
+import shutil
 from datetime import date as _date
 
 try:
-    from winocr import recognize_pil_sync
+    import pytesseract
     from PIL import Image
 except ImportError as _e:
     raise ImportError(
-        "Image OCR DLC requires winocr and Pillow.\n"
-        "Run: pip install winocr pillow"
+        "Image OCR DLC requires pytesseract and Pillow.\n"
+        "Run: pip install pytesseract pillow"
     ) from _e
 
 import customtkinter as ctk
@@ -26,8 +26,26 @@ from tkinter import messagebox
 import storage
 
 
+# ── Tesseract PATH fallback (common Windows install location) ─────────────────
+if shutil.which("tesseract") is None:
+    _fallback = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.exists(_fallback):
+        pytesseract.pytesseract.tesseract_cmd = _fallback
+
+
+def _get_tess_config() -> str:
+    """Return the best available Tesseract config (prefer fin+eng, fall back)."""
+    try:
+        langs = pytesseract.get_languages(config="")
+        if "fin" in langs:
+            return "--psm 6 -l fin+eng"
+    except Exception:
+        pass
+    return "--psm 6"
+
+
 # ── Constants ─────────────────────────────────────────────────────────────────
-_KNOWN_SHIFTS = {"GPSR", "Sales", "Sales/Support", "Support", "Training"}
+_KNOWN_SHIFTS = {"GPSR", "Sales", "Sales/Support", "Support", "Training", "Onboarding"}
 _GRAY         = "#7f8c8d"
 _PURPLE       = "#6c3483"
 _PURPLE_HOVER = "#512e5f"
@@ -43,23 +61,21 @@ _TIME_PAIR = re.compile(
 )
 _TIME_SOLO = re.compile(r'\b(\d{1,2}[:.]\d{2})\b')
 _SHIFT_PAT = re.compile(
-    r'\b(GPSR|Sales[/ ]?Support|Sales|Support|Training)\b', re.IGNORECASE
+    r'\b(GPSR|Sales[/ ]?Support|Sales|Support|Training|Onboarding)\b', re.IGNORECASE
 )
 
 
 # ── Public API (called from app.py) ──────────────────────────────────────────
 
 def extract_entries_from_image(path: str) -> list[dict]:
-    """OCR the image at *path* and return a list of candidate entry dicts.
-    Uses Windows 10+ built-in OCR via winocr — no Tesseract binary needed.
-    """
-    img = Image.open(path).convert("RGB")
+    """OCR the image at *path* and return a list of candidate entry dicts."""
+    img = Image.open(path).convert("L")
     w, h = img.size
     if max(w, h) < 1200:
         scale = 1200 / max(w, h)
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-    result = recognize_pil_sync(img)   # uses Windows language settings automatically
-    text   = result.get("text", "") if isinstance(result, dict) else str(result)
+    config = _get_tess_config()
+    text   = pytesseract.image_to_string(img, config=config)
     results = []
     for line in text.splitlines():
         line = line.strip()
