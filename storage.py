@@ -95,7 +95,7 @@ def new_entry_id() -> str:
 
 
 SHIFTS_FILE = os.path.join(DATA_DIR, "shifts.txt")
-_DEFAULT_SHIFTS = ["Sales", "Support", "Warehouse", "GPSR", "Sales/Support", "Training", "Onboarding"]
+_DEFAULT_SHIFTS = ["Sales", "Support", "Warehouse", "Sales/Support", "Training", "Onboarding"]
 
 
 def _ensure_shifts_file():
