@@ -94,6 +94,28 @@ def test_parse_release_malformed_raises():
         updater._parse_release({"assets": []})  # missing tag_name
 
 
+def test_fetch_latest_release_returns_none_when_no_releases(monkeypatch):
+    """GitHub answers 404 when a repo has never published a release."""
+    import urllib.error
+
+    def _raise_404(*a, **kw):
+        raise urllib.error.HTTPError("url", 404, "Not Found", {}, None)
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", _raise_404)
+    assert updater.fetch_latest_release() is None
+
+
+def test_fetch_latest_release_reraises_other_http_errors(monkeypatch):
+    import urllib.error
+
+    def _raise_500(*a, **kw):
+        raise urllib.error.HTTPError("url", 500, "Server Error", {}, None)
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", _raise_500)
+    with pytest.raises(urllib.error.HTTPError):
+        updater.fetch_latest_release()
+
+
 # ── checksum helpers ──────────────────────────────────────────────────────────
 
 def test_file_sha256(tmp_path):

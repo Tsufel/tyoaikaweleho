@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -43,13 +44,19 @@ def _parse_release(data: dict) -> tuple[str, str, str | None] | None:
 
 def fetch_latest_release(timeout: int = 5) -> tuple[str, str, str | None] | None:
     """Query GitHub for the latest release. Returns (version, exe_url,
-    sha256_url) or None when the release has no .exe asset. Raises on
-    network or parse errors — callers decide whether to surface them."""
+    sha256_url), or None when no release exists yet or the release has
+    no .exe asset. Raises on other network or parse errors — callers
+    decide whether to surface them."""
     from version import GITHUB_REPO
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:   # repo has no published releases
+            return None
+        raise
     return _parse_release(data)
 
 
