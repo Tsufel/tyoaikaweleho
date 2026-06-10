@@ -1,0 +1,78 @@
+name: Release
+
+# Push a tag like v1.1.0 to build the installer and publish a GitHub
+# release with the .exe and its .sha256 checksum attached. The app's
+# auto-updater downloads and verifies these assets.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the release and upload assets
+
+jobs:
+  build-and-release:
+    name: Build installer & publish release
+    runs-on: windows-latest   # Inno Setup 6 is preinstalled on this image
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pyinstaller
+
+      - name: Verify tag matches version.py
+        shell: pwsh
+        run: |
+          $tagVer = "${{ github.ref_name }}".TrimStart("v")
+          $pyVer = (python -c "from version import __version__; print(__version__)").Trim()
+          if ($tagVer -ne $pyVer) {
+            Write-Error "Tag v$tagVer does not match version.py ($pyVer) - bump version.py before tagging."
+          }
+          "VERSION=$pyVer" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build app bundle (PyInstaller)
+        run: >
+          pyinstaller --onedir --windowed --name "Tyoaikaweleho"
+          --collect-all customtkinter
+          --collect-all winocr
+          --collect-all PIL
+          --hidden-import winrt.windows.media.ocr
+          --hidden-import winrt.windows.graphics.imaging
+          --hidden-import winrt.windows.storage.streams
+          --hidden-import winrt.windows.foundation
+          --hidden-import winrt.runtime
+          --add-data "splash.png;."
+          --add-data "toolbar.png;."
+          --add-data "icon.ico;."
+          main.py
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$env:VERSION installer.iss
+
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $exe = "Output\TyoaikawelehoSetup_$env:VERSION.exe"
+          (Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() |
+            Out-File -Encoding ascii "$exe.sha256"
+          Get-Content "$exe.sha256"
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "Output/TyoaikawelehoSetup_$env:VERSION.exe" `
+            "Output/TyoaikawelehoSetup_$env:VERSION.exe.sha256" `
+            --title "Työaikaweleho ${{ github.ref_name }}" `
+            --generate-notes
