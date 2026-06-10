@@ -9,7 +9,7 @@ if getattr(sys, "frozen", False):
 import updater
 updater.cleanup_old_exe()   # removes any leftover .old exe from a previous update
 
-from app import App
+from ui.main_window import App
 
 
 if __name__ == "__main__":

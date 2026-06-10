@@ -140,3 +140,43 @@ def test_get_job_shift_list_includes_entry_shifts(tmp_storage):
     storage.save_entry(e)
     shifts = storage.get_job_shift_list()
     assert "CustomShift" in shifts
+
+
+# ── atomic write & corruption recovery ───────────────────────────────────────
+
+def test_save_leaves_no_temp_file(tmp_storage):
+    storage.save_entry(_entry())
+    assert not (tmp_storage / "data.json.tmp").exists()
+    assert (tmp_storage / "data.json").exists()
+
+
+def test_save_keeps_backup_of_previous_file(tmp_storage):
+    e1 = _entry(date="2026-05-10")
+    e2 = _entry(date="2026-05-11")
+    storage.save_entry(e1)
+    storage.save_entry(e2)
+    backup = tmp_storage / "data.json.bak"
+    assert backup.exists()
+    # Backup holds the state before the latest write (only e1)
+    import json
+    data = json.loads(backup.read_text(encoding="utf-8"))
+    assert len(data["entries"]) == 1
+    assert data["entries"][0]["id"] == e1.id
+
+
+def test_corrupt_data_file_recovers_from_backup(tmp_storage):
+    e1 = _entry(date="2026-05-10")
+    e2 = _entry(date="2026-05-11")
+    storage.save_entry(e1)
+    storage.save_entry(e2)  # creates .bak containing e1
+    (tmp_storage / "data.json").write_text("{ not valid json", encoding="utf-8")
+    entries = storage.load_all_entries()
+    assert len(entries) == 1
+    assert entries[0].id == e1.id
+
+
+def test_corrupt_data_file_without_backup_raises(tmp_storage):
+    import json
+    (tmp_storage / "data.json").write_text("{ not valid json", encoding="utf-8")
+    with pytest.raises(json.JSONDecodeError):
+        storage.load_all_entries()

@@ -57,6 +57,31 @@ python main.py
 
 ---
 
+## Project layout
+
+```
+main.py              entry point
+version.py           app version + GitHub repo
+storage.py           data.json persistence (atomic writes + .bak recovery)
+timer.py             work timer + crash-recovery session file
+utils.py             pure helpers (time parsing, app dir)
+excel_export.py      Excel export (Simple / Full layouts)
+import_excel.py      Excel import
+updater.py           auto-update check + verified installer download
+ui/
+  theme.py           colors, fonts, table style
+  dialogs.py         month picker, add/edit entry dialogs
+  settings_dialog.py settings + DLC store
+  timer_panel.py     timer card (start/stop, elapsed, earnings)
+  entries_table.py   monthly table with week totals + inline editing
+  main_window.py     App window composing everything
+services/
+  dlc.py             secure DLC download / verify / install / remove
+tests/               pytest suite (no display needed)
+```
+
+---
+
 ## Usage
 
 ### Timer
@@ -138,10 +163,16 @@ If a newer DLC version is published, Settings → DLC Store shows a
 **🔄 Update to vX.Y.Z** button. Clicking it re-downloads `image_ocr.py`;
 restart the app to pick up the change.
 
+DLC downloads are verified: the app checks the file's SHA-256 against the
+hash published in `dlc_version.txt` and refuses mismatched downloads.
+
 ### Releasing a new DLC version (developers)
 
 1. Bump `__version__` in `image_ocr.py`
-2. Update `dlc_version.txt` to the same value
+2. Update `dlc_version.txt` to `<version> <sha256>` on one line, e.g.:
+   ```bash
+   python -c "import hashlib;print('1.2.0', hashlib.sha256(open('image_ocr.py','rb').read()).hexdigest())" > dlc_version.txt
+   ```
 3. Commit and push both files to the `dlc` branch:
    ```bash
    git checkout dlc
@@ -180,8 +211,12 @@ The script automatically:
 **Releasing:**
 1. Create a GitHub Release tagged `vx.x.x`
 2. Attach `Output\TyoaikawelehoSetup_x.x.x.exe`
+3. *(Recommended)* Also attach `TyoaikawelehoSetup_x.x.x.exe.sha256` containing the installer's SHA-256 hex digest:
+   ```powershell
+   (Get-FileHash Output\TyoaikawelehoSetup_x.x.x.exe -Algorithm SHA256).Hash.ToLower() | Out-File -Encoding ascii Output\TyoaikawelehoSetup_x.x.x.exe.sha256
+   ```
 
-Installed copies of the app detect the new release on next launch and offer to update silently.
+Installed copies of the app detect the new release on next launch and offer to update silently. The updater only accepts release assets from this repository over HTTPS, and verifies the installer's SHA-256 when a `.sha256` asset is published.
 
 ---
 
@@ -192,7 +227,7 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-96 tests covering storage, timer, Excel import/export, and time parsing.
+162 tests covering storage (incl. atomic writes & corruption recovery), timer, updater URL/checksum validation, DLC verification, Excel import/export, and time parsing.
 Tests run automatically on every push to `main` via GitHub Actions.
 
 ---

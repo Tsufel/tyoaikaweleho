@@ -37,13 +37,35 @@ def _load_raw() -> dict:
     _migrate_from_appdata()
     if not os.path.exists(DATA_FILE):
         return {"entries": [], "pay_rate": 20.0}
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        # data.json is corrupt (e.g. crash mid-write) — fall back to the
+        # last known-good backup instead of crashing and losing everything
+        backup = DATA_FILE + ".bak"
+        if os.path.exists(backup):
+            with open(backup, "r", encoding="utf-8") as f:
+                return json.load(f)
+        raise
 
 
 def _save_raw(data: dict):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
+    # Atomic write: serialize to a temp file, back up the previous good
+    # file, then swap the temp file into place. A crash at any point
+    # leaves either the old file or the new file intact — never a
+    # half-written data.json.
+    tmp = DATA_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    if os.path.exists(DATA_FILE):
+        try:
+            shutil.copy2(DATA_FILE, DATA_FILE + ".bak")
+        except OSError:
+            pass
+    os.replace(tmp, DATA_FILE)
 
 
 def load_month(year: int, month: int) -> list[WorkEntry]:
