@@ -31,6 +31,7 @@ pyinstaller --onedir --windowed --name "Tyoaikaweleho" ^
     --collect-all PIL ^
     --hidden-import winrt.windows.media.ocr ^
     --hidden-import winrt.windows.graphics.imaging ^
+    --hidden-import winrt.windows.storage.streams ^
     --hidden-import winrt.windows.foundation ^
     --hidden-import winrt.runtime ^
     --add-data "splash.png;." ^

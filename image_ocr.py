@@ -3,47 +3,31 @@ Optional — drop this file in the app folder and restart to activate the
 'Import from Image' button.
 
 Requirements:
-    pip install pytesseract pillow
-    Tesseract-OCR binary: https://github.com/UB-Mannheim/tesseract/wiki
-    (During Tesseract setup, tick Add to PATH + Finnish language data)
+    pip install winocr pillow
+    Uses Windows' built-in OCR (winrt) — no external binary needed.
+    For best results with Finnish timesheets, ensure Finnish is added
+    in Windows Settings -> Time & Language -> Language.
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
+import asyncio
 import re
-import os
-import shutil
 from datetime import date as _date
 
 try:
-    import pytesseract
     from PIL import Image
+    from winrt.windows.media.ocr import OcrEngine
+    from winrt.windows.storage.streams import DataWriter
+    from winrt.windows.graphics.imaging import SoftwareBitmap, BitmapPixelFormat
 except ImportError as _e:
     raise ImportError(
-        "Image OCR DLC requires pytesseract and Pillow.\n"
-        "Run: pip install pytesseract pillow"
+        "Image OCR DLC requires winocr and Pillow.\n"
+        "Run: pip install winocr pillow"
     ) from _e
 
 import customtkinter as ctk
 from tkinter import messagebox
 import storage
-
-
-# ── Tesseract PATH fallback (common Windows install location) ─────────────────
-if shutil.which("tesseract") is None:
-    _fallback = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-    if os.path.exists(_fallback):
-        pytesseract.pytesseract.tesseract_cmd = _fallback
-
-
-def _get_tess_config() -> str:
-    """Return the best available Tesseract config (prefer fin+eng, fall back)."""
-    try:
-        langs = pytesseract.get_languages(config="")
-        if "fin" in langs:
-            return "--psm 6 -l fin+eng"
-    except Exception:
-        pass
-    return "--psm 6"
 
 
 # ── Constants ─────────────────────────────────────────────────────────────────
@@ -58,8 +42,9 @@ _GREEN_HOVER  = "#1e8449"
 # ── Regex patterns ────────────────────────────────────────────────────────────
 _DATE_ISO  = re.compile(r'\b(\d{4})[.\-/](\d{2})[.\-/](\d{2})\b')
 _DATE_DMY  = re.compile(r'\b(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{2,4})\b')
+_DATE_DM   = re.compile(r'\b(\d{1,2})\.(\d{1,2})\.(?!\d)')
 _TIME_PAIR = re.compile(
-    r'\b(\d{1,2}[:.]\d{2})\s*[-–—]\s*(\d{1,2}[:.]\d{2})\b'
+    r'\b(\d{1,2}(?:[:.]\d{2})?)\s*[-–—]\s*(\d{1,2}(?:[:.]\d{2})?)\b'
 )
 _TIME_SOLO = re.compile(r'\b(\d{1,2}[:.]\d{2})\b')
 _SHIFT_PAT = re.compile(
@@ -67,17 +52,41 @@ _SHIFT_PAT = re.compile(
 )
 
 
+# ── OCR engine ────────────────────────────────────────────────────────────────
+
+def _ocr_image(img: "Image.Image") -> str:
+    """Run Windows' built-in OCR on a PIL image and return recognised text."""
+    engine = OcrEngine.try_create_from_user_profile_languages()
+    if engine is None:
+        raise RuntimeError(
+            "No OCR language pack is installed for Windows.\n"
+            "Add one in Windows Settings -> Time & Language -> Language."
+        )
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    writer = DataWriter()
+    writer.write_bytes(img.tobytes())
+    bitmap = SoftwareBitmap.create_copy_from_buffer(
+        writer.detach_buffer(), BitmapPixelFormat.RGBA8, img.width, img.height
+    )
+
+    async def _recognize():
+        return await engine.recognize_async(bitmap)
+
+    result = asyncio.run(_recognize())
+    return result.text
+
+
 # ── Public API (called from app.py) ──────────────────────────────────────────
 
 def extract_entries_from_image(path: str) -> list[dict]:
     """OCR the image at *path* and return a list of candidate entry dicts."""
-    img = Image.open(path).convert("L")
+    img = Image.open(path)
     w, h = img.size
     if max(w, h) < 1200:
         scale = 1200 / max(w, h)
         img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-    config = _get_tess_config()
-    text   = pytesseract.image_to_string(img, config=config)
+    text = _ocr_image(img)
     results = []
     for line in text.splitlines():
         line = line.strip()
@@ -116,7 +125,7 @@ def save_confirmed_entries(entries: list[dict]) -> tuple[int, int]:
         storage.save_entry(storage.WorkEntry(
             id=storage.new_entry_id(),
             date=date_str,
-            job_shift=e.get("job_shift", "GPSR") or "GPSR",
+            job_shift=e.get("job_shift", "") or storage.get_default_job_shift(),
             time_in=time_in,
             time_out=time_out,
         ))
@@ -129,9 +138,21 @@ def save_confirmed_entries(entries: list[dict]) -> tuple[int, int]:
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
 def _normalise_time(t: str) -> str:
-    """Normalise OCR-extracted time to HH:MM, or '' if unparseable."""
+    """Normalise OCR-extracted time to HH:MM, or '' if unparseable.
+
+    Accepts "HH:MM" / "HH.MM" pairs as well as bare hours ("10" -> "10:00"),
+    which OCR'd "10-16"-style ranges produce.
+    """
     t = t.strip().replace(".", ":").replace(",", ":")
     parts = t.split(":")
+    if len(parts) == 1:
+        try:
+            h = int(parts[0])
+            if 0 <= h <= 23:
+                return f"{h:02d}:00"
+        except ValueError:
+            pass
+        return ""
     if len(parts) != 2:
         return ""
     try:
@@ -146,12 +167,13 @@ def _normalise_time(t: str) -> str:
 def _parse_line(line: str) -> dict | None:
     """Try to extract a timesheet entry from a single OCR text line."""
     date_str = ""
+    date_end = 0   # times are searched only after the matched date
 
-    # ISO date first (unambiguous)
     m = _DATE_ISO.search(line)
     if m:
         y, mo, d = m.group(1), m.group(2), m.group(3)
         date_str = f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
+        date_end = m.end()
     else:
         m = _DATE_DMY.search(line)
         if m:
@@ -159,6 +181,14 @@ def _parse_line(line: str) -> dict | None:
             if len(y) == 2:
                 y = "20" + y
             date_str = f"{y}-{mo.zfill(2)}-{d.zfill(2)}"
+            date_end = m.end()
+        else:
+            # "D.M." with no year (e.g. "Monday 4.5. 10-16") -> current year
+            m = _DATE_DM.search(line)
+            if m:
+                d, mo = m.group(1), m.group(2)
+                date_str = f"{_date.today().year}-{mo.zfill(2)}-{d.zfill(2)}"
+                date_end = m.end()
 
     if date_str:
         try:
@@ -171,20 +201,22 @@ def _parse_line(line: str) -> dict | None:
     if not date_str:
         return None   # no recognisable date → skip this line entirely
 
-    # Times
+    # Times — search only the part of the line after the date, so a
+    # bare-hour pair like "05-12" inside an ISO date "2026-05-12" can
+    # never be mistaken for a time range.
+    rest = line[date_end:]
     time_in = time_out = ""
-    pair = _TIME_PAIR.search(line)
+    pair = _TIME_PAIR.search(rest)
     if pair:
         time_in  = _normalise_time(pair.group(1))
         time_out = _normalise_time(pair.group(2))
     else:
-        solos = [t for t in _TIME_SOLO.findall(line) if _normalise_time(t)]
+        solos = [t for t in _TIME_SOLO.findall(rest) if _normalise_time(t)]
         if solos:
             time_in = _normalise_time(solos[0])
         if len(solos) > 1:
             time_out = _normalise_time(solos[1])
 
-    # Shift
     sm = _SHIFT_PAT.search(line)
     if sm:
         raw = sm.group(0).strip()
@@ -192,7 +224,7 @@ def _parse_line(line: str) -> dict | None:
             (s for s in _KNOWN_SHIFTS if s.lower() == raw.lower()), raw.title()
         )
     else:
-        job_shift = "GPSR"
+        job_shift = storage.get_default_job_shift()
 
     return {
         "date":        date_str,

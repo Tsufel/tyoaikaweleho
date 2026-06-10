@@ -154,7 +154,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Settings")
-        self.geometry("320x520")
+        self.geometry("320x560")
         self.resizable(False, False)
         self.grab_set()
         self.changed = False
@@ -219,6 +219,9 @@ class SettingsDialog(ctk.CTkToplevel):
                 ctk.CTkButton(self, text=f"🔄  Update to v{dlc_update}", width=272,
                               fg_color="#6c3483", hover_color="#512e5f",
                               command=self._install_image_ocr).pack(padx=24, pady=(0, 6))
+            ctk.CTkButton(self, text="🗑  Remove Image OCR", width=272,
+                          fg_color=_GRAY, hover_color="#636e72",
+                          command=self._remove_image_ocr).pack(padx=24, pady=(0, 6))
         else:
             ctk.CTkButton(self, text="⬇  Install Image OCR", width=272,
                           fg_color="#6c3483", hover_color="#512e5f",
@@ -296,6 +299,31 @@ class SettingsDialog(ctk.CTkToplevel):
             bar.stop()
             prog.destroy()
             messagebox.showerror("Install failed", str(exc), parent=self)
+
+    def _remove_image_ocr(self):
+        dest = os.path.join(
+            os.path.dirname(sys.executable) if getattr(sys, "frozen", False)
+            else os.path.dirname(os.path.abspath(__file__)),
+            "image_ocr.py",
+        )
+        if not messagebox.askyesno(
+            "Remove Image OCR",
+            "Remove the Image OCR DLC?\n\n"
+            "The 📷 Import from Image button will disappear after restart.\n"
+            "Your saved entries are not affected.",
+            parent=self,
+        ):
+            return
+        try:
+            os.remove(dest)
+            messagebox.showinfo(
+                "DLC removed",
+                "Image OCR DLC removed.\n\nRestart the app for the change to take effect.",
+                parent=self)
+            self.changed = True
+            self.destroy()
+        except OSError as exc:
+            messagebox.showerror("Remove failed", str(exc), parent=self)
 
     def _save(self):
         t = _parse_time_input(self._start_time_var.get())
