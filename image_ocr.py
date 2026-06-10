@@ -7,6 +7,8 @@ Requirements:
     Tesseract-OCR binary: https://github.com/UB-Mannheim/tesseract/wiki
     (During Tesseract setup, tick Add to PATH + Finnish language data)
 """
+__version__ = "1.0.0"
+
 import re
 import os
 import shutil

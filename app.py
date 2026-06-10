@@ -17,6 +17,8 @@ try:
 except ImportError:
     _image_ocr_dlc = None
 
+_DLC_VERSION = getattr(_image_ocr_dlc, "__version__", "0.0.0") if _image_ocr_dlc else None
+
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
@@ -210,8 +212,13 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="DLC Store",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         if _image_ocr_dlc is not None:
-            ctk.CTkLabel(self, text="✅  Image OCR — installed",
+            ctk.CTkLabel(self, text=f"✅  Image OCR — installed (v{_DLC_VERSION})",
                          text_color="#27ae60").pack(padx=24, pady=(0, 6), anchor="w")
+            dlc_update = getattr(parent, "_dlc_update_version", None)
+            if dlc_update:
+                ctk.CTkButton(self, text=f"🔄  Update to v{dlc_update}", width=272,
+                              fg_color="#6c3483", hover_color="#512e5f",
+                              command=self._install_image_ocr).pack(padx=24, pady=(0, 6))
         else:
             ctk.CTkButton(self, text="⬇  Install Image OCR", width=272,
                           fg_color="#6c3483", hover_color="#512e5f",
@@ -323,6 +330,7 @@ class App(ctk.CTk):
         self.withdraw()  # hidden until splash finishes
 
         self._timer = timer_module.WorkTimer()
+        self._dlc_update_version = None
         today = date.today()
         self._view_year = today.year
         self._view_month = today.month
@@ -341,6 +349,8 @@ class App(ctk.CTk):
             from version import __version__
             import updater as _updater_mod
             _updater_mod.check_for_update(__version__, self._on_update_available)
+            if _image_ocr_dlc is not None:
+                _updater_mod.check_for_dlc_update(_DLC_VERSION, self._on_dlc_update_available)
         except Exception:
             pass
 
@@ -723,6 +733,10 @@ class App(ctk.CTk):
     def _on_update_available(self, new_ver: str, url: str):
         # Called from a background thread — marshal to UI thread
         self.after(0, lambda: self._show_update_dialog(new_ver, url))
+
+    def _on_dlc_update_available(self, new_version: str):
+        # Called from a background thread — marshal to UI thread
+        self.after(0, lambda: setattr(self, "_dlc_update_version", new_version))
 
     def _show_update_dialog(self, new_ver: str, url: str):
         try:

@@ -134,6 +134,25 @@ Uses **Windows built-in OCR** — no Tesseract, no admin rights, no extra downlo
 For best results with Finnish timesheets, ensure Finnish is added in
 *Windows Settings → Time & Language → Language*.
 
+If a newer DLC version is published, Settings → DLC Store shows a
+**🔄 Update to vX.Y.Z** button. Clicking it re-downloads `image_ocr.py`;
+restart the app to pick up the change.
+
+### Releasing a new DLC version (developers)
+
+1. Bump `__version__` in `image_ocr.py`
+2. Update `dlc_version.txt` to the same value
+3. Commit and push both files to the `dlc` branch:
+   ```bash
+   git checkout dlc
+   git add image_ocr.py dlc_version.txt
+   git commit -m "Bump Image OCR DLC to vX.Y.Z"
+   git push origin dlc
+   git checkout main
+   ```
+
+Existing users with the DLC installed see the update button on their next launch.
+
 ---
 
 ## Building the installer

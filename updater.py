@@ -42,6 +42,28 @@ def check_for_update(current_version: str, on_update_available):
     threading.Thread(target=_check, daemon=True).start()
 
 
+def check_for_dlc_update(current_version: str, on_update_available):
+    """Non-blocking background check against the dlc branch's dlc_version.txt.
+
+    Calls on_update_available(new_version) if a newer DLC version is published.
+    Network errors are silently ignored.
+    """
+    from version import GITHUB_REPO
+
+    def _check():
+        try:
+            url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/dlc/dlc_version.txt"
+            req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
+            with urllib.request.urlopen(req, timeout=5) as r:
+                latest = r.read().decode().strip()
+            if _is_newer(latest, current_version):
+                on_update_available(latest)
+        except Exception:
+            pass
+
+    threading.Thread(target=_check, daemon=True).start()
+
+
 def _is_newer(latest: str, current: str) -> bool:
     try:
         return (tuple(int(x) for x in latest.split("."))
