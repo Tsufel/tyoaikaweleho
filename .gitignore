@@ -1,5 +1,7 @@
 # ── Runtime data (personal — never commit) ───────────────────
 data.json
+data.json.bak
+data.json.tmp
 session.json
 shifts.txt
 

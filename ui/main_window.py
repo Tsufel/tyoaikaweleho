@@ -15,7 +15,7 @@ from services import dlc as dlc_service
 from utils import get_app_dir
 from ui import theme
 from ui.dialogs import MonthPickerDialog, EditEntryDialog
-from ui.settings_dialog import SettingsDialog
+from ui.settings_view import SettingsView
 from ui.timer_panel import TimerPanel
 from ui.entries_table import EntriesTable
 from version import __version__
@@ -112,8 +112,14 @@ class App(ctk.CTk):
     # ── UI construction ──────────────────────────────────────────
 
     def _build_ui(self):
+        # All main content lives in one frame so the settings view can
+        # swap in/out without touching individual widgets
+        self._main_view = ctk.CTkFrame(self, fg_color="transparent")
+        self._main_view.pack(fill="both", expand=True)
+        self._settings_view: SettingsView | None = None
+
         # ── Top bar ──────────────────────────────────────────────
-        top = ctk.CTkFrame(self, height=52, corner_radius=0)
+        top = ctk.CTkFrame(self._main_view, height=52, corner_radius=0)
         top.pack(fill="x")
         top.pack_propagate(False)
 
@@ -143,11 +149,11 @@ class App(ctk.CTk):
                       command=self._open_settings).pack(side="right", padx=(0, 6), pady=8)
 
         # ── Timer card ───────────────────────────────────────────
-        self._timer_panel = TimerPanel(self, on_entry_saved=self._refresh)
+        self._timer_panel = TimerPanel(self._main_view, on_entry_saved=self._refresh)
         self._timer_panel.pack(fill="x", padx=16, pady=(10, 0))
 
         # ── Entries section ──────────────────────────────────────
-        entries_header = ctk.CTkFrame(self, fg_color="transparent")
+        entries_header = ctk.CTkFrame(self._main_view, fg_color="transparent")
         entries_header.pack(fill="x", padx=16, pady=(12, 4))
 
         ctk.CTkLabel(entries_header, text="Shifts this month",
@@ -157,12 +163,12 @@ class App(ctk.CTk):
                       command=self._add_manual).pack(side="right")
 
         # ── Table ────────────────────────────────────────────────
-        self._table = EntriesTable(self, on_change=self._refresh,
+        self._table = EntriesTable(self._main_view, on_change=self._refresh,
                                    on_activate=self._edit_selected)
         self._table.pack(fill="both", expand=True, padx=16)
 
         # ── Bottom bar ───────────────────────────────────────────
-        bottom = ctk.CTkFrame(self, height=52, corner_radius=0)
+        bottom = ctk.CTkFrame(self._main_view, height=52, corner_radius=0)
         bottom.pack(fill="x", pady=(4, 0))
         bottom.pack_propagate(False)
 
@@ -317,10 +323,26 @@ class App(ctk.CTk):
     # ── Settings ─────────────────────────────────────────────────
 
     def _open_settings(self):
-        dlg = SettingsDialog(self, dlc_module=_image_ocr_dlc,
-                             dlc_update_version=self._dlc_update_version)
-        self.wait_window(dlg)
-        if dlg.changed:
+        if self._settings_view is not None:
+            return
+        self._main_view.pack_forget()
+        self._settings_view = SettingsView(
+            self,
+            dlc_module=_image_ocr_dlc,
+            dlc_update_version=self._dlc_update_version,
+            on_close=self._close_settings,
+            on_update_found=self._show_update_dialog,
+            on_dlc_update_found=lambda v: setattr(self, "_dlc_update_version", v),
+        )
+        self._settings_view.pack(fill="both", expand=True)
+
+    def _close_settings(self, saved: bool):
+        if self._settings_view is None:
+            return
+        self._settings_view.destroy()
+        self._settings_view = None
+        self._main_view.pack(fill="both", expand=True)
+        if saved:
             self._timer_panel.refresh_settings()
             self._refresh()
 

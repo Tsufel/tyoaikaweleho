@@ -25,6 +25,44 @@ def cleanup_old_exe():
         pass
 
 
+def _parse_release(data: dict) -> tuple[str, str, str | None] | None:
+    """Extract (version, exe_url, sha256_url) from a GitHub release API
+    response. Returns None when the release has no .exe asset."""
+    latest = data["tag_name"].lstrip("v")
+    assets = data.get("assets", [])
+    for asset in assets:
+        if asset["name"].endswith(".exe"):
+            sha_url = next(
+                (a["browser_download_url"] for a in assets
+                 if a["name"] == asset["name"] + ".sha256"),
+                None,
+            )
+            return latest, asset["browser_download_url"], sha_url
+    return None
+
+
+def fetch_latest_release(timeout: int = 5) -> tuple[str, str, str | None] | None:
+    """Query GitHub for the latest release. Returns (version, exe_url,
+    sha256_url) or None when the release has no .exe asset. Raises on
+    network or parse errors — callers decide whether to surface them."""
+    from version import GITHUB_REPO
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        data = json.loads(r.read())
+    return _parse_release(data)
+
+
+def fetch_latest_dlc_version(timeout: int = 5) -> str:
+    """Return the DLC version published on the dlc branch. Raises on
+    network errors."""
+    from version import GITHUB_REPO
+    url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/dlc/dlc_version.txt"
+    req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode().strip().split()[0]
+
+
 def check_for_update(current_version: str, on_update_available):
     """Non-blocking background check against GitHub releases.
 
@@ -33,27 +71,11 @@ def check_for_update(current_version: str, on_update_available):
     when the release has no matching checksum asset. Network errors are
     silently ignored.
     """
-    from version import GITHUB_REPO
-
     def _check():
         try:
-            url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-            req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-            with urllib.request.urlopen(req, timeout=5) as r:
-                data = json.loads(r.read())
-            latest = data["tag_name"].lstrip("v")
-            if _is_newer(latest, current_version):
-                assets = data.get("assets", [])
-                for asset in assets:
-                    if asset["name"].endswith(".exe"):
-                        sha_url = next(
-                            (a["browser_download_url"] for a in assets
-                             if a["name"] == asset["name"] + ".sha256"),
-                            None,
-                        )
-                        on_update_available(
-                            latest, asset["browser_download_url"], sha_url)
-                        return
+            release = fetch_latest_release()
+            if release and _is_newer(release[0], current_version):
+                on_update_available(*release)
         except Exception:
             pass
 
@@ -66,14 +88,9 @@ def check_for_dlc_update(current_version: str, on_update_available):
     Calls on_update_available(new_version) if a newer DLC version is published.
     Network errors are silently ignored.
     """
-    from version import GITHUB_REPO
-
     def _check():
         try:
-            url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/dlc/dlc_version.txt"
-            req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-            with urllib.request.urlopen(req, timeout=5) as r:
-                latest = r.read().decode().strip().split()[0]
+            latest = fetch_latest_dlc_version()
             if _is_newer(latest, current_version):
                 on_update_available(latest)
         except Exception:

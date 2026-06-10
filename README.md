@@ -23,12 +23,12 @@ you can send straight to your employer.
 
 - **One-click timer** — START NOW or START AT a predefined time (e.g. 09:30)
 - **Crash recovery** — unfinished shifts survive app restarts; auto-closes at 8 h
-- **Manual entries** — add, edit, or delete any shift entry
+- **Manual entries** — add, edit, or delete any shift entry; pick the date from a 📅 popup calendar
 - **Excel export** — Simple layout (PVM / Start / End / Total) or full EAS format
 - **Excel import** — bulk-import from existing timesheets
 - **Image OCR** *(optional DLC)* — import entries from a photo or screenshot using Windows' built-in OCR
 - **Per-user shift list** — customise your own `shifts.txt`; add new shifts directly in Settings
-- **Auto-update** — notifies you when a new release is on GitHub and installs it silently
+- **Auto-update** — notifies you when a new release is on GitHub and installs it silently; check on demand from Settings → Check for updates
 - **No admin required** — installs to `%LOCALAPPDATA%`
 
 ---
@@ -71,7 +71,8 @@ updater.py           auto-update check + verified installer download
 ui/
   theme.py           colors, fonts, table style
   dialogs.py         month picker, add/edit entry dialogs
-  settings_dialog.py settings + DLC store
+  calendar_popup.py  clickable month-grid date picker
+  settings_view.py   in-window settings + update check + DLC store
   timer_panel.py     timer card (start/stop, elapsed, earnings)
   entries_table.py   monthly table with week totals + inline editing
   main_window.py     App window composing everything
@@ -96,7 +97,8 @@ Press **F5** to toggle start/stop from anywhere in the app.
 
 ### Manual entries
 
-Click **+ Add entry manually** to log a shift without the timer.
+Click **+ Add entry manually** to log a shift without the timer — type the
+date or click 📅 to pick it from a calendar.
 Click any **Time In** or **Time Out** cell in the table to edit it inline.
 Double-click a row (or use **✏ Edit**) for the full edit dialog.
 
@@ -119,8 +121,11 @@ Optionally include a **Rate** and **Earned** section by ticking *Include total p
 
 ### Settings (⚙)
 
+Settings open inside the main window — use **← Back** to return.
+
 | Setting | Description |
 |---------|-------------|
+| Check for updates | Manually check GitHub for a newer app (and DLC) version |
 | Default start time | Pre-fills the ⏰ button (e.g. `09:30`) |
 | Pay rate (€/hr) | Used for the earnings display and optional export |
 | Default job / shift | Applied automatically when the timer starts |

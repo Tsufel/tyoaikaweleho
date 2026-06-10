@@ -7,6 +7,7 @@ from tkinter import messagebox
 import storage
 from utils import parse_time_input
 from ui import theme
+from ui.calendar_popup import CalendarPopup
 
 
 class MonthPickerDialog(ctk.CTkToplevel):
@@ -58,7 +59,12 @@ class EditEntryDialog(ctk.CTkToplevel):
         self._date_var = ctk.StringVar(value=(
             entry.date if entry else (default_date or date.today()).isoformat()
         ))
-        ctk.CTkEntry(self, textvariable=self._date_var, width=320).pack(padx=20)
+        date_row = ctk.CTkFrame(self, fg_color="transparent")
+        date_row.pack(padx=20, fill="x")
+        ctk.CTkEntry(date_row, textvariable=self._date_var, width=276).pack(side="left")
+        self._cal_btn = ctk.CTkButton(date_row, text="📅", width=40,
+                                      command=self._pick_date)
+        self._cal_btn.pack(side="left", padx=(4, 0))
 
         ctk.CTkLabel(self, text="Job / Shift",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
@@ -92,6 +98,17 @@ class EditEntryDialog(ctk.CTkToplevel):
         ctk.CTkButton(btn_frame, text="Cancel", width=130,
                       fg_color=theme.GRAY, hover_color=theme.GRAY_HOVER,
                       command=self.destroy).pack(side="left", padx=8)
+
+    def _pick_date(self):
+        try:
+            initial = date.fromisoformat(self._date_var.get().strip())
+        except ValueError:
+            initial = date.today()
+        popup = CalendarPopup(self, initial=initial, anchor_widget=self._cal_btn)
+        self.wait_window(popup)
+        if popup.result:
+            self._date_var.set(popup.result.isoformat())
+        self.grab_set()  # reclaim modality after the popup released it
 
     def _save(self):
         d = self._date_var.get().strip()

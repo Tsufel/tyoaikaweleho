@@ -53,6 +53,47 @@ def test_safe_url_rejects_lookalike_host():
     ) is False
 
 
+# ── release parsing ───────────────────────────────────────────────────────────
+
+def _release(tag="v1.2.0", assets=()):
+    return {"tag_name": tag, "assets": list(assets)}
+
+
+def _asset(name):
+    return {"name": name,
+            "browser_download_url": f"https://github.com/{GITHUB_REPO}/releases/download/v1.2.0/{name}"}
+
+
+def test_parse_release_with_exe_and_sha():
+    data = _release(assets=[_asset("Setup.exe"), _asset("Setup.exe.sha256")])
+    ver, exe_url, sha_url = updater._parse_release(data)
+    assert ver == "1.2.0"
+    assert exe_url.endswith("/Setup.exe")
+    assert sha_url.endswith("/Setup.exe.sha256")
+
+
+def test_parse_release_exe_only():
+    data = _release(assets=[_asset("Setup.exe")])
+    ver, exe_url, sha_url = updater._parse_release(data)
+    assert ver == "1.2.0"
+    assert exe_url.endswith("/Setup.exe")
+    assert sha_url is None
+
+
+def test_parse_release_no_exe_asset():
+    data = _release(assets=[_asset("notes.txt")])
+    assert updater._parse_release(data) is None
+
+
+def test_parse_release_no_assets():
+    assert updater._parse_release(_release()) is None
+
+
+def test_parse_release_malformed_raises():
+    with pytest.raises(KeyError):
+        updater._parse_release({"assets": []})  # missing tag_name
+
+
 # ── checksum helpers ──────────────────────────────────────────────────────────
 
 def test_file_sha256(tmp_path):
