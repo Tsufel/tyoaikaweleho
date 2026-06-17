@@ -14,7 +14,7 @@ import updater
 from services import dlc as dlc_service
 from utils import get_app_dir
 from ui import theme
-from ui.dialogs import MonthPickerDialog, EditEntryDialog
+from ui.dialogs import MonthPickerDialog, EditEntryDialog, ChangelogDialog
 from ui.settings_view import SettingsView
 from ui.timer_panel import TimerPanel
 from ui.entries_table import EntriesTable
@@ -81,7 +81,7 @@ class App(ctk.CTk):
         def _finish():
             self.deiconify()
             self.lift()
-            self.after(100, self._check_for_crash_recovery)
+            self.after(100, self._on_after_splash)
 
         if not os.path.exists(png_path):
             _finish()
@@ -199,6 +199,31 @@ class App(ctk.CTk):
         self._total_label.configure(
             text=f"Total: {th}:{tm:02d}  (€{earnings:.2f})")
         self._update_month_label()
+
+    # ── Post-splash sequence ──────────────────────────────────────
+
+    def _on_after_splash(self):
+        """Runs once after the splash screen closes: changelog check, then crash recovery."""
+        self._check_for_new_version()
+        self._check_for_crash_recovery()
+
+    def _check_for_new_version(self):
+        """Show a 'What's new' dialog if the app was just updated."""
+        import changelog as _cl
+        last = storage.get_last_seen_version()
+        storage.set_last_seen_version(__version__)
+        if last is None or last == __version__:
+            return
+        def _ver(v):
+            try:
+                return tuple(int(x) for x in v.split("."))
+            except ValueError:
+                return (0, 0, 0)
+        newer = {v: items for v, items in _cl.CHANGELOG.items() if _ver(v) > _ver(last)}
+        if not newer:
+            return
+        dlg = ChangelogDialog(self, newer)
+        self.wait_window(dlg)
 
     # ── Crash recovery ────────────────────────────────────────────
 

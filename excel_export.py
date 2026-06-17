@@ -3,6 +3,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from storage import WorkEntry
+from utils import is_overnight
 
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
@@ -82,7 +83,10 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
             ws[f"C{r}"].alignment = center
 
         if entry.time_out:
-            ws[f"D{r}"] = _time_fraction(entry.time_out)
+            frac = _time_fraction(entry.time_out)
+            if entry.time_in and is_overnight(entry.time_in, entry.time_out):
+                frac += 1.0
+            ws[f"D{r}"] = frac
             ws[f"D{r}"].number_format = "HH:MM"
             ws[f"D{r}"].alignment = center
 
@@ -220,7 +224,10 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
                 ws[f"C{r}"].alignment = center; ws[f"C{r}"].font = normal_font
 
             if entry.time_out:
-                ws[f"D{r}"] = _time_fraction(entry.time_out)
+                frac = _time_fraction(entry.time_out)
+                if entry.time_in and is_overnight(entry.time_in, entry.time_out):
+                    frac += 1.0
+                ws[f"D{r}"] = frac
                 ws[f"D{r}"].number_format = "HH:MM"
                 ws[f"D{r}"].alignment = center; ws[f"D{r}"].font = normal_font
 

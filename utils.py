@@ -14,7 +14,9 @@ def parse_time_input(t: str) -> str | None:
     """
     t = t.strip().replace(".", ":")
     if t.isdigit():
-        if len(t) == 3:       # "930"  → "9:30"
+        if len(t) <= 2:       # "9" → "9:00", "13" → "13:00"
+            t = t + ":00"
+        elif len(t) == 3:     # "930"  → "9:30"
             t = t[0] + ":" + t[1:]
         elif len(t) == 4:     # "1345" → "13:45"
             t = t[:2] + ":" + t[2:]
@@ -34,6 +36,29 @@ def parse_time_input(t: str) -> str | None:
 
 def is_valid_time(t: str) -> bool:
     return parse_time_input(t) is not None
+
+
+def entry_minutes(time_in: str, time_out: str) -> int:
+    """Duration in minutes between two HH:MM strings; handles overnight (time_out < time_in)."""
+    try:
+        ih, im = map(int, time_in.split(":"))
+        oh, om = map(int, time_out.split(":"))
+        diff = (oh * 60 + om) - (ih * 60 + im)
+        if diff < 0:
+            diff += 24 * 60
+        return diff
+    except Exception:
+        return 0
+
+
+def is_overnight(time_in: str, time_out: str) -> bool:
+    """True when time_out is on the next calendar day (time_out < time_in)."""
+    try:
+        ih, im = map(int, time_in.split(":"))
+        oh, om = map(int, time_out.split(":"))
+        return (oh * 60 + om) < (ih * 60 + im)
+    except Exception:
+        return False
 
 
 def get_app_dir() -> str:

@@ -192,3 +192,14 @@ def set_export_include_pay(val: bool):
     data = _load_raw()
     data["export_include_pay"] = val
     _save_raw(data)
+
+
+def get_last_seen_version() -> str | None:
+    """Return the version string from the last time the app ran, or None on first install."""
+    return _load_raw().get("last_seen_version")
+
+
+def set_last_seen_version(v: str):
+    data = _load_raw()
+    data["last_seen_version"] = v
+    _save_raw(data)

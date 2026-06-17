@@ -6,7 +6,7 @@ import customtkinter as ctk
 from tkinter import ttk
 
 import storage
-from utils import parse_time_input
+from utils import parse_time_input, entry_minutes, is_overnight
 
 
 class EntriesTable(ctk.CTkFrame):
@@ -90,10 +90,13 @@ class EntriesTable(ctk.CTkFrame):
 
                 d = date.fromisoformat(e.date)
                 display_date = d.strftime("%a %d %b %Y")
+                time_out_display = e.time_out
+                if e.time_in and e.time_out and is_overnight(e.time_in, e.time_out):
+                    time_out_display = e.time_out + " +1"
                 tag = "odd" if row_idx % 2 == 0 else "even"
                 self._tree.insert("", "end", iid=e.id,
                                   values=(display_date, e.job_shift,
-                                          e.time_in, e.time_out, hours_str),
+                                          e.time_in, time_out_display, hours_str),
                                   tags=(tag,))
                 row_idx += 1
 
@@ -153,7 +156,7 @@ class EntriesTable(ctk.CTkFrame):
         def commit(e=None):
             if self._inline_editor is None:
                 return
-            new_val = editor.get().strip()
+            new_val = editor.get().strip().split()[0]   # strip " +1" suffix if present
             self._inline_editor = None
             editor.destroy()
             parsed = parse_time_input(new_val)
@@ -178,9 +181,4 @@ class EntriesTable(ctk.CTkFrame):
 
 
 def _entry_minutes(e: storage.WorkEntry) -> int:
-    try:
-        ih, im = map(int, e.time_in.split(":"))
-        oh, om = map(int, e.time_out.split(":"))
-        return max(0, (oh * 60 + om) - (ih * 60 + im))
-    except Exception:
-        return 0
+    return entry_minutes(e.time_in, e.time_out)

@@ -1,4 +1,4 @@
-"""Small modal dialogs: month picker and entry add/edit."""
+"""Small modal dialogs: month picker, entry add/edit, and changelog."""
 from datetime import date
 
 import customtkinter as ctk
@@ -136,3 +136,37 @@ class EditEntryDialog(ctk.CTkToplevel):
             time_out=t_out,
         )
         self.destroy()
+
+
+class ChangelogDialog(ctk.CTkToplevel):
+    """'What's new' dialog shown once on first launch after an update."""
+
+    def __init__(self, parent, entries: dict[str, list[str]]):
+        super().__init__(parent)
+        from version import __version__
+        self.title(f"What's new in v{__version__}")
+        self.geometry("480x380")
+        self.resizable(False, False)
+        self.grab_set()
+
+        scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
+        scroll.pack(fill="both", expand=True, padx=20, pady=(16, 8))
+
+        def _ver_key(kv):
+            try:
+                return tuple(int(x) for x in kv[0].split("."))
+            except ValueError:
+                return (0, 0, 0)
+
+        for ver, items in sorted(entries.items(), key=_ver_key, reverse=True):
+            ctk.CTkLabel(scroll, text=f"v{ver}",
+                         font=ctk.CTkFont(weight="bold", size=14)).pack(anchor="w", pady=(4, 2))
+            for item in items:
+                ctk.CTkLabel(scroll, text=f"  • {item}",
+                             wraplength=420, justify="left",
+                             anchor="w").pack(anchor="w", pady=1)
+            ctk.CTkLabel(scroll, text="").pack()   # spacer between versions
+
+        ctk.CTkButton(self, text="Got it  ✓", width=140,
+                      fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
+                      command=self.destroy).pack(pady=(0, 16))
