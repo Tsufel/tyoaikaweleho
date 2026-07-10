@@ -197,4 +197,8 @@ def apply_update(download_url: str, sha256_url: str | None = None):
     # /CLOSEAPPLICATIONS — gracefully closes the running instance before install
     # /RESTARTAPPLICATIONS — relaunches the app after install completes
     subprocess.Popen([tmp, "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"])
-    sys.exit(0)
+    # os._exit (not sys.exit) so the interpreter drops all file/DLL handles
+    # immediately instead of unwinding through normal Python/Tk teardown —
+    # that delay is what lets the installer's file-replace race a handle
+    # (e.g. _internal\pyexpat.pyd) still held by our own shutting-down process.
+    os._exit(0)

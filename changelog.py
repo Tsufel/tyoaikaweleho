@@ -1,6 +1,10 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "1.2.2": [
+        "Reliability fix: prevent duplicate running instances, which could "
+        "cause update installs to fail with a file-access error",
+    ],
     "1.2.1": [
         "Right-click the start button to pick a custom shift start time",
     ],
