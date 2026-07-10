@@ -6,6 +6,7 @@ import customtkinter as ctk
 import storage
 import timer as timer_module
 from ui import theme
+from ui.time_picker_popup import TimePickerPopup
 
 
 class TimerPanel(ctk.CTkFrame):
@@ -59,6 +60,7 @@ class TimerPanel(ctk.CTkFrame):
             fg_color="#555555", hover_color="#333333",
             command=self._start_at_default)
         self._start_at_btn.pack(side="left")
+        self._start_at_btn.bind("<Button-3>", lambda _e: self._pick_start_time())
 
         self._stop_btn = ctk.CTkButton(
             _btn_slot, text="⏹   STOP SHIFT", width=286, height=52,
@@ -113,10 +115,19 @@ class TimerPanel(ctk.CTkFrame):
 
     # ── Internals ────────────────────────────────────────────────
 
-    def _start_at_default(self):
-        t = storage.get_default_start_time()
+    def _start_at(self, t: str):
         h, m = map(int, t.split(":"))
         self.start(datetime.now().replace(hour=h, minute=m, second=0, microsecond=0))
+
+    def _start_at_default(self):
+        self._start_at(storage.get_default_start_time())
+
+    def _pick_start_time(self):
+        popup = TimePickerPopup(self, initial=storage.get_default_start_time(),
+                                anchor_widget=self._start_at_btn)
+        self.wait_window(popup)
+        if popup.result:
+            self._start_at(popup.result)
 
     def _idle_ui(self):
         self._stop_btn.pack_forget()

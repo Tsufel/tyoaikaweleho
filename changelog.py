@@ -1,6 +1,9 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "1.2.1": [
+        "Right-click the start button to pick a custom shift start time",
+    ],
     "1.2.0": [
         "Overnight shift support: shifts spanning midnight now calculate correctly",
         "Time Out column shows '+1' indicator for overnight shifts",
