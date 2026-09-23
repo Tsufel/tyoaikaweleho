@@ -1,10 +1,14 @@
 import json
+import math
 import os
+import re
 import shutil
 import sys
 import uuid
 from dataclasses import dataclass, asdict
-from datetime import date, time
+from datetime import date, datetime, time
+
+from utils import parse_date_input
 
 
 if getattr(sys, "frozen", False):
@@ -65,24 +69,65 @@ def _save_raw(data: dict):
             shutil.copy2(DATA_FILE, DATA_FILE + ".bak")
         except OSError:
             pass
+        _daily_snapshot()
     os.replace(tmp, DATA_FILE)
+
+
+_SNAPSHOT_KEEP = 14
+
+
+def _daily_snapshot():
+    """Keep one copy of data.json per day (as it was before the day's first
+    save) in backups/, pruned to the newest _SNAPSHOT_KEEP. The .bak file
+    only ever holds the state from one save ago."""
+    try:
+        backup_dir = os.path.join(os.path.dirname(DATA_FILE), "backups")
+        target = os.path.join(backup_dir, f"data-{date.today().isoformat()}.json")
+        if os.path.exists(target):
+            return
+        os.makedirs(backup_dir, exist_ok=True)
+        shutil.copy2(DATA_FILE, target)
+        snapshots = sorted(f for f in os.listdir(backup_dir)
+                           if f.startswith("data-") and f.endswith(".json"))
+        for old in snapshots[:-_SNAPSHOT_KEEP]:
+            os.remove(os.path.join(backup_dir, old))
+    except OSError:
+        pass
+
+
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _normalise_date(s: str) -> str:
+    """ISO form of a stored date. Older versions could save loose input such
+    as '20250602' verbatim, which hid the entry from every month view."""
+    if _ISO_DATE.fullmatch(s):
+        return s
+    return parse_date_input(s) or s
+
+
+def _entry(e: dict) -> WorkEntry:
+    return WorkEntry(**{**e, "date": _normalise_date(e["date"])})
 
 
 def load_month(year: int, month: int) -> list[WorkEntry]:
     data = _load_raw()
     prefix = f"{year:04d}-{month:02d}"
-    return [WorkEntry(**e) for e in data["entries"] if e["date"].startswith(prefix)]
+    entries = (_entry(e) for e in data["entries"])
+    return [e for e in entries if e.date.startswith(prefix)]
 
 
 def load_all_entries() -> list[WorkEntry]:
     data = _load_raw()
-    return [WorkEntry(**e) for e in data["entries"]]
+    return [_entry(e) for e in data["entries"]]
 
 
 def save_entry(entry: WorkEntry):
     data = _load_raw()
     data["entries"] = [e for e in data["entries"] if e["id"] != entry.id]
     data["entries"].append(asdict(entry))
+    for e in data["entries"]:
+        e["date"] = _normalise_date(e["date"])
     data["entries"].sort(key=lambda e: (e["date"], e["time_in"]))
     _save_raw(data)
 
@@ -97,8 +142,16 @@ def update_entry(entry: WorkEntry):
     save_entry(entry)
 
 
+_DEFAULT_PAY_RATE = 20.0
+
+
 def get_pay_rate() -> float:
-    return _load_raw().get("pay_rate", 20.0)
+    rate = _load_raw().get("pay_rate", _DEFAULT_PAY_RATE)
+    # bool is an int subclass; nan/inf got in through older Settings versions
+    if (isinstance(rate, bool) or not isinstance(rate, (int, float))
+            or not math.isfinite(rate) or rate <= 0):
+        return _DEFAULT_PAY_RATE
+    return float(rate)
 
 
 def set_pay_rate(rate: float):
@@ -203,3 +256,61 @@ def set_last_seen_version(v: str):
     data = _load_raw()
     data["last_seen_version"] = v
     _save_raw(data)
+
+
+APPEARANCE_MODES = ("System", "Light", "Dark")
+
+
+def get_appearance_mode() -> str:
+    """'System', 'Light' or 'Dark'. Default: 'System' (follow Windows)."""
+    mode = _load_raw().get("appearance_mode", "System")
+    return mode if mode in APPEARANCE_MODES else "System"
+
+
+def set_appearance_mode(mode: str):
+    if mode not in APPEARANCE_MODES:
+        raise ValueError(f"appearance mode must be one of {APPEARANCE_MODES}")
+    data = _load_raw()
+    data["appearance_mode"] = mode
+    _save_raw(data)
+
+
+_GEOMETRY = re.compile(r"\d+x\d+[+-]-?\d+[+-]-?\d+")
+
+
+def get_window_geometry() -> tuple[str, bool] | None:
+    """(Tk geometry string of the restored window, was it maximised) from
+    the last close, or None if never saved or unreadable."""
+    saved = _load_raw().get("window_geometry")
+    if not isinstance(saved, dict):
+        return None
+    geom = saved.get("geometry")
+    if not isinstance(geom, str) or not _GEOMETRY.fullmatch(geom):
+        return None
+    return geom, bool(saved.get("zoomed", False))
+
+
+def set_window_geometry(geom: str, zoomed: bool):
+    data = _load_raw()
+    data["window_geometry"] = {"geometry": geom, "zoomed": bool(zoomed)}
+    _save_raw(data)
+
+
+ERROR_LOG = os.path.join(DATA_DIR, "error.log")
+_ERROR_LOG_MAX = 256 * 1024
+
+
+def append_error_log(text: str):
+    """Append a timestamped traceback to error.log next to data.json (the
+    exe has no console). Once over _ERROR_LOG_MAX, the older half is
+    dropped. Never raises."""
+    try:
+        if os.path.exists(ERROR_LOG) and os.path.getsize(ERROR_LOG) > _ERROR_LOG_MAX:
+            with open(ERROR_LOG, "r", encoding="utf-8", errors="replace") as f:
+                kept = f.read()[-_ERROR_LOG_MAX // 2:]
+            with open(ERROR_LOG, "w", encoding="utf-8") as f:
+                f.write(kept)
+        with open(ERROR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"--- {datetime.now().isoformat(timespec='seconds')}\n{text.rstrip()}\n")
+    except OSError:
+        pass

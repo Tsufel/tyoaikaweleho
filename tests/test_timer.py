@@ -113,11 +113,23 @@ def test_session_written_on_start(tmp_timer):
     assert session["job_shift"] == "Sales"
 
 
-def test_session_deleted_on_stop(tmp_timer):
+def test_session_kept_after_stop_until_cleared(tmp_timer):
+    # stop() leaves session.json so the shift survives a failed save;
+    # the caller clears it once the entry is stored
     t = WorkTimer()
     t.start("Sales")
     t.stop()
+    assert load_saved_session() is not None
+    clear_saved_session()
     assert load_saved_session() is None
+
+
+def test_start_dt_and_job_shift_exposed(tmp_timer):
+    t = WorkTimer()
+    start = datetime.now() - timedelta(hours=1)
+    t.start("Support", start_time=start)
+    assert t.start_dt == start
+    assert t.job_shift == "Support"
 
 
 def test_load_saved_session_none_when_missing(tmp_timer):

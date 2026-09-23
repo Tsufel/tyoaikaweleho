@@ -1,17 +1,40 @@
-"""In-window settings view: about & updates, timer defaults, shifts,
-export options, DLC store."""
+"""In-window settings view: about & updates, appearance, timer defaults,
+shifts, export options, DLC store, keyboard shortcuts."""
 import os
 import threading
 
 import customtkinter as ctk
-from tkinter import messagebox
 
 import storage
 import updater
-from utils import parse_time_input
+from utils import parse_time_input, parse_pay_rate
 from services import dlc
+from ui import msgbox as messagebox
 from ui import theme
+from ui.window_utils import prepare_dialog
 from version import __version__
+
+_SHORTCUTS = [
+    ("F5", "Start / stop the timer"),
+    ("Ctrl+N", "Add an entry"),
+    ("Enter / F2", "Edit the selected entry"),
+    ("Delete", "Delete the selected entry"),
+    ("Ctrl+Z", "Undo a delete (while the note is shown)"),
+    ("Click a time", "Edit Time In / Time Out in place"),
+    ("Ctrl+← / Ctrl+→", "Previous / next month (also PageUp / PageDown)"),
+    ("Ctrl+Home", "Go to the current month"),
+    ("Ctrl+E", "Export to Excel"),
+    ("Ctrl+I", "Import menu"),
+    ("Ctrl+,", "Open Settings"),
+    ("Esc / Ctrl+S", "In Settings: back / save"),
+]
+
+
+def _format_rate(rate: float) -> str:
+    # shortest text that reads back as the same number, so saving Settings
+    # never rounds the stored rate (20.125 stays 20.125)
+    text = repr(rate)
+    return text[:-2] if text.endswith(".0") else text
 
 
 class SettingsView(ctk.CTkFrame):
@@ -21,6 +44,9 @@ class SettingsView(ctk.CTkFrame):
     Save → True). on_update_found(ver, url, sha_url) is called when a manual
     update check finds a newer app release. on_dlc_update_found(ver) is
     called when it finds a newer DLC version.
+
+    The appearance choice is previewed live and reverted if the view is
+    left without saving.
     """
 
     def __init__(self, master, dlc_module=None, dlc_update_version: str | None = None,
@@ -40,11 +66,14 @@ class SettingsView(ctk.CTkFrame):
         header.pack_propagate(False)
         ctk.CTkButton(header, text="←  Back", width=90, height=34,
                       fg_color=theme.GRAY, hover_color=theme.GRAY_HOVER,
-                      command=lambda: self._on_close(False)).pack(
-                          side="left", padx=12, pady=9)
+                      command=self.go_back).pack(side="left", padx=12, pady=9)
         ctk.CTkLabel(header, text="⚙  Settings",
                      font=ctk.CTkFont(size=15, weight="bold")).pack(
                          side="left", padx=8)
+        # In the header so it's reachable without scrolling to the bottom
+        ctk.CTkButton(header, text="Save  (Ctrl+S)", width=130, height=34,
+                      fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
+                      command=self.save).pack(side="right", padx=12, pady=9)
 
         # ── Scrollable centered column ─────────────────────────
         scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
@@ -58,11 +87,25 @@ class SettingsView(ctk.CTkFrame):
         ctk.CTkLabel(col, text="About & Updates",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
         ctk.CTkLabel(col, text=f"Työaikaweleho v{__version__}",
-                     text_color=theme.GRAY).pack(padx=24, anchor="w")
+                     text_color=theme.TEXT_MUTED).pack(padx=24, anchor="w")
         self._check_btn = ctk.CTkButton(
             col, text="🔍  Check for updates", width=272,
-            fg_color=theme.BLUE, command=self._check_for_updates)
+            fg_color=theme.BLUE, hover_color=theme.BLUE_HOVER,
+            text_color_disabled=theme.BLUE_TEXT_DISABLED,
+            command=self._check_for_updates)
         self._check_btn.pack(padx=24, pady=(4, 0))
+
+        # ── Appearance ─────────────────────────────────────────
+        ctk.CTkLabel(col, text="Appearance",
+                     font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
+        self._saved_appearance = storage.get_appearance_mode()
+        self._appearance_var = ctk.StringVar(value=self._saved_appearance)
+        ctk.CTkSegmentedButton(col, values=list(storage.APPEARANCE_MODES),
+                               variable=self._appearance_var, width=272,
+                               command=ctk.set_appearance_mode).pack(padx=24)
+        ctk.CTkLabel(col, text="System follows the Windows light / dark setting.",
+                     text_color=theme.TEXT_MUTED,
+                     font=ctk.CTkFont(size=11)).pack(padx=24, anchor="w")
 
         # ── Timer ──────────────────────────────────────────────
         ctk.CTkLabel(col, text="Default start time",
@@ -72,7 +115,7 @@ class SettingsView(ctk.CTkFrame):
 
         ctk.CTkLabel(col, text="Pay rate (€/hr)",
                      font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
-        self._pay_rate_var = ctk.StringVar(value=str(storage.get_pay_rate()))
+        self._pay_rate_var = ctk.StringVar(value=_format_rate(storage.get_pay_rate()))
         ctk.CTkEntry(col, textvariable=self._pay_rate_var, width=272).pack(padx=24)
 
         # ── Job / Shift ────────────────────────────────────────
@@ -118,20 +161,81 @@ class SettingsView(ctk.CTkFrame):
         self._dlc_section.pack(fill="x")
         self._build_dlc_section()
 
-        ctk.CTkButton(col, text="Save", width=272, height=36,
-                      fg_color=theme.GREEN, hover_color=theme.GREEN_HOVER,
-                      command=self._save).pack(padx=24, pady=(16, 0))
+        # ── Keyboard shortcuts ─────────────────────────────────
+        ctk.CTkLabel(col, text="Keyboard shortcuts",
+                     font=ctk.CTkFont(weight="bold")).pack(**pad, anchor="w")
+        keys = ctk.CTkFrame(col, fg_color="transparent")
+        keys.pack(padx=24, fill="x")
+        for r, (key, what) in enumerate(_SHORTCUTS):
+            ctk.CTkLabel(keys, text=key, anchor="w",
+                         font=ctk.CTkFont(size=12, weight="bold")).grid(
+                             row=r, column=0, sticky="w", padx=(0, 12))
+            ctk.CTkLabel(keys, text=what, anchor="w", text_color=theme.TEXT_MUTED,
+                         font=ctk.CTkFont(size=12)).grid(row=r, column=1, sticky="w")
+
+        # what the fields held on opening — Back asks before dropping edits
+        self._initial = self._snapshot()
+
+    # ── Leaving the view ─────────────────────────────────────────
+
+    def _snapshot(self) -> tuple:
+        return (self._start_time_var.get().strip(), self._pay_rate_var.get().strip(),
+                self._job_var.get().strip(), self._fmt_var.get(),
+                bool(self._pay_chk_var.get()), self._appearance_var.get())
+
+    def _revert_appearance(self):
+        if self._appearance_var.get() != self._saved_appearance:
+            self._appearance_var.set(self._saved_appearance)
+            ctk.set_appearance_mode(self._saved_appearance)
+
+    def go_back(self):
+        """Back / Escape. Asks first if a field was changed."""
+        if self._snapshot() != self._initial:
+            answer = messagebox.askyesnocancel(
+                "Save changes?",
+                "You changed some settings.\n\nSave them before going back?",
+                parent=self._app)
+            if answer is None:
+                return
+            if answer:
+                self.save()
+                return
+        self._revert_appearance()
+        self._on_close(False)
+
+    def save(self):
+        """Save / Ctrl+S. Stays open if a field is invalid."""
+        if self._apply_fields():
+            self._on_close(True)
 
     # ── DLC section (rebuilt when an update is discovered) ──────
 
     def _build_dlc_section(self):
         for w in self._dlc_section.winfo_children():
             w.destroy()
-        if self._dlc_module is not None:
+        # The module is only imported at startup, so check the file on disk
+        # for the real state and flag when a restart is still pending
+        on_disk = dlc.is_installed()
+        loaded = self._dlc_module is not None
+        if on_disk and not loaded:
+            ctk.CTkLabel(self._dlc_section,
+                         text="✅  Image OCR — installed (restart the app to activate)",
+                         text_color=theme.TEXT_SUCCESS).pack(padx=24, pady=(0, 6), anchor="w")
+            ctk.CTkButton(self._dlc_section, text="🗑  Remove Image OCR", width=272,
+                          fg_color=theme.GRAY, hover_color=theme.GRAY_HOVER,
+                          command=self._remove_image_ocr).pack(padx=24, pady=(0, 6))
+        elif loaded and not on_disk:
+            ctk.CTkLabel(self._dlc_section,
+                         text="Image OCR — removed (restart the app to finish)",
+                         text_color=theme.TEXT_MUTED).pack(padx=24, pady=(0, 6), anchor="w")
+            ctk.CTkButton(self._dlc_section, text="⬇  Reinstall Image OCR", width=272,
+                          fg_color=theme.PURPLE, hover_color=theme.PURPLE_HOVER,
+                          command=self._install_image_ocr).pack(padx=24, pady=(2, 6))
+        elif loaded:
             version = getattr(self._dlc_module, "__version__", "0.0.0")
             ctk.CTkLabel(self._dlc_section,
                          text=f"✅  Image OCR — installed (v{version})",
-                         text_color=theme.GREEN).pack(padx=24, pady=(0, 6), anchor="w")
+                         text_color=theme.TEXT_SUCCESS).pack(padx=24, pady=(0, 6), anchor="w")
             if self._dlc_update_version:
                 ctk.CTkButton(self._dlc_section,
                               text=f"🔄  Update to v{self._dlc_update_version}", width=272,
@@ -220,23 +324,34 @@ class SettingsView(ctk.CTkFrame):
         prog.title("Installing DLC")
         prog.geometry("360x110")
         prog.resizable(False, False)
-        prog.grab_set()
+        prog.protocol("WM_DELETE_WINDOW", lambda: None)  # can't cancel mid-download
         ctk.CTkLabel(prog, text="Downloading image_ocr.py…").pack(pady=(24, 6))
         bar = ctk.CTkProgressBar(prog, mode="indeterminate")
         bar.pack(padx=30, fill="x")
         bar.start()
-        prog.update()
+        prepare_dialog(prog, self._app)
 
-        try:
-            verified = dlc.install()
-        except Exception as exc:
-            bar.stop()
-            prog.destroy()
-            messagebox.showerror("Install failed", str(exc), parent=self._app)
-            return
+        # Download off the UI thread so the window keeps repainting
+        def _worker():
+            try:
+                outcome = ("ok", dlc.install())
+            except Exception as exc:
+                outcome = ("error", str(exc))
+            try:
+                self._app.after(0, lambda: self._on_install_done(prog, bar, outcome))
+            except RuntimeError:
+                pass  # app closed mid-download
 
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_install_done(self, prog, bar, outcome):
         bar.stop()
         prog.destroy()
+        kind, value = outcome
+        if kind == "error":
+            messagebox.showerror("Install failed", value, parent=self._app)
+            return
+        verified = value
         msg = (
             "Image OCR DLC installed! ✅\n\n"
             "Restart the app to activate the 📷 Import from Image button.\n\n"
@@ -249,7 +364,7 @@ class SettingsView(ctk.CTkFrame):
                     "for this DLC version, so the download could not be "
                     "integrity-verified.")
         messagebox.showinfo("DLC installed", msg, parent=self._app)
-        self._on_close(True)
+        self._close_keeping_edits()
 
     def _remove_image_ocr(self):
         if not messagebox.askyesno(
@@ -269,29 +384,47 @@ class SettingsView(ctk.CTkFrame):
             "DLC removed",
             "Image OCR DLC removed.\n\nRestart the app for the change to take effect.",
             parent=self._app)
-        self._on_close(True)
+        self._close_keeping_edits()
+
+    def _close_keeping_edits(self):
+        """Leave the view after a DLC change without dropping field edits.
+        If a field is invalid, stay open so the user can fix it."""
+        if self._apply_fields():
+            self._on_close(True)
+        elif self.winfo_exists():
+            self._build_dlc_section()
 
     # ── Save ─────────────────────────────────────────────────────
 
-    def _save(self):
+    def _apply_fields(self) -> bool:
+        """Validate and store the form fields. Returns False (after showing
+        an error) if a field is invalid or the settings could not be written."""
         t = parse_time_input(self._start_time_var.get())
         if t is None:
             messagebox.showerror("Invalid time",
                                  "Default start time must be a valid time (e.g. 09:30).",
                                  parent=self._app)
-            return
-        try:
-            rate = float(self._pay_rate_var.get().replace(",", "."))
-            if rate <= 0:
-                raise ValueError
-        except ValueError:
+            return False
+        rate = parse_pay_rate(self._pay_rate_var.get())
+        if rate is None:
             messagebox.showerror("Invalid rate",
-                                 "Pay rate must be a positive number.",
+                                 "Pay rate must be a positive number (e.g. 20 or 20,50).",
                                  parent=self._app)
-            return
-        storage.set_default_start_time(t)
-        storage.set_pay_rate(rate)
-        storage.set_default_job_shift(self._job_var.get().strip())
-        storage.set_export_format(self._fmt_var.get())
-        storage.set_export_include_pay(self._pay_chk_var.get())
-        self._on_close(True)
+            return False
+        appearance = self._appearance_var.get()
+        try:
+            storage.set_default_start_time(t)
+            storage.set_pay_rate(rate)
+            storage.set_default_job_shift(self._job_var.get().strip())
+            storage.set_export_format(self._fmt_var.get())
+            storage.set_export_include_pay(self._pay_chk_var.get())
+            if appearance in storage.APPEARANCE_MODES:
+                storage.set_appearance_mode(appearance)
+        except OSError as exc:
+            messagebox.showerror("Could not save settings",
+                                 f"Settings could not be written:\n\n{exc}",
+                                 parent=self._app)
+            return False
+        self._saved_appearance = appearance
+        self._initial = self._snapshot()
+        return True

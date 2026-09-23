@@ -4,6 +4,7 @@ data.json.bak
 data.json.tmp
 session.json
 shifts.txt
+backups/
 
 # ── Python bytecode ───────────────────────────────────────────
 __pycache__/

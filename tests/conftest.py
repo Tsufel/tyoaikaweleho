@@ -11,6 +11,7 @@ def tmp_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "DATA_FILE",     str(tmp_path / "data.json"))
     monkeypatch.setattr(storage, "SHIFTS_FILE",   str(tmp_path / "shifts.txt"))
     monkeypatch.setattr(storage, "_APPDATA_FILE", str(tmp_path / "appdata.json"))
+    monkeypatch.setattr(storage, "ERROR_LOG",     str(tmp_path / "error.log"))
     return tmp_path
 
 

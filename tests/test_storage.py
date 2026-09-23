@@ -180,3 +180,160 @@ def test_corrupt_data_file_without_backup_raises(tmp_storage):
     (tmp_storage / "data.json").write_text("{ not valid json", encoding="utf-8")
     with pytest.raises(json.JSONDecodeError):
         storage.load_all_entries()
+
+
+# ── daily snapshots ─────────────────────────────────────────────────────────
+
+def test_daily_snapshot_created_once_per_day(tmp_storage):
+    import datetime as dt
+    storage.save_entry(_entry(date="2026-05-10"))   # first write: nothing to snapshot yet
+    snap_dir = tmp_storage / "backups"
+    assert not snap_dir.exists()
+    storage.save_entry(_entry(date="2026-05-11"))
+    storage.save_entry(_entry(date="2026-05-12"))
+    snaps = list(snap_dir.iterdir())
+    assert [p.name for p in snaps] == [f"data-{dt.date.today().isoformat()}.json"]
+    # Snapshot holds the state before the day's first overwrite (one entry)
+    import json
+    data = json.loads(snaps[0].read_text(encoding="utf-8"))
+    assert len(data["entries"]) == 1
+
+
+def test_daily_snapshots_pruned(tmp_storage):
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir()
+    for day in range(1, 21):
+        (snap_dir / f"data-2026-01-{day:02d}.json").write_text("{}", encoding="utf-8")
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-11"))   # triggers today's snapshot + prune
+    names = sorted(p.name for p in snap_dir.iterdir())
+    assert len(names) == storage._SNAPSHOT_KEEP
+    assert "data-2026-01-01.json" not in names
+
+
+# ── appearance mode ───────────────────────────────────────────────────────────
+
+def test_appearance_default_is_system(tmp_storage):
+    assert storage.get_appearance_mode() == "System"
+
+
+def test_appearance_round_trip_keeps_other_settings(tmp_storage):
+    storage.set_pay_rate(25.0)
+    storage.set_appearance_mode("Dark")
+    assert storage.get_appearance_mode() == "Dark"
+    assert storage.get_pay_rate() == 25.0
+
+
+def test_appearance_invalid_stored_value_falls_back(tmp_storage):
+    data = storage._load_raw()
+    data["appearance_mode"] = "Neon"
+    storage._save_raw(data)
+    assert storage.get_appearance_mode() == "System"
+
+
+@pytest.mark.parametrize("mode", ["dark", "Neon", "", None])
+def test_appearance_set_rejects_invalid(tmp_storage, mode):
+    with pytest.raises(ValueError):
+        storage.set_appearance_mode(mode)
+    assert storage.get_appearance_mode() == "System"
+
+
+# ── window geometry ───────────────────────────────────────────────────────────
+
+def test_window_geometry_default_none(tmp_storage):
+    assert storage.get_window_geometry() is None
+
+
+@pytest.mark.parametrize("geom, zoomed", [
+    ("860x700+120+80", False),
+    ("1024x768+-1500+100", True),   # window on a monitor left of the primary
+])
+def test_window_geometry_round_trip(tmp_storage, geom, zoomed):
+    storage.set_window_geometry(geom, zoomed)
+    assert storage.get_window_geometry() == (geom, zoomed)
+
+
+@pytest.mark.parametrize("stored", [
+    "860x700+0+0",                       # not a dict
+    {"geometry": "garbage", "zoomed": False},
+    {"geometry": 42},
+    {},
+])
+def test_window_geometry_bad_stored_value(tmp_storage, stored):
+    data = storage._load_raw()
+    data["window_geometry"] = stored
+    storage._save_raw(data)
+    assert storage.get_window_geometry() is None
+
+
+# ── pay rate sanitising ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("stored", [float("nan"), float("inf"), -5, 0, "20", True])
+def test_get_pay_rate_sanitises(tmp_storage, stored):
+    data = storage._load_raw()
+    data["pay_rate"] = stored
+    storage._save_raw(data)
+    assert storage.get_pay_rate() == 20.0
+
+
+def test_get_pay_rate_int_is_float(tmp_storage):
+    data = storage._load_raw()
+    data["pay_rate"] = 25
+    storage._save_raw(data)
+    rate = storage.get_pay_rate()
+    assert rate == 25.0 and isinstance(rate, float)
+
+
+# ── date normalisation ────────────────────────────────────────────────────────
+
+def test_save_entry_normalises_date(tmp_storage):
+    storage.save_entry(_entry(date="20260602"))
+    assert storage._load_raw()["entries"][0]["date"] == "2026-06-02"
+    assert len(storage.load_month(2026, 6)) == 1
+
+
+def test_load_month_finds_raw_stored_date(tmp_storage):
+    e = _entry(date="2026-06-02")
+    data = storage._load_raw()
+    data["entries"].append({**e.__dict__, "date": "20260602"})
+    storage._save_raw(data)
+    found = storage.load_month(2026, 6)
+    assert [x.id for x in found] == [e.id]
+    assert found[0].date == "2026-06-02"
+    assert storage.load_all_entries()[0].date == "2026-06-02"
+
+
+def test_save_entry_fixes_other_bad_dates(tmp_storage):
+    bad = _entry(date="2026-06-02")
+    data = storage._load_raw()
+    data["entries"].append({**bad.__dict__, "date": "20260602"})
+    storage._save_raw(data)
+    storage.save_entry(_entry(date="2026-06-05"))
+    dates = [e["date"] for e in storage._load_raw()["entries"]]
+    assert dates == ["2026-06-02", "2026-06-05"]
+
+
+# ── error log ─────────────────────────────────────────────────────────────────
+
+def test_append_error_log_writes_header_and_text(tmp_storage):
+    storage.append_error_log("Traceback: boom\n")
+    text = (tmp_storage / "error.log").read_text(encoding="utf-8")
+    assert text.startswith("--- ")
+    assert "Traceback: boom" in text
+
+
+def test_append_error_log_never_raises(tmp_storage, monkeypatch):
+    monkeypatch.setattr(storage, "ERROR_LOG",
+                        str(tmp_storage / "missing" / "dir" / "error.log"))
+    storage.append_error_log("boom")   # must not raise
+
+
+def test_append_error_log_truncates(tmp_storage, monkeypatch):
+    monkeypatch.setattr(storage, "_ERROR_LOG_MAX", 200)
+    log = tmp_storage / "error.log"
+    for i in range(20):
+        storage.append_error_log(f"entry {i:02d} " + "x" * 20)
+    text = log.read_text(encoding="utf-8")
+    assert len(text.encode("utf-8")) < 400
+    assert "entry 19" in text
+    assert "entry 00" not in text

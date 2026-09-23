@@ -5,6 +5,7 @@ from datetime import date
 import customtkinter as ctk
 
 from ui import theme
+from ui.window_utils import clamp_to_workarea, prepare_dialog
 
 _WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
 
@@ -18,7 +19,6 @@ class CalendarPopup(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("Pick a date")
         self.resizable(False, False)
-        self.grab_set()
         self.result: date | None = None
 
         initial = initial or date.today()
@@ -44,15 +44,15 @@ class CalendarPopup(ctk.CTkToplevel):
 
         self.bind("<Escape>", lambda _e: self.destroy())
 
-        # Position next to the anchor widget (clamped to the screen)
-        self.update_idletasks()
+        # Position below the anchor widget, kept on its monitor
         if anchor_widget is not None:
+            self.update_idletasks()
             x = anchor_widget.winfo_rootx()
             y = anchor_widget.winfo_rooty() + anchor_widget.winfo_height() + 4
-            w, h = self.winfo_reqwidth(), self.winfo_reqheight()
-            x = max(0, min(x, self.winfo_screenwidth() - w))
-            y = max(0, min(y, self.winfo_screenheight() - h))
+            x, y = clamp_to_workarea(self, x, y,
+                                     self.winfo_reqwidth(), self.winfo_reqheight())
             self.geometry(f"+{x}+{y}")
+        prepare_dialog(self, parent, center=anchor_widget is None)
 
     # ── Navigation ───────────────────────────────────────────────
 
@@ -81,8 +81,8 @@ class CalendarPopup(ctk.CTkToplevel):
         for col, name in enumerate(_WEEKDAYS):
             ctk.CTkLabel(self._grid, text=name, width=34,
                          font=ctk.CTkFont(size=11, weight="bold"),
-                         text_color=theme.GRAY).grid(row=0, column=col,
-                                                     padx=1, pady=(0, 2))
+                         text_color=theme.TEXT_MUTED).grid(row=0, column=col,
+                                                           padx=1, pady=(0, 2))
 
         today = date.today()
         for row, week in enumerate(calendar.monthcalendar(self._year, self._month),
@@ -92,18 +92,16 @@ class CalendarPopup(ctk.CTkToplevel):
                     continue
                 d = date(self._year, self._month, day)
                 if d == self._selected:
-                    fg, border = theme.GREEN, 0
-                elif d == today:
-                    fg, border = "transparent", 1
+                    style = {"fg_color": theme.GREEN, "hover_color": theme.GREEN_HOVER,
+                             "text_color": "white"}
                 else:
-                    fg, border = "transparent", 0
+                    style = {"fg_color": "transparent", "hover_color": theme.CELL_HOVER,
+                             "text_color": theme.TEXT}
+                if d == today:
+                    style.update(border_width=2, border_color=theme.TODAY_RING)
                 ctk.CTkButton(
                     self._grid, text=str(day), width=34, height=30,
-                    fg_color=fg,
-                    hover_color=theme.GREEN_HOVER,
-                    border_width=border, border_color=theme.BLUE,
-                    text_color=("black", "white") if fg == "transparent" else "white",
-                    command=lambda d=d: self._pick(d),
+                    command=lambda d=d: self._pick(d), **style,
                 ).grid(row=row, column=col, padx=1, pady=1)
 
     def _pick(self, d: date):

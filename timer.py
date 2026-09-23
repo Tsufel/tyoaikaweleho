@@ -28,6 +28,9 @@ class WorkTimer:
         self._save_session()
 
     def stop(self) -> dict | None:
+        """Stop and return the finished shift. session.json is left in place
+        so the shift can still be recovered if saving it fails — call
+        clear_saved_session() once the entry is safely stored."""
         if self.state != TimerState.RUNNING:
             return None
         end_dt = datetime.now()
@@ -39,7 +42,6 @@ class WorkTimer:
         }
         self.state = TimerState.IDLE
         self._start_dt = None
-        self._clear_session()
         return result
 
     def elapsed_str(self) -> str:
@@ -55,6 +57,14 @@ class WorkTimer:
         if self.state != TimerState.RUNNING or self._start_dt is None:
             return 0.0
         return (datetime.now() - self._start_dt).total_seconds()
+
+    @property
+    def start_dt(self) -> datetime | None:
+        return self._start_dt
+
+    @property
+    def job_shift(self) -> str:
+        return self._job_shift
 
     def start_time_str(self) -> str:
         if self._start_dt is None:
@@ -74,12 +84,6 @@ class WorkTimer:
                 "job_shift": self._job_shift,
                 "start": self._start_dt.isoformat(),
             }, f)
-
-    def _clear_session(self):
-        try:
-            os.remove(_SESSION_FILE)
-        except FileNotFoundError:
-            pass
 
 
 def load_saved_session() -> dict | None:

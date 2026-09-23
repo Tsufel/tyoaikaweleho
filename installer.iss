@@ -34,7 +34,7 @@ WizardStyle=modern
 SetupIconFile=icon.ico
 
 [Files]
-; Entire PyInstaller --onedir bundle (exe + _internal\ + splash.png + toolbar.png + icon.ico)
+; Entire PyInstaller --onedir bundle (exe + _internal\, which holds splash.png, toolbar.png, icon.ico)
 ; ignoreversion — always overwrite on update
 ; User data (data.json, shifts.txt, session.json, image_ocr.py) is NOT produced
 ; by the build so it never appears here — it survives updates automatically.
@@ -74,9 +74,12 @@ begin
            mbConfirmation, MB_YESNO) = IDNO then
       begin
         DeleteFile(ExpandConstant('{app}\data.json'));
+        DeleteFile(ExpandConstant('{app}\data.json.bak'));
+        DelTree(ExpandConstant('{app}\backups'), True, True, True);
         DeleteFile(ExpandConstant('{app}\shifts.txt'));
         DeleteFile(ExpandConstant('{app}\session.json'));
         DeleteFile(ExpandConstant('{app}\image_ocr.py'));
+        DeleteFile(ExpandConstant('{app}\error.log'));
         // Remove the install directory itself if now empty
         RemoveDir(ExpandConstant('{app}'));
       end;
