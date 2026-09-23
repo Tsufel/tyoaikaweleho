@@ -51,6 +51,7 @@ jobs:
           --add-data "splash.png;."
           --add-data "toolbar.png;."
           --add-data "icon.ico;."
+          --icon "icon.ico"
           main.py
 
       - name: Build installer (Inno Setup)

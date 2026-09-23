@@ -97,6 +97,29 @@ def test_simple_empty_entries(tmp_path):
     assert wb.active is not None
 
 
+def test_simple_full_calc_on_load(tmp_path):
+    """Formulas must be forced to recalculate on open, or Excel can show
+    stale/blank cached values (e.g. the Total (h) column) until manually
+    recalculated."""
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(out), fmt="Simple")
+    wb = load_workbook(str(out))
+    assert wb.calculation.fullCalcOnLoad is True
+
+
+def test_simple_in_progress_shift_marked(tmp_path):
+    entries = _sample_entries() + [
+        WorkEntry(id="3", date="2026-05-12", job_shift="Sales",
+                  time_in="09:00", time_out=""),
+    ]
+    out = tmp_path / "out.xlsx"
+    export_month(entries, 2026, 5, str(out), fmt="Simple")
+    ws = load_workbook(str(out)).active
+    # Sorted by (date, time_in) — the in-progress shift is the 3rd/last row.
+    assert ws["D4"].value == "In progress"
+    assert ws["E4"].value is None
+
+
 # ── Full format ───────────────────────────────────────────────────────────────
 
 def test_full_sheet_name(tmp_path):
@@ -120,3 +143,25 @@ def test_full_empty_entries(tmp_path):
     out = tmp_path / "out.xlsx"
     export_month([], 2026, 5, str(out), fmt="Full")
     assert load_workbook(str(out)).active is not None
+
+
+def test_full_full_calc_on_load(tmp_path):
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(out), fmt="Full")
+    wb = load_workbook(str(out))
+    assert wb.calculation.fullCalcOnLoad is True
+
+
+def test_full_in_progress_shift_marked(tmp_path):
+    entries = _sample_entries() + [
+        WorkEntry(id="3", date="2026-05-12", job_shift="Sales",
+                  time_in="09:00", time_out=""),
+    ]
+    out = tmp_path / "out.xlsx"
+    export_month(entries, 2026, 5, str(out), fmt="Full")
+    ws = load_workbook(str(out)).active
+    # Data rows start at 13, grouped/spaced by ISO week; 2026-05-10 is its own
+    # week (row 13), then a 2-row spacer, then 05-11/05-12 in the next week
+    # (rows 16-17) — the in-progress shift (05-12) is the last of those.
+    assert ws["D17"].value == "In progress"
+    assert ws["E17"].value is None

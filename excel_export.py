@@ -42,6 +42,7 @@ def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str
 def _export_simple(entries: list[WorkEntry], year: int, month: int,
                    save_path: str, include_pay: bool, pay_rate: float):
     wb = Workbook()
+    wb.calculation.fullCalcOnLoad = True
     ws = wb.active
     ws.title = "Timesheet"
 
@@ -93,6 +94,9 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
             ws[f"E{r}"] = f"=D{r}-C{r}"
             ws[f"E{r}"].number_format = "[H]:MM"
             ws[f"E{r}"].alignment = center
+        else:
+            ws[f"D{r}"] = "In progress"
+            ws[f"D{r}"].alignment = center
 
     # Summary — Total label + SUM formula in column G
     last_data_row = len(sorted_entries) + 1  # row number of last data row
@@ -134,6 +138,7 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
                  save_path: str, pay_rate: float):
     import calendar
     wb = Workbook()
+    wb.calculation.fullCalcOnLoad = True
     ws = wb.active
     ws.title = "MONTHLY TIMESHEET"
 
@@ -234,6 +239,9 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
                 ws[f"E{r}"] = f"=D{r}-C{r}"
                 ws[f"E{r}"].number_format = "[H]:MM"
                 ws[f"E{r}"].alignment = center; ws[f"E{r}"].font = normal_font
+            else:
+                ws[f"D{r}"] = "In progress"
+                ws[f"D{r}"].alignment = center; ws[f"D{r}"].font = normal_font
 
             for col in "ABCDE":
                 ws[f"{col}{r}"].border = _thin_border()

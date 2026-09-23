@@ -37,6 +37,7 @@ pyinstaller --onedir --windowed --name "Tyoaikaweleho" ^
     --add-data "splash.png;." ^
     --add-data "toolbar.png;." ^
     --add-data "icon.ico;." ^
+    --icon "icon.ico" ^
     main.py
 if errorlevel 1 (
     echo ERROR: PyInstaller build failed.
