@@ -8,7 +8,10 @@ Requirements:
     For best results with Finnish timesheets, ensure Finnish is added
     in Windows Settings -> Time & Language -> Language.
 """
-__version__ = "1.1.0"
+__version__ = "2.0.0"
+# 2 = no GUI toolkit at import time; the v2 app uses only the functions.
+# OcrPreviewDialog is still built on first access for v1.3.
+DLC_API = 2
 
 import asyncio
 import re
@@ -25,8 +28,6 @@ except ImportError as _e:
         "Run: pip install winocr pillow"
     ) from _e
 
-import customtkinter as ctk
-from tkinter import messagebox
 import storage
 
 
@@ -238,136 +239,152 @@ def _parse_line(line: str) -> dict | None:
 
 # ── Preview dialog ────────────────────────────────────────────────────────────
 
-class OcrPreviewDialog(ctk.CTkToplevel):
-    """Shows detected entries in an editable table before importing."""
+def _build_preview_dialog():
+    import customtkinter as ctk
+    from tkinter import messagebox
 
-    def __init__(self, parent, candidates: list[dict]):
-        super().__init__(parent)
-        self.title(f"OCR Preview — {len(candidates)} entries detected")
-        self.geometry("840x540")
-        self.minsize(640, 400)
-        self.grab_set()
-        self.confirmed_entries: list[dict] = []
-        self._candidates   = candidates
-        self._check_vars:   list[ctk.BooleanVar] = []
-        self._row_widgets:  list[dict] = []
-        self._build_ui()
+    class OcrPreviewDialog(ctk.CTkToplevel):
+        """Shows detected entries in an editable table before importing."""
 
-    def _build_ui(self):
-        ctk.CTkLabel(
-            self,
-            text="Review detected entries. Uncheck rows to skip; edit fields as needed.",
-            text_color=_GRAY,
-            font=ctk.CTkFont(size=11),
-        ).pack(padx=16, pady=(12, 4), anchor="w")
+        def __init__(self, parent, candidates: list[dict]):
+            super().__init__(parent)
+            self.title(f"OCR Preview — {len(candidates)} entries detected")
+            self.geometry("840x540")
+            self.minsize(640, 400)
+            self.grab_set()
+            self.confirmed_entries: list[dict] = []
+            self._candidates   = candidates
+            self._check_vars:   list[ctk.BooleanVar] = []
+            self._row_widgets:  list[dict] = []
+            self._build_ui()
 
-        # Fixed column headers
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.pack(fill="x", padx=18, pady=(0, 2))
-        for text, w in [
-            ("",     28), ("Date", 110), ("Shift", 130),
-            ("In",   72), ("Out",  72),  ("Raw OCR text", 330),
-        ]:
+        def _build_ui(self):
             ctk.CTkLabel(
-                header, text=text, width=w,
-                font=ctk.CTkFont(weight="bold"), anchor="w",
-            ).pack(side="left", padx=2)
+                self,
+                text="Review detected entries. Uncheck rows to skip; edit fields as needed.",
+                text_color=_GRAY,
+                font=ctk.CTkFont(size=11),
+            ).pack(padx=16, pady=(12, 4), anchor="w")
 
-        # Scrollable entry rows
-        self._scroll = ctk.CTkScrollableFrame(self, height=370)
-        self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 4))
+            # Fixed column headers
+            header = ctk.CTkFrame(self, fg_color="transparent")
+            header.pack(fill="x", padx=18, pady=(0, 2))
+            for text, w in [
+                ("",     28), ("Date", 110), ("Shift", 130),
+                ("In",   72), ("Out",  72),  ("Raw OCR text", 330),
+            ]:
+                ctk.CTkLabel(
+                    header, text=text, width=w,
+                    font=ctk.CTkFont(weight="bold"), anchor="w",
+                ).pack(side="left", padx=2)
 
-        for i, cand in enumerate(self._candidates):
-            self._add_row(i, cand)
+            # Scrollable entry rows
+            self._scroll = ctk.CTkScrollableFrame(self, height=370)
+            self._scroll.pack(fill="both", expand=True, padx=16, pady=(0, 4))
 
-        # Bottom action bar
-        btn_row = ctk.CTkFrame(self, fg_color="transparent")
-        btn_row.pack(pady=10)
-        self._import_btn = ctk.CTkButton(
-            btn_row,
-            text=f"Import Selected ({len(self._candidates)})",
-            width=220,
-            fg_color=_PURPLE, hover_color=_PURPLE_HOVER,
-            command=self._confirm,
-        )
-        self._import_btn.pack(side="left", padx=8)
-        ctk.CTkButton(
-            btn_row, text="Cancel", width=100,
-            fg_color=_GRAY, hover_color="#636e72",
-            command=self.destroy,
-        ).pack(side="left", padx=8)
-        self._update_btn_label()
+            for i, cand in enumerate(self._candidates):
+                self._add_row(i, cand)
 
-    def _add_row(self, idx: int, cand: dict):
-        uncertain = cand.get("_confidence") == "uncertain"
-        row_frame = ctk.CTkFrame(
-            self._scroll,
-            fg_color="#3d2b1a" if uncertain else "transparent",
-            corner_radius=4,
-        )
-        row_frame.pack(fill="x", pady=1, padx=2)
+            # Bottom action bar
+            btn_row = ctk.CTkFrame(self, fg_color="transparent")
+            btn_row.pack(pady=10)
+            self._import_btn = ctk.CTkButton(
+                btn_row,
+                text=f"Import Selected ({len(self._candidates)})",
+                width=220,
+                fg_color=_PURPLE, hover_color=_PURPLE_HOVER,
+                command=self._confirm,
+            )
+            self._import_btn.pack(side="left", padx=8)
+            ctk.CTkButton(
+                btn_row, text="Cancel", width=100,
+                fg_color=_GRAY, hover_color="#636e72",
+                command=self.destroy,
+            ).pack(side="left", padx=8)
+            self._update_btn_label()
 
-        check_var = ctk.BooleanVar(value=True)
-        check_var.trace_add("write", lambda *_: self._update_btn_label())
-        self._check_vars.append(check_var)
-        ctk.CTkCheckBox(row_frame, text="", variable=check_var, width=28).pack(
-            side="left", padx=(4, 2)
-        )
+        def _add_row(self, idx: int, cand: dict):
+            uncertain = cand.get("_confidence") == "uncertain"
+            row_frame = ctk.CTkFrame(
+                self._scroll,
+                fg_color="#3d2b1a" if uncertain else "transparent",
+                corner_radius=4,
+            )
+            row_frame.pack(fill="x", pady=1, padx=2)
 
-        date_var  = ctk.StringVar(value=cand.get("date", ""))
-        shift_var = ctk.StringVar(value=cand.get("job_shift", "GPSR"))
-        in_var    = ctk.StringVar(value=cand.get("time_in",  ""))
-        out_var   = ctk.StringVar(value=cand.get("time_out", ""))
-        self._row_widgets.append({
-            "check":   check_var,
-            "date":    date_var,
-            "shift":   shift_var,
-            "time_in": in_var,
-            "time_out": out_var,
-        })
+            check_var = ctk.BooleanVar(value=True)
+            check_var.trace_add("write", lambda *_: self._update_btn_label())
+            self._check_vars.append(check_var)
+            ctk.CTkCheckBox(row_frame, text="", variable=check_var, width=28).pack(
+                side="left", padx=(4, 2)
+            )
 
-        ctk.CTkEntry(row_frame, textvariable=date_var,  width=110).pack(side="left", padx=2)
-        ctk.CTkComboBox(
-            row_frame, variable=shift_var,
-            values=storage.get_job_shift_history(), width=130,
-        ).pack(side="left", padx=2)
-        ctk.CTkEntry(row_frame, textvariable=in_var,   width=72).pack(side="left", padx=2)
-        ctk.CTkEntry(row_frame, textvariable=out_var,  width=72).pack(side="left", padx=2)
-        ctk.CTkLabel(
-            row_frame,
-            text=cand.get("_raw_line", "")[:55],
-            width=330, anchor="w",
-            text_color=_GRAY, font=ctk.CTkFont(size=10),
-        ).pack(side="left", padx=(6, 4))
-
-    def _update_btn_label(self):
-        count = sum(1 for v in self._check_vars if v.get())
-        self._import_btn.configure(text=f"Import Selected ({count})")
-
-    def _confirm(self):
-        entries = []
-        for w in self._row_widgets:
-            if not w["check"].get():
-                continue
-            entries.append({
-                "date":      w["date"].get().strip(),
-                "job_shift": w["shift"].get().strip(),
-                "time_in":   w["time_in"].get().strip(),
-                "time_out":  w["time_out"].get().strip(),
+            date_var  = ctk.StringVar(value=cand.get("date", ""))
+            shift_var = ctk.StringVar(value=cand.get("job_shift", "GPSR"))
+            in_var    = ctk.StringVar(value=cand.get("time_in",  ""))
+            out_var   = ctk.StringVar(value=cand.get("time_out", ""))
+            self._row_widgets.append({
+                "check":   check_var,
+                "date":    date_var,
+                "shift":   shift_var,
+                "time_in": in_var,
+                "time_out": out_var,
             })
 
-        valid, skipped_count = [], 0
-        for e in entries:
-            if e["date"] and e["time_in"]:
-                valid.append(e)
-            else:
-                skipped_count += 1
+            ctk.CTkEntry(row_frame, textvariable=date_var,  width=110).pack(side="left", padx=2)
+            ctk.CTkComboBox(
+                row_frame, variable=shift_var,
+                values=storage.get_job_shift_history(), width=130,
+            ).pack(side="left", padx=2)
+            ctk.CTkEntry(row_frame, textvariable=in_var,   width=72).pack(side="left", padx=2)
+            ctk.CTkEntry(row_frame, textvariable=out_var,  width=72).pack(side="left", padx=2)
+            ctk.CTkLabel(
+                row_frame,
+                text=cand.get("_raw_line", "")[:55],
+                width=330, anchor="w",
+                text_color=_GRAY, font=ctk.CTkFont(size=10),
+            ).pack(side="left", padx=(6, 4))
 
-        if skipped_count:
-            messagebox.showwarning(
-                "Rows skipped",
-                f"{skipped_count} row(s) had no date or start time and were skipped.",
-                parent=self,
-            )
-        self.confirmed_entries = valid
-        self.destroy()
+        def _update_btn_label(self):
+            count = sum(1 for v in self._check_vars if v.get())
+            self._import_btn.configure(text=f"Import Selected ({count})")
+
+        def _confirm(self):
+            entries = []
+            for w in self._row_widgets:
+                if not w["check"].get():
+                    continue
+                entries.append({
+                    "date":      w["date"].get().strip(),
+                    "job_shift": w["shift"].get().strip(),
+                    "time_in":   w["time_in"].get().strip(),
+                    "time_out":  w["time_out"].get().strip(),
+                })
+
+            valid, skipped_count = [], 0
+            for e in entries:
+                if e["date"] and e["time_in"]:
+                    valid.append(e)
+                else:
+                    skipped_count += 1
+
+            if skipped_count:
+                messagebox.showwarning(
+                    "Rows skipped",
+                    f"{skipped_count} row(s) had no date or start time and were skipped.",
+                    parent=self,
+                )
+            self.confirmed_entries = valid
+            self.destroy()
+
+    return OcrPreviewDialog
+
+
+def __getattr__(name):
+    # v1.3 reads image_ocr.OcrPreviewDialog; build it only then, so the v2
+    # app can import this module without customtkinter/tkinter
+    if name == "OcrPreviewDialog":
+        cls = _build_preview_dialog()
+        globals()[name] = cls
+        return cls
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
