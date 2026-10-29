@@ -1,7 +1,7 @@
 """Shared pure-logic utilities.
 
-Kept separate from app.py so the test suite can import them without
-pulling in customtkinter (which needs a display).
+Kept free of UI imports so the test suite and the webapp controller can
+import them without a display.
 """
 import math
 import os
@@ -149,6 +149,25 @@ def format_duration(minutes: int) -> str:
     return f"{minutes // 60}h {minutes % 60:02d}m"
 
 
+SLOTS = [f"{h:02d}:{m:02d}" for h in range(24) for m in (0, 30)]
+
+
+def nearest_slot(t: str | None) -> int | None:
+    """Index in SLOTS of the half-hour closest to *t* (ties round up), or
+    None if *t* isn't a time. 23:50 rounds to 00:00."""
+    t = parse_time_input(t) if t else None
+    if t is None:
+        return None
+    h, m = map(int, t.split(":"))
+    return (h * 60 + m + 15) // 30 % len(SLOTS)
+
+
+def format_rate(rate: float) -> str:
+    """20.0 → '20', 20.5 → '20.5' (how Settings shows the pay rate)."""
+    text = repr(float(rate))
+    return text[:-2] if text.endswith(".0") else text
+
+
 def week_key(d: date) -> tuple[int, int]:
     """(ISO year, ISO week) — sorts correctly across a year boundary."""
     iso = d.isocalendar()
@@ -156,7 +175,7 @@ def week_key(d: date) -> tuple[int, int]:
 
 
 def get_app_dir() -> str:
-    """Directory where app assets (splash.png, toolbar.png, icon.ico) live.
+    """Directory where bundled app files (icon.ico, the webui/ frontend) live.
     Works both when running from source and when frozen by PyInstaller."""
     if getattr(sys, "frozen", False):
         # PyInstaller 6 puts --add-data files in _internal\ (sys._MEIPASS),

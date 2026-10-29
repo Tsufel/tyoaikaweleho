@@ -4,7 +4,10 @@ from datetime import datetime
 from enum import Enum
 
 
-_DATA_DIR = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Tyoaikaweleho")
+# WELEHO_DATA_DIR (see storage.py) keeps dev/test sessions out of AppData
+_DATA_DIR = (os.path.abspath(os.environ["WELEHO_DATA_DIR"].strip())
+             if os.environ.get("WELEHO_DATA_DIR", "").strip()
+             else os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "Tyoaikaweleho"))
 _SESSION_FILE = os.path.join(_DATA_DIR, "session.json")
 
 

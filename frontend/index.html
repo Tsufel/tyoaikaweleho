@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' ws:; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <!-- Vite hashes this into dist/assets; favicons load under img-src 'self' -->
+    <link rel="icon" type="image/webp" href="/src/assets/logo.webp" />
+    <title>Työaikaweleho</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0b1a;
+      }
+      @media (prefers-color-scheme: light) {
+        html,
+        body {
+          background: #f6f5fb;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot" aria-hidden="true"></div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

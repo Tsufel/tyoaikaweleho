@@ -24,6 +24,12 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
@@ -37,22 +43,27 @@ jobs:
           }
           "VERSION=$pyVer" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Build app bundle (PyInstaller)
-        run: >
-          pyinstaller --onedir --windowed --name "Tyoaikaweleho"
-          --collect-all customtkinter
-          --collect-all winocr
-          --collect-all PIL
-          --hidden-import winrt.windows.media.ocr
-          --hidden-import winrt.windows.graphics.imaging
-          --hidden-import winrt.windows.storage.streams
-          --hidden-import winrt.windows.foundation
-          --hidden-import winrt.runtime
-          --add-data "splash.png;."
-          --add-data "toolbar.png;."
-          --add-data "icon.ico;."
-          --icon "icon.ico"
-          main.py
+        run: pyinstaller --noconfirm Tyoaikaweleho.spec
+
+      - name: Smoke test the bundle
+        shell: pwsh
+        run: |
+          $env:WELEHO_DATA_DIR = Join-Path $env:RUNNER_TEMP "weleho-smoke"
+          New-Item -ItemType Directory -Force $env:WELEHO_DATA_DIR | Out-Null
+          $p = Start-Process "dist\Tyoaikaweleho\Tyoaikaweleho.exe" -ArgumentList "--smoke-test" -PassThru
+          $null = $p.Handle   # keeps ExitCode readable after exit
+          if (-not $p.WaitForExit(90000)) {
+            Stop-Process -Id $p.Id -Force
+            Write-Error "Smoke test timed out"
+          }
+          if ($p.ExitCode -ne 0) { Write-Error "Smoke test failed with exit code $($p.ExitCode)" }
 
       - name: Build installer (Inno Setup)
         shell: pwsh

@@ -1,6 +1,26 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.0.0": [
+        "Brand-new glassy look: frosted-glass panels over an animated "
+        "gradient background, smooth animations, light and dark themes",
+        "Animated timer ring that glows and fills toward your daily target "
+        "(set it in Settings), with rolling numbers and live earnings",
+        "New Stats view: hours and earnings per day, week or month, shift "
+        "breakdown, average per day and longest shift",
+        "Lulz mode (Settings, off by default): your shift catches fire the "
+        "longer it runs, with a flame burst when you clock out",
+        "Reduce effects setting tones the animations down (also follows "
+        "Windows' reduced-motion setting); animations pause when hidden",
+        "Entries grouped by week with inline time editing and a new add/edit "
+        "window with date and time pickers",
+        "Image OCR results open in a new preview sheet; installing the OCR "
+        "DLC no longer needs a restart",
+        "Window position, size and maximised state are remembered and kept "
+        "on-screen; starting the app again brings the open window forward",
+        "All v1.3 rules carry over: crash recovery, close-while-running "
+        "prompt, undo delete, keyboard shortcuts and safe saving",
+    ],
     "1.3.0": [
         "Dark mode: choose System, Light or Dark in Settings; the table, "
         "message boxes and popups follow it",

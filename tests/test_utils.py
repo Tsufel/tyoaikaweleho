@@ -259,11 +259,11 @@ def test_format_duration(minutes, expected):
     ("00:00", 0), ("23:44", 47), ("23:50", 0),
 ])
 def test_nearest_slot(t, expected):
-    from ui.time_picker_popup import nearest_slot
+    from utils import nearest_slot
     assert nearest_slot(t) == expected
 
 
 @pytest.mark.parametrize("t", [None, "", "abc"])
 def test_nearest_slot_invalid(t):
-    from ui.time_picker_popup import nearest_slot
+    from utils import nearest_slot
     assert nearest_slot(t) is None

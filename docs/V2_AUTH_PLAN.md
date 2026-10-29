@@ -2,7 +2,9 @@
 
 > Status: **planning** — nothing in this document is implemented yet.
 > Scope constraint: v2 must keep working **fully locally and offline**. No server, no
-> network authentication, no telemetry.
+> network authentication, no telemetry. Optional multi-PC sync (via a user-chosen
+> synced folder, still no server) is designed separately in
+> [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md).
 
 ## Why
 
@@ -16,7 +18,7 @@ timesheets, and (b) a user's data can optionally be encrypted at rest.
 | Goals | Non-goals (v2) |
 |-------|----------------|
 | Local username + password sign-in | Cloud accounts / OAuth / SSO |
-| Per-user timesheet data and settings | Syncing between machines |
+| Per-user timesheet data and settings | Syncing between machines in v2.0 (follow-up: [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md)) |
 | Industry-standard password hashing with stdlib only | Protecting against an attacker with admin rights and a debugger |
 | Migration of existing single-user data | Multi-user *concurrent* use (one session at a time is fine) |
 | Optional at-rest encryption (phase 2) | Password recovery via email |
@@ -109,17 +111,20 @@ First launch of v2 with an existing `data.json` next to the exe:
 
 ## Phase 2 (optional, separate release): encryption at rest
 
-- Encrypt `users/<id>/data.json` with **Fernet** (AES-128-CBC + HMAC) from the
-  `cryptography` package — the only new dependency, added only when this
-  phase ships.
-- Key = PBKDF2(password, per-user `enc_salt`, 600k) — derived at sign-in,
-  held in memory only; **never written to disk**.
+- **Envelope encryption**: a random 256-bit data key (DEK) encrypts
+  `users/<id>/data.enc` with **AES-GCM** from the `cryptography` package —
+  the only new dependency, added only when this phase ships. Same blob format
+  as the sync design in [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md), so sync can reuse it.
+- The DEK is wrapped by KEK = `hashlib.scrypt(password, enc_salt, …)` —
+  derived at sign-in, held in memory only; **never written to disk**.
+  Changing the password only re-wraps the DEK.
 - Opt-in per user ("Encrypt my data" checkbox at account creation or in
   Settings), because the trade-off is real: **forgotten password = lost
-  data**.
-- Mitigation: on enabling encryption, generate a one-time recovery key
-  (base64 of the raw data key), show it once, and tell the user to store it
-  somewhere safe; accept it in a "Forgot password" flow to re-key.
+  data**. Enabling sync requires encryption.
+- Mitigation: on enabling encryption, generate a one-time random recovery key
+  that wraps the DEK a second time, show it once, and tell the user to store
+  it somewhere safe; accept it in a "Forgot password" flow to set a new
+  password.
 - Export to Excel remains plaintext by definition — warn in the UI.
 
 ## Out-of-scope hardening noted for later

@@ -20,6 +20,21 @@ def _time_fraction(hhmm: str) -> float:
     return (h * 60 + m) / (24 * 60)
 
 
+def _shift_fraction(entry: WorkEntry) -> float | None:
+    """Shift length as an Excel day fraction, or None if not finished.
+
+    Written as a plain value rather than a formula: openpyxl can't store a
+    cached result, so viewers that don't recalculate (mail/Drive/phone
+    previews) would otherwise show the totals blank or 0.
+    """
+    if not entry.time_in or not entry.time_out:
+        return None
+    frac = _time_fraction(entry.time_out) - _time_fraction(entry.time_in)
+    if is_overnight(entry.time_in, entry.time_out):
+        frac += 1.0
+    return frac
+
+
 # ── public entry point ─────────────────────────────────────────────────────────
 
 def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str,
@@ -69,6 +84,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
     # Data rows — sorted by (date, time_in), starting at row 2
     sorted_entries = sorted(entries, key=lambda e: (e.date, e.time_in))
+    total = 0.0
 
     for i, entry in enumerate(sorted_entries):
         r = i + 2
@@ -91,14 +107,17 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
             ws[f"D{r}"].number_format = "HH:MM"
             ws[f"D{r}"].alignment = center
 
-            ws[f"E{r}"] = f"=D{r}-C{r}"
-            ws[f"E{r}"].number_format = "[H]:MM"
-            ws[f"E{r}"].alignment = center
+            hours = _shift_fraction(entry)
+            if hours is not None:
+                total += hours
+                ws[f"E{r}"] = hours
+                ws[f"E{r}"].number_format = "[H]:MM"
+                ws[f"E{r}"].alignment = center
         else:
             ws[f"D{r}"] = "In progress"
             ws[f"D{r}"].alignment = center
 
-    # Summary — Total label + SUM formula in column G
+    # Summary — Total label + total hours in column G
     last_data_row = len(sorted_entries) + 1  # row number of last data row
     total_label_row = last_data_row + 2
     total_sum_row   = last_data_row + 3
@@ -106,10 +125,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
     ws[f"G{total_label_row}"] = "Total"
     ws[f"G{total_label_row}"].font = bold
 
-    if sorted_entries:
-        ws[f"G{total_sum_row}"] = f"=SUM(E2:E{last_data_row})"
-    else:
-        ws[f"G{total_sum_row}"] = 0
+    ws[f"G{total_sum_row}"] = total
     ws[f"G{total_sum_row}"].number_format = "[H]:MM"
     ws[f"G{total_sum_row}"].font = bold
 
@@ -125,7 +141,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
         ws[f"G{earned_row}"] = "Earned"
         ws[f"G{earned_row}"].font = bold
-        ws[f"H{earned_row}"] = f"=G{total_sum_row}*24*H{rate_row}"
+        ws[f"H{earned_row}"] = total * 24 * pay_rate
         ws[f"H{earned_row}"].number_format = '#,##0.00\\ "€"'
         ws[f"H{earned_row}"].font = Font(bold=True)
 
@@ -207,13 +223,12 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
         wk = d.isocalendar()[1]
         by_week.setdefault(wk, []).append(e)
 
-    data_rows: list[int] = []
     current_row = 13
+    total = 0.0
 
     for week_num in sorted(by_week.keys()):
         for entry in by_week[week_num]:
             r = current_row
-            data_rows.append(r)
             ws.row_dimensions[r].height = 16
 
             d = date.fromisoformat(entry.date)
@@ -236,9 +251,12 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
                 ws[f"D{r}"].number_format = "HH:MM"
                 ws[f"D{r}"].alignment = center; ws[f"D{r}"].font = normal_font
 
-                ws[f"E{r}"] = f"=D{r}-C{r}"
-                ws[f"E{r}"].number_format = "[H]:MM"
-                ws[f"E{r}"].alignment = center; ws[f"E{r}"].font = normal_font
+                hours = _shift_fraction(entry)
+                if hours is not None:
+                    total += hours
+                    ws[f"E{r}"] = hours
+                    ws[f"E{r}"].number_format = "[H]:MM"
+                    ws[f"E{r}"].alignment = center; ws[f"E{r}"].font = normal_font
             else:
                 ws[f"D{r}"] = "In progress"
                 ws[f"D{r}"].alignment = center; ws[f"D{r}"].font = normal_font
@@ -260,13 +278,7 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
     ws[f"H{summary_start+1}"].font = label_font
     ws[f"H{summary_start+1}"].alignment = center
 
-    if data_rows:
-        hours_refs   = "+".join([f"E{r}" for r in data_rows])
-        total_formula = f"={hours_refs}"
-    else:
-        total_formula = "=0"
-
-    ws[f"I{summary_start+1}"] = total_formula
+    ws[f"I{summary_start+1}"] = total
     ws[f"I{summary_start+1}"].number_format = "[H]:MM"
     ws[f"I{summary_start+1}"].font = Font(name="Arial", bold=True, size=10)
     ws[f"I{summary_start+1}"].alignment = center
@@ -276,14 +288,15 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
 
     subtotal_row = summary_start + 5
     ws[f"D{subtotal_row}"] = "SUB-TOTAL"; ws[f"D{subtotal_row}"].font = label_font
-    ws[f"E{subtotal_row}"] = f"=I{summary_start+1}*24*H8"
+    subtotal = total * 24 * pay_rate
+    ws[f"E{subtotal_row}"] = subtotal
     ws[f"E{subtotal_row}"].number_format = "#,##0.00"
     ws[f"E{subtotal_row}"].font = Font(name="Arial", bold=True, size=10)
     ws[f"E{subtotal_row}"].border = _thin_border()
 
     total_row = subtotal_row + 2
     ws[f"L{total_row}"] = "TOTAL"; ws[f"L{total_row}"].font = label_font
-    ws[f"M{total_row}"] = f"=E{subtotal_row}"
+    ws[f"M{total_row}"] = subtotal
     ws[f"M{total_row}"].number_format = "#,##0.00"
     ws[f"M{total_row}"].font = Font(name="Arial", bold=True, size=10)
     ws[f"M{total_row}"].border = _thin_border()

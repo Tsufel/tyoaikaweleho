@@ -8,17 +8,28 @@ import uuid
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, time
 
-from utils import parse_date_input
+from utils import parse_date_input, parse_time_input
 
+# Dev / test / smoke runs point this at a scratch folder so they never touch
+# the real data next to the exe (timer.py honours it for session.json too)
+DATA_DIR_ENV = "WELEHO_DATA_DIR"
+_DATA_DIR_OVERRIDE = os.environ.get(DATA_DIR_ENV, "").strip()
 
-if getattr(sys, "frozen", False):
+if _DATA_DIR_OVERRIDE:
+    DATA_DIR = os.path.abspath(_DATA_DIR_OVERRIDE)
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+    except OSError:
+        pass
+elif getattr(sys, "frozen", False):
     # Running as PyInstaller bundle — data lives next to the .exe
     DATA_DIR = os.path.dirname(sys.executable)
 else:
     DATA_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(DATA_DIR, "data.json")
 
-_APPDATA_FILE = os.path.join(
+# never migrate the real AppData copy into an overridden data dir
+_APPDATA_FILE = "" if _DATA_DIR_OVERRIDE else os.path.join(
     os.environ.get("APPDATA", ""), "Tyoaikaweleho", "data.json")
 
 
@@ -33,7 +44,7 @@ class WorkEntry:
 
 def _migrate_from_appdata():
     """Copy AppData data.json to local folder on first run."""
-    if os.path.exists(_APPDATA_FILE) and not os.path.exists(DATA_FILE):
+    if _APPDATA_FILE and os.path.exists(_APPDATA_FILE) and not os.path.exists(DATA_FILE):
         shutil.copy2(_APPDATA_FILE, DATA_FILE)
 
 
@@ -276,12 +287,11 @@ def set_appearance_mode(mode: str):
 
 
 _GEOMETRY = re.compile(r"\d+x\d+[+-]-?\d+[+-]-?\d+")
+# the form Tk's wm_geometry() reports ("+-1500" for a negative position)
+_TK_GEOMETRY = re.compile(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)")
 
 
-def get_window_geometry() -> tuple[str, bool] | None:
-    """(Tk geometry string of the restored window, was it maximised) from
-    the last close, or None if never saved or unreadable."""
-    saved = _load_raw().get("window_geometry")
+def _legacy_geometry(saved) -> tuple[str, bool] | None:
     if not isinstance(saved, dict):
         return None
     geom = saved.get("geometry")
@@ -290,9 +300,169 @@ def get_window_geometry() -> tuple[str, bool] | None:
     return geom, bool(saved.get("zoomed", False))
 
 
+def get_window_geometry() -> tuple[str, bool] | None:
+    """(Tk geometry string of the restored window, was it maximised) from
+    the last close, or None if never saved or unreadable."""
+    return _legacy_geometry(_load_raw().get("window_geometry"))
+
+
 def set_window_geometry(geom: str, zoomed: bool):
     data = _load_raw()
     data["window_geometry"] = {"geometry": geom, "zoomed": bool(zoomed)}
+    _save_raw(data)
+
+
+_PLACEMENT_VERSION = 2
+_PLACEMENT_KEYS = ("left", "top", "right", "bottom")
+
+
+def _is_int(v) -> bool:
+    return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _clean_placement(p) -> dict | None:
+    if not isinstance(p, dict) or p.get("v") != _PLACEMENT_VERSION:
+        return None
+    if not all(_is_int(p.get(k)) for k in _PLACEMENT_KEYS):
+        return None
+    if p["right"] <= p["left"] or p["bottom"] <= p["top"]:
+        return None
+    return {"v": _PLACEMENT_VERSION,
+            **{k: p[k] for k in _PLACEMENT_KEYS},
+            "maximized": bool(p.get("maximized", False))}
+
+
+def get_window_placement() -> dict | None:
+    """Restored-window rectangle and maximised flag from the last close:
+    {v: 2, left, top, right, bottom, maximized}. Falls back to the v1 Tk
+    geometry ("WxH+X+Y"); None if neither is usable."""
+    data = _load_raw()
+    placement = _clean_placement(data.get("window_placement"))
+    if placement is not None:
+        return placement
+    legacy = _legacy_geometry(data.get("window_geometry"))
+    m = _TK_GEOMETRY.fullmatch(legacy[0]) if legacy else None
+    if m is None:
+        return None
+    w, h, x, y = (int(g) for g in m.groups())
+    if w <= 0 or h <= 0:
+        return None
+    return {"v": _PLACEMENT_VERSION, "left": x, "top": y, "right": x + w,
+            "bottom": y + h, "maximized": legacy[1]}
+
+
+def set_window_placement(placement: dict):
+    """Store a placement (see get_window_placement). The v1 geometry key is
+    written too, so a downgrade to v1.3 still restores the window."""
+    clean = _clean_placement({**placement, "v": _PLACEMENT_VERSION}
+                             if isinstance(placement, dict) else None)
+    if clean is None:
+        raise ValueError(f"invalid window placement: {placement!r}")
+    w, h = clean["right"] - clean["left"], clean["bottom"] - clean["top"]
+    data = _load_raw()
+    data["window_placement"] = clean
+    data["window_geometry"] = {"geometry": f"{w}x{h}+{clean['left']}+{clean['top']}",
+                               "zoomed": clean["maximized"]}
+    _save_raw(data)
+
+
+UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "target_hours": 8.0}
+TARGET_HOURS_RANGE = (1.0, 24.0)
+
+
+def _valid_target_hours(v) -> bool:
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)
+            and math.isfinite(v)
+            and TARGET_HOURS_RANGE[0] <= v <= TARGET_HOURS_RANGE[1])
+
+
+def _clean_ui_prefs(raw) -> dict:
+    prefs = dict(UI_PREF_DEFAULTS)
+    if isinstance(raw, dict):
+        for key in ("lulz", "reduce_effects"):
+            if isinstance(raw.get(key), bool):
+                prefs[key] = raw[key]
+        if _valid_target_hours(raw.get("target_hours")):
+            prefs["target_hours"] = float(raw["target_hours"])
+    return prefs
+
+
+def merge_ui_prefs(base, changes: dict) -> dict:
+    """*base* (cleaned) with the keys in *changes* applied. Raises
+    ValueError for an unknown key or a bad value."""
+    if not isinstance(changes, dict):
+        raise ValueError("ui_prefs must be an object")
+    prefs = _clean_ui_prefs(base)
+    for key, value in changes.items():
+        if key in ("lulz", "reduce_effects"):
+            if not isinstance(value, bool):
+                raise ValueError(f"{key} must be true or false")
+            prefs[key] = value
+        elif key == "target_hours":
+            if not _valid_target_hours(value):
+                raise ValueError("target_hours must be between 1 and 24")
+            prefs[key] = float(value)
+        else:
+            raise ValueError(f"unknown ui pref: {key}")
+    return prefs
+
+
+def get_ui_prefs() -> dict:
+    """{lulz, reduce_effects, target_hours}, defaults for anything unset."""
+    return _clean_ui_prefs(_load_raw().get("ui_prefs"))
+
+
+def set_ui_prefs(changes: dict) -> dict:
+    """Apply a partial ui_prefs update; returns the stored prefs."""
+    data = _load_raw()
+    prefs = merge_ui_prefs(data.get("ui_prefs"), changes)
+    data["ui_prefs"] = prefs
+    _save_raw(data)
+    return prefs
+
+
+EXPORT_FORMATS = ("Simple", "Full")
+
+
+def _check_setting(key: str, value):
+    if key == "pay_rate":
+        if (isinstance(value, bool) or not isinstance(value, (int, float))
+                or not math.isfinite(value) or value <= 0):
+            raise ValueError("pay_rate must be a positive number")
+    elif key == "default_start_time":
+        if not isinstance(value, str) or parse_time_input(value) != value:
+            raise ValueError("default_start_time must be HH:MM")
+    elif key == "default_job_shift":
+        if not isinstance(value, str):
+            raise ValueError("default_job_shift must be a string")
+    elif key == "export_format":
+        if value not in EXPORT_FORMATS:
+            raise ValueError(f"export_format must be one of {EXPORT_FORMATS}")
+    elif key == "export_include_pay":
+        if not isinstance(value, bool):
+            raise ValueError("export_include_pay must be true or false")
+    elif key == "appearance_mode":
+        if value not in APPEARANCE_MODES:
+            raise ValueError(f"appearance mode must be one of {APPEARANCE_MODES}")
+    elif key != "ui_prefs":
+        raise ValueError(f"unknown setting: {key}")
+
+
+def save_settings(values: dict):
+    """Write several settings in one load/save, so either all or none of
+    them are stored. Keys are the data.json names (pay_rate,
+    default_start_time, default_job_shift, export_format,
+    export_include_pay, appearance_mode, ui_prefs — which may be partial).
+    Raises ValueError, writing nothing, for a bad key or value."""
+    for key, value in values.items():
+        _check_setting(key, value)
+    data = _load_raw()
+    for key, value in values.items():
+        if key == "ui_prefs":
+            value = merge_ui_prefs(data.get("ui_prefs"), value)
+        elif key == "pay_rate":
+            value = float(value)
+        data[key] = value
     _save_raw(data)
 
 

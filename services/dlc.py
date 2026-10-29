@@ -8,6 +8,7 @@ old version-only format is tolerated but reported as unverified) and only
 moved into place atomically once it is complete and valid.
 """
 import hashlib
+import importlib
 import os
 import sys
 import tempfile
@@ -31,6 +32,53 @@ def load_module():
         return image_ocr
     except ImportError:
         return None
+
+
+_REQUIRED = ("extract_entries_from_image", "save_confirmed_entries")
+_status: dict | None = None
+_module = None
+
+
+def _load() -> dict:
+    global _module
+    _module = None
+    if not is_installed():
+        return {"state": "missing", "version": None, "error": None}
+    try:
+        import image_ocr
+    except Exception as exc:   # ImportError for missing deps, or a broken file
+        return {"state": "incompatible", "version": None, "error": str(exc)}
+    version = getattr(image_ocr, "__version__", None)
+    missing = [n for n in _REQUIRED if not callable(getattr(image_ocr, n, None))]
+    if missing:
+        return {"state": "incompatible", "version": version,
+                "error": f"missing {', '.join(missing)}"}
+    _module = image_ocr
+    return {"state": "ok", "version": version, "error": None}
+
+
+def load_status() -> dict:
+    """{state: 'missing'|'ok'|'incompatible', version, error}, computed on
+    first call and cached until reload()."""
+    global _status
+    if _status is None:
+        _status = _load()
+    return dict(_status)
+
+
+def module():
+    """The loaded DLC module when load_status() is 'ok', else None."""
+    load_status()
+    return _module
+
+
+def reload() -> dict:
+    """Re-import the DLC (after install/remove) and return the new status."""
+    global _status
+    sys.modules.pop("image_ocr", None)
+    importlib.invalidate_caches()
+    _status = None
+    return load_status()
 
 
 def dlc_path() -> str:

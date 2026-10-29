@@ -17,6 +17,7 @@ dist/
 build/
 Output/
 *.spec
+!Tyoaikaweleho.spec
 
 # ── Local tooling / IDE ───────────────────────────────────────
 .claude/

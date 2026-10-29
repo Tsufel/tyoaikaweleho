@@ -131,11 +131,23 @@ def _download_to(url: str, dest_path: str, timeout: int = _DOWNLOAD_TIMEOUT):
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
     with urllib.request.urlopen(req, timeout=timeout) as r, \
             open(dest_path, "wb") as f:
+        try:
+            expected = int(r.headers.get("Content-Length") or -1)
+        except ValueError:
+            expected = -1
+        written = 0
         while True:
             chunk = r.read(64 * 1024)
             if not chunk:
                 break
             f.write(chunk)
+            written += len(chunk)
+    # HTTPResponse.read(n) returns b"" (no IncompleteRead) when the server
+    # hangs up early, so a cut-off installer would otherwise be launched
+    # whenever the release has no .sha256 asset to catch it.
+    if expected >= 0 and written != expected:
+        raise UpdateError(
+            f"Download was incomplete ({written} of {expected} bytes) — update aborted.")
 
 
 def _fetch_expected_sha256(sha256_url: str) -> str:
