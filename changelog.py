@@ -1,6 +1,20 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.0": [
+        "Achievements: earn medals for your hours, streaks, early starts, "
+        "late finishes and more. See them all from the new tile in Stats; "
+        "anything you'd already earned is unlocked for you right away",
+        "New achievements pop up with an animated card once you end your "
+        "shift, so they never interrupt you mid-shift",
+        "Work pet (Settings, off by default): a familiar or a wizard keeps "
+        "you company on the Timer card. Give it a name, pet it with a click "
+        "and open its sheet (right-click) to see its energy and level",
+        "Your pet charges up as you log hours and levels up over time. It "
+        "flies along while you work, gets tired towards the end of a shift "
+        "and naps on your days off; it never goes hungry or sad",
+        "Listen out for what it has to say, especially on Fridays",
+    ],
     "2.0.1": [
         "Fixed \"Could not check for updates\" (certificate verify failed) on "
         "PCs where Windows was missing GitHub's security certificate; update "
