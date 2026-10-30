@@ -57,11 +57,15 @@ jobs:
         run: |
           $env:WELEHO_DATA_DIR = Join-Path $env:RUNNER_TEMP "weleho-smoke"
           New-Item -ItemType Directory -Force $env:WELEHO_DATA_DIR | Out-Null
-          $p = Start-Process "dist\Tyoaikaweleho\Tyoaikaweleho.exe" -ArgumentList "--smoke-test" -PassThru
-          $null = $p.Handle   # keeps ExitCode readable after exit
-          if (-not $p.WaitForExit(90000)) {
+          # One retry on timeout: the first launch of a fresh bundle can stall
+          # while antivirus scans it
+          foreach ($attempt in 1..2) {
+            $p = Start-Process "dist\Tyoaikaweleho\Tyoaikaweleho.exe" -ArgumentList "--smoke-test" -PassThru
+            $null = $p.Handle   # keeps ExitCode readable after exit
+            if ($p.WaitForExit(90000)) { break }
             Stop-Process -Id $p.Id -Force
-            Write-Error "Smoke test timed out"
+            if ($attempt -eq 2) { Write-Error "Smoke test timed out" }
+            Write-Warning "Smoke test timed out, retrying"
           }
           if ($p.ExitCode -ne 0) { Write-Error "Smoke test failed with exit code $($p.ExitCode)" }
 

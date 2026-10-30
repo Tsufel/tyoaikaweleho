@@ -5,7 +5,7 @@
   import type { EntryRow, WorkEntry } from '../../lib/api/types';
   import { fade, flip, fly, stagger } from '../../lib/motion';
   import { registerCommand, SHORTCUT_LABELS } from '../../lib/shortcuts';
-  import { alert, openSheet, reportError } from '../../lib/stores/confirm';
+  import { alert, askYesNo, openSheet, reportError } from '../../lib/stores/confirm';
   import { registerEditGuard } from '../../lib/stores/editGuard';
   import {
     goToCurrentMonth,
@@ -27,6 +27,7 @@
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import Spinner from '../../lib/ui/Spinner.svelte';
   import { openOcrImport } from '../ocr/ocrImport';
+  import { installDlc } from '../settings/updateFlow';
   import {
     buildRows,
     decideClose,
@@ -338,12 +339,24 @@
 
   async function importOcr() {
     if (!(await closeEditor(true))) return;
+    if ($dlc.state === 'incompatible') {
+      // e.g. a v1.x DLC carried over from the old app: offer the update here
+      // rather than hiding the item and leaving the fix in Settings
+      const update = await askYesNo(
+        'Image OCR needs an update',
+        `The installed Image OCR DLC${$dlc.version ? ` (v${$dlc.version})` : ''} doesn't work with this version of the app.\n\nUpdate it now?`,
+        { icon: 'warning', yes: 'Update' },
+      );
+      if (!update || !(await installDlc('update'))?.ocr_available) return;
+    }
     await openOcrImport();
   }
 
   const importItems = $derived<MenuItem[]>([
     { id: 'excel', label: 'From Excel…', icon: 'file' },
-    ...($dlc.ocr_available ? [{ id: 'ocr', label: 'From image (OCR)…', icon: 'image' as const }] : []),
+    ...($dlc.ocr_available || $dlc.state === 'incompatible'
+      ? [{ id: 'ocr', label: 'From image (OCR)…', icon: 'image' as const }]
+      : []),
   ]);
 
   function onImportPick(id: string) {

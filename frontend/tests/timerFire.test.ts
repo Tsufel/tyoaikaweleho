@@ -194,12 +194,17 @@ describe('fire sim', () => {
       if (k % 10 === 0) f.flare(0, 0, 100, 1, 1);
       if (k % 10 === 5) f.burst(10000, 0, 100, 60);
       f.step(1 / 30);
+      // one assertion per step: ~100k expect() calls timed out on a busy machine
+      const bad: number[] = [];
       for (let i = 0; i < f.alive; i++) {
-        expect(f.pal[i]).toBe(f.x[i] < 5000 ? 1 : 0);
-        expect(f.seed[i]).toBeGreaterThanOrEqual(0);
-        expect(f.seed[i]).toBeLessThan(1);
-        expect(f.life[i]).toBeLessThanOrEqual(f.maxLife[i] + 1e-6);
+        const ok =
+          f.pal[i] === (f.x[i] < 5000 ? 1 : 0) &&
+          f.seed[i] >= 0 &&
+          f.seed[i] < 1 &&
+          f.life[i] <= f.maxLife[i] + 1e-6;
+        if (!ok) bad.push(i);
       }
+      expect(bad).toEqual([]);
     }
   });
 

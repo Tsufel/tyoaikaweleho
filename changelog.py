@@ -8,14 +8,21 @@ CHANGELOG: dict[str, list[str]] = {
         "(set it in Settings), with rolling numbers and live earnings",
         "New Stats view: hours and earnings per day, week or month, shift "
         "breakdown, average per day and longest shift",
+        "Start dial: forgot to clock in? Wind the idle clock back "
+        "anticlockwise (drag, mouse wheel or ←/→) to start the shift earlier",
+        "Liquid glass (Settings, off by default): an iPhone-style look with "
+        "lenses that bend the background",
         "Lulz mode (Settings, off by default): your shift catches fire the "
-        "longer it runs, with a flame burst when you clock out",
+        "longer it runs, flares up at milestones, burns blue in overtime "
+        "and explodes when you clock out, with optional sound",
         "Reduce effects setting tones the animations down (also follows "
         "Windows' reduced-motion setting); animations pause when hidden",
         "Entries grouped by week with inline time editing and a new add/edit "
         "window with date and time pickers",
         "Image OCR results open in a new preview sheet; installing the OCR "
-        "DLC no longer needs a restart",
+        "DLC no longer needs a restart. If you had it before, update it from "
+        "Import ▸ From image or Settings ▸ DLC Store",
+        "Updates now reopen the app automatically once they're installed",
         "Window position, size and maximised state are remembered and kept "
         "on-screen; starting the app again brings the open window forward",
         "All v1.3 rules carry over: crash recovery, close-while-running "

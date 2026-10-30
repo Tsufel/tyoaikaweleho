@@ -176,8 +176,9 @@ def apply_update(download_url: str, sha256_url: str | None = None):
     Raises UpdateError if the URL is not a release asset of this app's
     repository or the checksum does not match. The Inno Setup installer
     handles overwriting the app, closing the running instance
-    (/CLOSEAPPLICATIONS), and relaunching afterwards
-    (/RESTARTAPPLICATIONS). No-op when running from Python source.
+    (/CLOSEAPPLICATIONS), and relaunching afterwards (its [Run] section
+    starts the app after a silent install). No-op when running from
+    Python source.
     """
     if not getattr(sys, "frozen", False):
         return
@@ -207,7 +208,8 @@ def apply_update(download_url: str, sha256_url: str | None = None):
 
     # /SILENT      — no wizard UI
     # /CLOSEAPPLICATIONS — gracefully closes the running instance before install
-    # /RESTARTAPPLICATIONS — relaunches the app after install completes
+    # /RESTARTAPPLICATIONS — harmless but not what relaunches us: we exit
+    #   before Setup's Restart Manager step, so installer.iss [Run] does it
     subprocess.Popen([tmp, "/SILENT", "/CLOSEAPPLICATIONS", "/RESTARTAPPLICATIONS"])
     # os._exit (not sys.exit) so the interpreter drops all file/DLL handles
     # immediately instead of unwinding through normal Python/Tk teardown —

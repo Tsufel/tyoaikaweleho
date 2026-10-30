@@ -57,6 +57,9 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Run]
 ; Launch the app after the installer finishes (user can uncheck this)
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+; In-app updates run Setup with /SILENT after the app has already exited, so
+; Restart Manager has nothing to restart: bring the app back from here
+Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Flags: nowait; Check: RelaunchAfterSilentUpdate
 
 [UninstallDelete]
 ; WebView2 browser cache/profile (not user data)
@@ -82,6 +85,13 @@ begin
   Result := WebView2VersionOk(HKLM32) or WebView2VersionOk(HKCU);
   if not Result and IsWin64 then
     Result := WebView2VersionOk(HKLM64);
+end;
+
+// [Run] check: relaunch after an in-app (silent) update, unless the app
+// could not draw its window anyway
+function RelaunchAfterSilentUpdate(): Boolean;
+begin
+  Result := WizardSilent() and WebView2Installed();
 end;
 
 // ─────────────────────────────────────────────────────────────────────────────
