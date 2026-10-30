@@ -8,7 +8,7 @@
   import type { ChangelogBlock, RecoveryResult } from './lib/api/types';
   import { fade, fly } from './lib/motion';
   import { registerCommand, runCommand } from './lib/shortcuts';
-  import { animationsActive, bootstrap, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
+  import { animationsActive, bootstrap, lulz, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
   import { goToCurrentMonth, refreshMonth, setViewMonth, shiftMonth, viewMonth } from './lib/stores/entries';
   import { applyRecoveryResult, pendingRecovery } from './lib/stores/recovery';
   import { applySettings, dlc } from './lib/stores/settings';
@@ -45,6 +45,8 @@
   let monthOpen = $state(false);
   let wide = $state(true);
   const loadStats = () => import('./views/stats/StatsView.svelte');
+  // Lulz overlay, sound and milestones: lazy so the fx chunk only loads with Lulz on.
+  const loadFx = () => import('./fx/fire/FxDirector.svelte');
 
   // App-level fallbacks, registered before child views so theirs win.
   const offs = [
@@ -152,7 +154,7 @@
 
 <MeshBackground />
 
-<div class="shell" inert={$modalOpen > 0 || !introDone}>
+<div class="shell" data-fx-root inert={$modalOpen > 0 || !introDone}>
   <header class="topbar glass">
     <div class="brand">
       <img src={logo} alt="" width="28" height="28" />
@@ -262,6 +264,11 @@
 <UpdateFlow />
 <ConfirmHost />
 <Toasts />
+{#if $lulz}
+  {#await loadFx() then m}
+    <m.default />
+  {/await}
+{/if}
 
 {#if !introDone}
   <Intro version={$bootstrap?.version ?? ''} play={introPlay} ondone={() => (introDone = true)} />

@@ -1,5 +1,6 @@
 import { get } from 'svelte/store';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { FxEvent } from '../src/fx/fire/fxBus';
 import type { ConfirmRequest, TimerState } from '../src/lib/api/types';
 
 const fakeApi = vi.hoisted(() => ({
@@ -24,6 +25,7 @@ const { setTimer, timer, IDLE_TIMER } = await import('../src/lib/stores/timer');
 const { toasts, clearToasts } = await import('../src/lib/stores/toasts');
 const actions = await import('../src/views/timer/timerActions');
 const { handleCloseRequest } = await import('../src/views/modals/closeFlow');
+const { onFx } = await import('../src/fx/fire/fxBus');
 
 // ── dialog driver: answers each confirm with the next scripted choice ──
 let script: string[] = [];
@@ -68,13 +70,20 @@ function needs(kind: ConfirmRequest['kind'], options: string[], def: string, can
   };
 }
 
+// ── fx bus spy ──
+let fx: FxEvent[] = [];
+let unsubFx = () => {};
+
 beforeEach(() => {
   vi.clearAllMocks();
   script = [];
   shown = [];
   clearToasts();
   fakeApi.get_timer.mockResolvedValue({ ok: true, status: 'ok', timer: get(timer) });
+  fx = [];
+  unsubFx = onFx((e) => fx.push(e));
 });
+afterEach(() => unsubFx());
 
 describe('stop (§6.1)', () => {
   it('F5 asks stop_shift; "keep" leaves the shift running', async () => {
@@ -88,6 +97,7 @@ describe('stop (§6.1)', () => {
     expect(fakeApi.timer_stop).toHaveBeenNthCalledWith(2, 'shortcut', [{ kind: 'stop_shift', choice: 'keep', token: START }]);
     expect(get(timer).running).toBe(true);
     expect(get(toasts)).toHaveLength(0);
+    expect(fx).toEqual([]);
   });
 
   it('Escape on stop_shift answers cancel (keep)', async () => {
@@ -97,6 +107,7 @@ describe('stop (§6.1)', () => {
       .mockResolvedValueOnce({ ok: true, status: 'cancelled', timer: running });
     await actions.stopShift('shortcut');
     expect(fakeApi.timer_stop.mock.calls[1][1]).toEqual([{ kind: 'stop_shift', choice: 'keep', token: START }]);
+    expect(fx).toEqual([]);
   });
 
   it('save failure keeps the timer running and reports it', async () => {
@@ -111,6 +122,7 @@ describe('stop (§6.1)', () => {
     expect(get(timer).running).toBe(true);
     expect(shown.at(-1)?.title).toBe('Could not save shift');
     expect(get(actions.burst)).toBe(0);
+    expect(fx).toEqual([]);
   });
 
   it('under a minute → toast with the Python message', async () => {
@@ -119,6 +131,7 @@ describe('stop (§6.1)', () => {
     await actions.stopShift('button');
     expect(get(timer).running).toBe(false);
     expect(get(toasts).map((t) => t.message)).toEqual(['Shift under a minute — not saved']);
+    expect(fx).toEqual([{ kind: 'fizzle' }]);
   });
 
   it('over_24h → discard → discard_shift cancel keeps running; answers accumulate', async () => {
@@ -134,16 +147,45 @@ describe('stop (§6.1)', () => {
       { kind: 'discard_shift', choice: 'cancel', token: START },
     ]);
     expect(get(timer).running).toBe(true);
+    expect(fx).toEqual([]);
   });
 
   it('saved → burst, toast and jump to the entry', async () => {
     setTimer(running);
     const entry = { id: 'e1', date: '2026-10-29', job_shift: 'Support', time_in: '09:00', time_out: '17:00', minutes: 480 };
     fakeApi.timer_stop.mockResolvedValueOnce({ ok: true, status: 'saved', timer: idle, entry });
+    // At emit time: burst already bumped, toast not yet shown.
+    let atBlast: { burst: number; toasts: number } | null = null;
+    const unsub = onFx((e) => {
+      if (e.kind === 'blast') atBlast = { burst: get(actions.burst), toasts: get(toasts).length };
+    });
+    let fxAtShow: FxEvent[] = [];
+    spies.showEntry.mockImplementationOnce(() => void (fxAtShow = [...fx]));
+    const burst0 = get(actions.burst);
     await actions.stopShift('button');
-    expect(get(actions.burst)).toBe(1);
+    unsub();
+    expect(get(actions.burst)).toBe(burst0 + 1);
     expect(spies.showEntry).toHaveBeenCalledWith(entry);
     expect(get(toasts)[0].message).toBe('Shift saved — 8h 00m');
+    expect(fx).toEqual([{ kind: 'blast', minutes: 480 }]);
+    expect(fxAtShow).toEqual(fx);
+    expect(atBlast).toEqual({ burst: burst0 + 1, toasts: 0 });
+  });
+
+  it('not_running → re-reads the timer, no fx', async () => {
+    setTimer(running);
+    fakeApi.timer_stop.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'not_running', message: '' } });
+    fakeApi.get_timer.mockResolvedValueOnce({ ok: true, status: 'ok', timer: idle });
+    await actions.stopShift('button');
+    expect(get(timer).running).toBe(false);
+    expect(fx).toEqual([]);
+  });
+
+  it('saved without an entry → blast with null minutes', async () => {
+    setTimer(running);
+    fakeApi.timer_stop.mockResolvedValueOnce({ ok: true, status: 'saved', timer: idle });
+    await actions.stopShift('button');
+    expect(fx).toEqual([{ kind: 'blast', minutes: null }]);
   });
 
   it('stale → re-reads the timer', async () => {
@@ -151,6 +193,7 @@ describe('stop (§6.1)', () => {
     fakeApi.timer_stop.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'stale', message: 'changed' }, timer: running });
     await actions.stopShift('button');
     expect(fakeApi.get_timer).toHaveBeenCalled();
+    expect(fx).toEqual([]);
   });
 });
 
@@ -159,9 +202,23 @@ describe('start (§6.2)', () => {
     setTimer(idle);
     actions.jobDraft.set('Night');
     fakeApi.timer_start.mockResolvedValueOnce({ ok: true, status: 'ok', timer: { ...running, job_shift: 'Night' } });
+    let runningAtIgnite: boolean | null = null;
+    const unsub = onFx((e) => {
+      if (e.kind === 'ignite') runningAtIgnite = get(timer).running;
+    });
     await actions.toggleTimer();
+    unsub();
     expect(fakeApi.timer_start).toHaveBeenCalledWith('now', null, 'Night', undefined);
     expect(get(timer).running).toBe(true);
+    expect(fx).toEqual([{ kind: 'ignite' }]);
+    expect(runningAtIgnite).toBe(true);
+  });
+
+  it('ok but the timer is not running → no ignite', async () => {
+    setTimer(idle);
+    fakeApi.timer_start.mockResolvedValueOnce({ ok: true, status: 'ok', timer: idle });
+    await actions.startShift('now');
+    expect(fx).toEqual([]);
   });
 
   it('start_ahead "now" re-calls with the answer', async () => {
@@ -173,6 +230,53 @@ describe('start (§6.2)', () => {
     await actions.startShift('at', '23:30');
     expect(fakeApi.timer_start.mock.calls[0].slice(0, 2)).toEqual(['at', '23:30']);
     expect(fakeApi.timer_start.mock.calls[1][3]).toEqual([{ kind: 'start_ahead', choice: 'now' }]);
+    expect(fx).toEqual([{ kind: 'ignite' }]);
+  });
+
+  it('start_ahead cancelled → no ignite', async () => {
+    setTimer(idle);
+    const ahead = needs('start_ahead', ['now', 'earlier', 'cancel'], 'now', 'cancel');
+    fakeApi.timer_start
+      .mockResolvedValueOnce({ ...ahead, confirm: { ...ahead.confirm, token: undefined } })
+      .mockResolvedValueOnce({ ok: true, status: 'cancelled', timer: idle });
+    script = ['cancel'];
+    await actions.startShift('at', '23:30');
+    expect(get(timer).running).toBe(false);
+    expect(fx).toEqual([]);
+  });
+
+  it('invalid start time → alert, no ignite', async () => {
+    setTimer(idle);
+    fakeApi.timer_start.mockResolvedValueOnce({ ok: false, status: 'invalid', field: 'time', message: 'Bad time', timer: idle });
+    await actions.startShift('at', '25:00');
+    expect(shown.at(-1)?.title).toBe('Invalid start time');
+    expect(fx).toEqual([]);
+  });
+
+  it('already running → no ignite even though the timer runs', async () => {
+    setTimer(idle);
+    fakeApi.timer_start.mockResolvedValueOnce({
+      ok: false,
+      status: 'error',
+      error: { code: 'already_running', message: 'Already running.' },
+      timer: running,
+    });
+    await actions.startShift('now');
+    expect(get(timer).running).toBe(true);
+    expect(fx).toEqual([]);
+  });
+
+  it('start error → reported, no ignite', async () => {
+    setTimer(idle);
+    fakeApi.timer_start.mockResolvedValueOnce({
+      ok: false,
+      status: 'error',
+      error: { code: 'save_failed', message: 'locked' },
+      timer: idle,
+    });
+    await actions.startShift('now');
+    expect(shown.at(-1)?.title).toBe('Could not start the shift');
+    expect(fx).toEqual([]);
   });
 
   it('start dial pre-answers start_ahead with the past (yesterday) start', async () => {
@@ -183,6 +287,7 @@ describe('start (§6.2)', () => {
     expect(fakeApi.timer_start.mock.calls[0].slice(0, 2)).toEqual(['at', '01:30']);
     expect(fakeApi.timer_start.mock.calls[0][3]).toEqual([{ kind: 'start_ahead', choice: 'earlier' }]);
     expect(shown).toHaveLength(0);
+    expect(fx).toEqual([{ kind: 'ignite' }]);
   });
 
   it('start dial at "now" is a plain start now', async () => {
@@ -191,6 +296,7 @@ describe('start (§6.2)', () => {
     await actions.startDialShift(null);
     expect(fakeApi.timer_start.mock.calls[0][0]).toBe('now');
     expect(fakeApi.timer_start.mock.calls[0][3]).toBeUndefined();
+    expect(fx).toEqual([{ kind: 'ignite' }]);
   });
 
   it('recovery pending re-offers recovery instead of starting', async () => {
@@ -204,6 +310,7 @@ describe('start (§6.2)', () => {
     await actions.startShift('now');
     expect(spies.offerRecovery).toHaveBeenCalled();
     expect(shown).toHaveLength(0);
+    expect(fx).toEqual([]);
   });
 
   it('jobDraft follows the default job only while idle', () => {
@@ -222,6 +329,7 @@ describe('start (§6.2)', () => {
     release({ ok: true, status: 'ok', timer: running });
     await first;
     expect(fakeApi.timer_start).toHaveBeenCalledTimes(1);
+    expect(fx).toEqual([{ kind: 'ignite' }]);
   });
 });
 

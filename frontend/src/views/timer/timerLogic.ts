@@ -4,8 +4,8 @@ export const IDLE_TEXT = 'Press START (F5) to begin tracking';
 
 /** SVG ring geometry (viewBox units), shared with the fire layer. */
 export const RING = { size: 240, r: 100, stroke: 14 } as const;
-/** The fire canvas overhangs the ring box by this fraction on every side. */
-export const FIRE_OVERHANG = 0.14;
+/** Radius of the inner disc holding the clock (viewBox units); the fire never draws inside it. */
+export const RING_INNER = RING.r - RING.stroke / 2 - 9;
 
 /** Fraction of the daily target done; > 1 in overtime. */
 export function ringProgress(elapsedSeconds: number, targetHours: number): number {
@@ -36,12 +36,16 @@ export function haloHue(progress: number): number {
   return HUE_STOPS[0][1];
 }
 
-/** Lulz fire strength 0.15…1.4: grows with elapsed time, keeps growing a bit in overtime. */
+/** Overtime cap of fireIntensity; same as MAX_INTENSITY in fx/fire/fireSim (not imported: keeps the fx chunk lazy). */
+const FIRE_MAX = 1.6;
+
+/** Lulz fire strength: 0.45 at the start, 1 at the target (sqrt curve, ≈0.64 after 1 h of 8),
+ *  then +0.6 per target length of overtime up to 1.6. */
 export function fireIntensity(elapsedSeconds: number, targetHours: number): number {
   const p = ringProgress(elapsedSeconds, targetHours);
-  if (p <= 0) return 0.15;
-  const base = 0.15 + 0.85 * Math.min(1, Math.sqrt(p));
-  return Math.min(1.4, base + Math.max(0, p - 1) * 0.4);
+  if (!(p > 0)) return 0.45;
+  if (p <= 1) return 0.45 + 0.55 * Math.sqrt(p);
+  return Math.min(FIRE_MAX, 1 + (p - 1) * 0.6);
 }
 
 export type FireBadge = { emoji: string; text: string } | null;

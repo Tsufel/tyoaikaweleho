@@ -1,4 +1,5 @@
 import { get, readable, writable } from 'svelte/store';
+import { emitFx } from '../../fx/fire/fxBus';
 import { api, runFlow } from '../../lib/api';
 import type { ConfirmList, HHMM, StartMode, StopResult, StopSource, TimerResult } from '../../lib/api/types';
 import { alert, reportError } from '../../lib/stores/confirm';
@@ -55,6 +56,7 @@ export function startShift(
     const jobShift = (job ?? get(jobDraft)).trim() || null;
     const r = await runFlow((c) => api.timer_start(mode, mode === 'at' ? time ?? null : null, jobShift, c), preset);
     if (r.timer) setTimer(r.timer);
+    if (r.status === 'ok' && r.timer.running) emitFx({ kind: 'ignite' });
     if (r.status === 'invalid') {
       await alert('Invalid start time', r.message, 'error');
     } else if (r.status === 'error') {
@@ -79,12 +81,14 @@ export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopRes
     else await refreshTimer();
     if (r.status === 'saved') {
       burst.update((n) => n + 1);
+      emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
       if (r.entry) {
         const mins = r.entry.minutes;
         toast(`Shift saved${mins != null ? ` — ${formatDuration(mins)}` : ''}`, { tone: 'success', ms: 4000 });
         await showEntry(r.entry);
       }
     } else if (r.status === 'discarded') {
+      emitFx({ kind: 'fizzle' });
       toast(r.message ?? 'Shift discarded', { tone: 'warning', ms: 5000 });
     } else if (r.status === 'error') {
       if (r.error.code === 'stale' || r.error.code === 'not_running') {

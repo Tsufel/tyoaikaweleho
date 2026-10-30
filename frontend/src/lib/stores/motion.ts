@@ -24,3 +24,6 @@ export const lulz: Readable<boolean> = derived(
   [settings, motion],
   ([$s, $m]) => $s.ui_prefs.lulz && $m === 'full',
 );
+
+/** Lulz sound: needs effective Lulz (so also off under reduced motion) and the lulz_sound pref. */
+export const lulzSound: Readable<boolean> = derived([settings, lulz], ([$s, $l]) => $l && $s.ui_prefs.lulz_sound);

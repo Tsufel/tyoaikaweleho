@@ -62,3 +62,9 @@ export function contrastRatio(a: string, b: string): number {
   const lb = luminance(base);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
+
+/** FIRE with a white-hot core stop first (blasts, tier peaks), hot → cool. */
+export const FIRE_HOT = ['#ffffff', ...FIRE] as const;
+
+/** Overtime "blue flame" palette, white-hot → deep indigo (6 stops, hot → cool). */
+export const FIRE_BLUE = ['#ffffff', '#e0f2fe', '#7dd3fc', '#38bdf8', '#4f46e5', '#1e1b4b'] as const;

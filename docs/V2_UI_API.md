@@ -166,7 +166,7 @@ The current shift must never be lost:
 | `get_settings()` | — | `R<{settings: Settings, shifts: string[]}>` |
 | `save_settings(draft)` | `SettingsDraft` | `R<{settings: Settings, shifts: string[]}>` §6.9 |
 | `add_job_shift(name)` | `string` | `R<{added: boolean, shifts: string[]}>`; `added:false` + message `"'X' is already in the shift list."` when present (case-insensitive); `invalid` when blank |
-| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Reduce effects) that do not go through the Settings Save button |
+| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects) that do not go through the Settings Save button |
 
 ### Stats
 | method | params | returns |
@@ -355,7 +355,10 @@ Bootstrap = {
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
-  ui_prefs: {lulz:false, reduce_effects:false, target_hours:8}}`.
+  ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false, target_hours:8}}`.
+  `lulz_sound` (default off) enables the synthesized fire sound; it only plays
+  while Lulz is effective. Bool prefs are read leniently (a non-bool stored
+  value falls back to false) but saved strictly (non-bool → `invalid`).
 - `DlcStatus {state:'missing'|'ok'|'incompatible', version, update_version,
   message, ocr_available}` (`ocr_available` = Import ▸ From image enabled).
 - `OcrCandidate {date, job_shift, time_in, time_out, raw_line, confidence:
@@ -439,8 +442,8 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   `saveUiPrefs(partial) → Promise<boolean>`, `dlc`, `shifts`.
 - `stores/motion.ts`: `motion: MotionLevel` (`'full'|'reduced'`, from
   reduce_effects + prefers-reduced-motion), `lulz` (forced off under reduced
-  motion), `prefersReducedMotion`. `<html>` carries `data-motion` and
-  `data-paused` (page hidden/minimised) for CSS.
+  motion), `lulzSound` (`lulz && ui_prefs.lulz_sound`), `prefersReducedMotion`.
+  `<html>` carries `data-motion` and `data-paused` (page hidden/minimised) for CSS.
 - `stores/modals.ts`: `pushModal(focus) → {id, release}`, `modalOpen` (count),
   `topModal`, `focusTopModal()`. App marks the shell `inert` while
   `modalOpen > 0`.

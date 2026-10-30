@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import type { DlcStatus, Settings } from '../src/lib/api/types';
+import { get } from 'svelte/store';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { DlcStatus, Settings, UiPrefs } from '../src/lib/api/types';
+import { lulz, lulzSound } from '../src/lib/stores/motion';
+import { DEFAULT_SETTINGS, DEFAULT_UI_PREFS, applySettings, settings } from '../src/lib/stores/settings';
 import {
   checkOutcome,
   clampTarget,
@@ -24,7 +27,7 @@ const S: Settings = {
   default_job_shift: 'Morning',
   export_format: 'Simple',
   export_include_pay: false,
-  ui_prefs: { lulz: true, reduce_effects: false, target_hours: 8 },
+  ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, target_hours: 8 },
 };
 
 const dlc = (p: Partial<DlcStatus>): DlcStatus => ({
@@ -54,10 +57,10 @@ describe('settings form', () => {
 
   it('draft keeps instantly-saved prefs from live settings', () => {
     const f = { ...formFromSettings(S), pay_rate: ' 20,50 ', target_hours: 6 };
-    const live = { ...S, ui_prefs: { ...S.ui_prefs, lulz: false, reduce_effects: true } };
+    const live = { ...S, ui_prefs: { ...S.ui_prefs, lulz: false, reduce_effects: true, lulz_sound: true } };
     const d = draftFromForm(f, live);
     expect(d.pay_rate).toBe('20,50');
-    expect(d.ui_prefs).toEqual({ lulz: false, reduce_effects: true, target_hours: 6 });
+    expect(d.ui_prefs).toEqual({ lulz: false, reduce_effects: true, lulz_sound: true, target_hours: 6 });
   });
 
   it('clamps and formats the daily target', () => {
@@ -79,6 +82,46 @@ describe('settings form', () => {
   it('previews pay in euros', () => {
     expect(payPreview(20, 8)).toBe('€160.00 for a 8 h day');
     expect(payPreview(null, 8)).toBeNull();
+  });
+});
+
+describe('lulz sound', () => {
+  const withPrefs = (p: Partial<UiPrefs>) => applySettings({ ...S, ui_prefs: { ...S.ui_prefs, ...p } });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    applySettings(DEFAULT_SETTINGS);
+  });
+
+  it('defaults off, also when a stored prefs object predates the key', () => {
+    expect(DEFAULT_UI_PREFS.lulz_sound).toBe(false);
+    applySettings({ ...S, ui_prefs: { lulz: true } as UiPrefs });
+    expect(get(settings).ui_prefs.lulz_sound).toBe(false);
+    expect(get(lulz)).toBe(true);
+    expect(get(lulzSound)).toBe(false);
+  });
+
+  it('is on only when both lulz and lulz_sound are on', () => {
+    withPrefs({ lulz: false, lulz_sound: true });
+    expect(get(lulzSound)).toBe(false);
+    withPrefs({ lulz: true, lulz_sound: false });
+    expect(get(lulzSound)).toBe(false);
+    withPrefs({ lulz: true, lulz_sound: true });
+    expect(get(lulzSound)).toBe(true);
+  });
+
+  it('is off when reduce effects blocks lulz', () => {
+    withPrefs({ lulz: true, lulz_sound: true, reduce_effects: true });
+    expect(get(lulz)).toBe(false);
+    expect(get(lulzSound)).toBe(false);
+  });
+
+  it('is off under system reduced motion', () => {
+    withPrefs({ lulz: true, lulz_sound: true });
+    expect(get(lulzSound)).toBe(true);
+    const mq = { matches: true, addEventListener: () => {}, removeEventListener: () => {} };
+    vi.stubGlobal('matchMedia', () => mq);
+    expect(get(lulz)).toBe(false);
+    expect(get(lulzSound)).toBe(false);
   });
 });
 

@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { get } from 'svelte/store';
   import wizard from '../../assets/wizard.webp';
+  import { emitFx } from '../../fx/fire/fxBus';
   import { api } from '../../lib/api';
   import type { Appearance, ExportFormat } from '../../lib/api/types';
   import { fly, stagger } from '../../lib/motion';
@@ -178,6 +179,10 @@
   async function toggleLulz(v: boolean) {
     await saveUiPrefs({ lulz: v });
   }
+  async function toggleLulzSound(v: boolean) {
+    // emitted after the save resolves; relies on the click's (sticky) user activation to unlock audio
+    if ((await saveUiPrefs({ lulz_sound: v })) && v) emitFx({ kind: 'soundcheck' });
+  }
   async function toggleReduce(v: boolean) {
     await saveUiPrefs({ reduce_effects: v });
   }
@@ -194,6 +199,8 @@
   const lulz = $derived($settings.ui_prefs.lulz);
   const reduceFx = $derived($settings.ui_prefs.reduce_effects);
   const lulzBlocked = $derived(reduceFx || $prefersReducedMotion);
+  const lulzSound = $derived($settings.ui_prefs.lulz_sound);
+  const soundOff = $derived(!lulz || lulzBlocked);
   const checkedAgo = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 </script>
 
@@ -274,6 +281,19 @@
             </div>
           </div>
           <Switch label="Lulz" checked={lulz && !lulzBlocked} disabled={lulzBlocked} onchange={toggleLulz} />
+        </div>
+        <div class="switch-row">
+          <div>
+            <div class="row-title">Lulz sound <span aria-hidden="true">🔊</span></div>
+            <div class="muted small">
+              {#if soundOff}
+                Needs Lulz on.
+              {:else}
+                Synthesized crackle, whoosh and boom. Saved instantly.
+              {/if}
+            </div>
+          </div>
+          <Switch label="Lulz sound" checked={lulzSound && !soundOff} disabled={soundOff} onchange={toggleLulzSound} />
         </div>
         <div class="switch-row">
           <div>

@@ -11,8 +11,17 @@
     running,
     hue,
     targetHours,
+    overHue = null,
     children,
-  }: { progress: number; running: boolean; hue: number; targetHours: number; children?: Snippet } = $props();
+  }: {
+    progress: number;
+    running: boolean;
+    hue: number;
+    targetHours: number;
+    /** Tint the overtime lap with this hue instead of the warm amber → pink (Lulz blue overtime). */
+    overHue?: number | null;
+    children?: Snippet;
+  } = $props();
 
   const uid = Math.random().toString(36).slice(2, 8);
   const { size, r, stroke } = RING;
@@ -40,8 +49,8 @@
         <stop offset="1" stop-color="hsl({hue} 90% 60%)" />
       </linearGradient>
       <linearGradient id="over-{uid}" x1="0" y1="1" x2="1" y2="0">
-        <stop offset="0" stop-color="#fbbf24" />
-        <stop offset="1" stop-color="#f472b6" />
+        <stop offset="0" stop-color={overHue == null ? '#fbbf24' : `hsl(${overHue} 95% 82%)`} />
+        <stop offset="1" stop-color={overHue == null ? '#f472b6' : `hsl(${overHue + 30} 90% 62%)`} />
       </linearGradient>
     </defs>
 
@@ -87,6 +96,8 @@
     {#if lap2 > 0.001}
       <circle
         class="arc over"
+        class:tinted={overHue != null}
+        style:--oh={overHue}
         cx={c}
         cy={c}
         {r}
@@ -186,6 +197,9 @@
   }
   .arc.over {
     filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.7));
+  }
+  .arc.over.tinted {
+    filter: drop-shadow(0 0 6px hsl(var(--oh) 95% 65% / 0.75));
   }
   .head {
     fill: #fff;

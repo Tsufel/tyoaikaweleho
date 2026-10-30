@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DIAL_MAX_MIN,
   IDLE_TEXT,
+  RING,
+  RING_INNER,
   agoText,
   dialDay,
   clockGlyphs,
@@ -22,6 +24,7 @@ import {
   startedText,
   unwrapLaps,
 } from '../src/views/timer/timerLogic';
+import { MAX_INTENSITY } from '../src/fx/fire/fireSim';
 
 describe('ring maths', () => {
   it('progress is elapsed / target and exceeds 1 in overtime', () => {
@@ -64,11 +67,33 @@ describe('fire', () => {
     const b = fireIntensity(2 * 3600, 8);
     const c = fireIntensity(8 * 3600, 8);
     const d = fireIntensity(100 * 3600, 8);
-    expect(a).toBeCloseTo(0.15);
+    expect(a).toBeCloseTo(0.45);
     expect(b).toBeGreaterThan(a);
     expect(c).toBeGreaterThan(b);
     expect(c).toBeCloseTo(1);
-    expect(d).toBe(1.4);
+    expect(d).toBe(MAX_INTENSITY);
+  });
+
+  it('intensity curve: sqrt up to the target, linear overtime, sane on bad input', () => {
+    expect(fireIntensity(3600, 8)).toBeCloseTo(0.45 + 0.55 * Math.sqrt(1 / 8)); // ≈ 0.64 after 1 h
+    expect(fireIntensity(2 * 3600, 8)).toBeCloseTo(0.725); // quarter of the target
+    expect(fireIntensity(12 * 3600, 8)).toBeCloseTo(1.3); // 1.5 × target
+    expect(fireIntensity(16 * 3600, 8)).toBeCloseTo(1.6);
+    expect(fireIntensity(-60, 8)).toBe(0.45);
+    expect(fireIntensity(NaN, 8)).toBe(0.45);
+    expect(fireIntensity(3600, 0)).toBeCloseTo(fireIntensity(3600, 8)); // 8 h fallback
+    expect(fireIntensity(1800, 0.25)).toBeCloseTo(0.45 + 0.55 * Math.sqrt(0.5)); // target clamps to 1 h
+    let prev = 0;
+    for (let m = 0; m <= 20 * 60; m += 15) {
+      const v = fireIntensity(m * 60, 8);
+      expect(v).toBeGreaterThanOrEqual(prev);
+      prev = v;
+    }
+  });
+
+  it('inner disc sits inside the ring stroke', () => {
+    expect(RING_INNER).toBe(RING.r - RING.stroke / 2 - 9);
+    expect(RING_INNER).toBeLessThan(RING.r - RING.stroke / 2);
   });
 
   it('badge levels', () => {

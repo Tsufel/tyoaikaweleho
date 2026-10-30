@@ -242,6 +242,8 @@ export type RecoveryResult = Result<{
 export interface UiPrefs {
   lulz: boolean;
   reduce_effects: boolean;
+  /** Synthesized fire sound while Lulz is on. Default false. */
+  lulz_sound: boolean;
   /** Daily target for the hero ring, hours (1–24). Default 8. */
   target_hours: number;
 }

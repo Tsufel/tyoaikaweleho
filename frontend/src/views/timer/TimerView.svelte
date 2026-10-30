@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, tick } from 'svelte';
+  import { onFx } from '../../fx/fire/fxBus';
   import { fade, fly } from '../../lib/motion';
   import { lulz } from '../../lib/stores/motion';
   import { offerRecovery, pendingRecovery } from '../../lib/stores/recovery';
@@ -19,7 +20,6 @@
   import { burst, busy, jobDraft, startDialShift, startShift, stopShift, wallClock } from './timerActions';
   import {
     DIAL_RESET_MS,
-    FIRE_OVERHANG,
     IDLE_TEXT,
     agoText,
     clockGlyphs,
@@ -89,8 +89,27 @@
         ? 0
         : ringProgress(($wallClock - dialStart) / 1000, target),
   );
-  const hue = $derived($lulz && running ? 28 : haloHue(progress));
+  /** Lulz overtime: the fire (and ring) burn white-hot blue past the target. */
+  const blueFire = $derived($lulz && running && progress > 1);
+  const hue = $derived($lulz && running ? (blueFire ? 205 : 28) : haloHue(progress));
   const badge = $derived($lulz ? fireBadge(running, $elapsedSeconds, target) : null);
+  /** Badge pop on a Lulz milestone. */
+  let flare = $state(false);
+  let flareTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    if (!$lulz) return;
+    return onFx((e) => {
+      if (e.kind !== 'milestone') return;
+      flare = false;
+      clearTimeout(flareTimer);
+      // next frame, so a milestone during a running pop restarts it
+      requestAnimationFrame(() => {
+        flare = true;
+        flareTimer = setTimeout(() => (flare = false), 900);
+      });
+    });
+  });
+  onDestroy(() => clearTimeout(flareTimer));
   const blocked = $derived(!!$pendingRecovery || $timer.recovery_pending);
   const pct = $derived(Math.round(progress * 100));
 
@@ -125,6 +144,13 @@
 </script>
 
 <section class="timer glass" class:running class:lulz={$lulz} class:celebrate aria-label="Timer">
+  {#if $lulz}
+    <div class="fire-box" aria-hidden="true">
+      {#await loadFire() then m}
+        <m.default {running} elapsedSeconds={$elapsedSeconds} ring={stage} />
+      {/await}
+    </div>
+  {/if}
   <header class="top">
     <span class="eyebrow">Timer</span>
     <span class="pill" class:on={running}>
@@ -133,7 +159,7 @@
     </span>
     {#if badge}
       {#key badge.text}
-        <span class="badge" in:fly={{ y: -6, duration: 260 }}>
+        <span class="badge" class:flare class:blue={blueFire} in:fly={{ y: -6, duration: 260 }}>
           <span aria-hidden="true">{badge.emoji}</span>
           {badge.text}
         </span>
@@ -141,45 +167,40 @@
     {/if}
   </header>
 
-  <div class="stage" bind:this={stage}>
-    {#if $lulz}
-      <div class="fire-box" style:inset="{-FIRE_OVERHANG * 100}%" aria-hidden="true">
-        {#await loadFire() then m}
-          <m.default {running} elapsedSeconds={$elapsedSeconds} burst={$burst} />
-        {/await}
-      </div>
-    {/if}
-    <HeroRing {progress} {running} {hue} targetHours={target}>
-      {#if running}
-        <span class="ring-label">Elapsed</span>
-        <span class="clock num" role="timer" aria-label={`Elapsed ${spokenDuration($elapsedSeconds)}`}>
-          <RollingText text={clockGlyphs($elapsedSeconds).join('')} />
-        </span>
-        <span class="earn" in:fade={{ duration: 200 }}>
-          <span class="money num"><RollingText text={formatMoney($liveEarnings)} /></span>
-          <span class="earn-note">~{formatMoney($liveEarnings)} earned so far</span>
-        </span>
-        <span class="target num" in:fade={{ duration: 200 }}>{pct}% of {target}h</span>
-      {:else}
-        <button
-          type="button"
-          class="face"
-          class:set={dialTime}
-          disabled={$busy}
-          aria-label={dialTime ? `Start the shift ${dialWhen}` : 'Start the shift now'}
-          onclick={startFromDial}
-        >
-          <span class="ring-label">{dialTime ? (dialYesterday ? 'Yesterday at' : 'Start at') : 'Start now'}</span>
-          <span class="clock num">
-            <RollingText text={dialTime ?? hhmm(new Date($wallClock)) + ':' + String(new Date($wallClock).getSeconds()).padStart(2, '0')} />
+  <div class="stage-slot">
+    <div class="stage" bind:this={stage}>
+      <HeroRing {progress} {running} {hue} overHue={blueFire ? 195 : null} targetHours={target}>
+        {#if running}
+          <span class="ring-label">Elapsed</span>
+          <span class="clock num" role="timer" aria-label={`Elapsed ${spokenDuration($elapsedSeconds)}`}>
+            <RollingText text={clockGlyphs($elapsedSeconds).join('')} />
           </span>
-          <span class="target num">{dialStart == null ? 'tap · or turn the ring' : agoText(dialStart, $wallClock)}</span>
-        </button>
+          <span class="earn" in:fade={{ duration: 200 }}>
+            <span class="money num"><RollingText text={formatMoney($liveEarnings)} /></span>
+            <span class="earn-note">~{formatMoney($liveEarnings)} earned so far</span>
+          </span>
+          <span class="target num" in:fade={{ duration: 200 }}>{pct}% of {target}h</span>
+        {:else}
+          <button
+            type="button"
+            class="face"
+            class:set={dialTime}
+            disabled={$busy}
+            aria-label={dialTime ? `Start the shift ${dialWhen}` : 'Start the shift now'}
+            onclick={startFromDial}
+          >
+            <span class="ring-label">{dialTime ? (dialYesterday ? 'Yesterday at' : 'Start at') : 'Start now'}</span>
+            <span class="clock num">
+              <RollingText text={dialTime ?? hhmm(new Date($wallClock)) + ':' + String(new Date($wallClock).getSeconds()).padStart(2, '0')} />
+            </span>
+            <span class="target num">{dialStart == null ? 'tap · or turn the ring' : agoText(dialStart, $wallClock)}</span>
+          </button>
+        {/if}
+      </HeroRing>
+      {#if !running}
+        <StartDial bind:picked={dialStart} bind:dragging={dialDragging} now={$wallClock} targetHours={target} disabled={$busy} onstart={startFromDial} />
       {/if}
-    </HeroRing>
-    {#if !running}
-      <StartDial bind:picked={dialStart} bind:dragging={dialDragging} now={$wallClock} targetHours={target} disabled={$busy} onstart={startFromDial} />
-    {/if}
+    </div>
   </div>
 
   <p class="status" class:live={running} aria-live="polite">
@@ -338,20 +359,67 @@
     border-radius: var(--radius-pill);
     font-size: var(--fs-xs);
     font-weight: 700;
+    /* deep enough at both ends for the light text to clear 4.5:1 */
     color: #fff7d6;
-    background: linear-gradient(135deg, #ff9f1c, #d62828);
+    background: linear-gradient(135deg, #b23c00, #9b1c1c);
     box-shadow: 0 4px 16px -4px rgba(255, 93, 42, 0.7);
   }
+  .badge.blue {
+    color: #f0f9ff;
+    background: linear-gradient(135deg, #0369a1, #4338ca);
+    box-shadow: 0 4px 16px -4px rgba(56, 189, 248, 0.75);
+  }
+  .badge.flare {
+    animation: badge-flare 0.8s var(--ease-spring);
+  }
+  @keyframes badge-flare {
+    25% {
+      transform: scale(1.22) rotate(-4deg);
+      filter: brightness(1.5) saturate(1.3);
+      box-shadow: 0 0 22px 2px rgba(255, 209, 102, 0.85);
+    }
+    55% {
+      transform: scale(0.96) rotate(2deg);
+    }
+  }
+  .badge.blue.flare {
+    animation-name: badge-flare-blue;
+  }
+  @keyframes badge-flare-blue {
+    25% {
+      transform: scale(1.22) rotate(-4deg);
+      filter: brightness(1.5) saturate(1.3);
+      box-shadow: 0 0 22px 2px rgba(125, 211, 252, 0.9);
+    }
+    55% {
+      transform: scale(0.96) rotate(2deg);
+    }
+  }
 
+  /* Gets what's left of the card's height, so on short windows (down to the
+     700×560 minimum) the ring shrinks instead of the controls being clipped. */
+  .stage-slot {
+    align-self: stretch;
+    flex: 0 1 324px;
+    min-height: 150px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    container-type: size;
+  }
   .stage {
     position: relative;
-    width: min(100%, 320px);
+    width: min(100cqw, 100cqh - 4px, 320px);
     margin-top: 4px;
     container-type: inline-size;
   }
+  /* Lulz fire: the whole card, under the content, clipped to its corners */
   .fire-box {
     position: absolute;
-    z-index: 2;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    overflow: hidden;
     pointer-events: none;
   }
   .ring-label {

@@ -366,7 +366,9 @@ def set_window_placement(placement: dict):
     _save_raw(data)
 
 
-UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "target_hours": 8.0}
+UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "lulz_sound": False,
+                    "target_hours": 8.0}
+_BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound")
 TARGET_HOURS_RANGE = (1.0, 24.0)
 
 
@@ -379,7 +381,7 @@ def _valid_target_hours(v) -> bool:
 def _clean_ui_prefs(raw) -> dict:
     prefs = dict(UI_PREF_DEFAULTS)
     if isinstance(raw, dict):
-        for key in ("lulz", "reduce_effects"):
+        for key in _BOOL_PREFS:
             if isinstance(raw.get(key), bool):
                 prefs[key] = raw[key]
         if _valid_target_hours(raw.get("target_hours")):
@@ -394,7 +396,7 @@ def merge_ui_prefs(base, changes: dict) -> dict:
         raise ValueError("ui_prefs must be an object")
     prefs = _clean_ui_prefs(base)
     for key, value in changes.items():
-        if key in ("lulz", "reduce_effects"):
+        if key in _BOOL_PREFS:
             if not isinstance(value, bool):
                 raise ValueError(f"{key} must be true or false")
             prefs[key] = value
@@ -408,7 +410,7 @@ def merge_ui_prefs(base, changes: dict) -> dict:
 
 
 def get_ui_prefs() -> dict:
-    """{lulz, reduce_effects, target_hours}, defaults for anything unset."""
+    """{lulz, reduce_effects, lulz_sound, target_hours}, defaults for anything unset."""
     return _clean_ui_prefs(_load_raw().get("ui_prefs"))
 
 
