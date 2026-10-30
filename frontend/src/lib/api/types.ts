@@ -313,6 +313,33 @@ export interface StatsData {
   open_entries: number;
 }
 
+// ── Achievements ─────────────────────────────────────────────────
+
+export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'legendary';
+
+export interface Achievement {
+  id: string;
+  title: string;
+  desc: string;
+  /** Medal file name in assets/medals (same as id). */
+  icon: string;
+  tier: AchievementTier;
+  /** Shown as "???" with the hidden_<tier> medal until met. */
+  hidden: boolean;
+  /** cur is capped at goal; unit: shifts | h | days | weeks | € */
+  progress: { cur: number; goal: number; unit: string };
+  /** Date first met (or stored as seen), null while locked. */
+  met_on: IsoDate | null;
+}
+
+export interface AchievementsData {
+  items: Achievement[];
+  /** Met but not yet acknowledged — celebrate, then ack_achievements. */
+  newly: string[];
+  /** Nothing acknowledged yet: show one summary toast, not one per item. */
+  first_run: boolean;
+}
+
 // ── DLC / updates / changelog ────────────────────────────────────
 
 export interface DlcStatus {
@@ -454,6 +481,10 @@ export interface Api {
     end_iso: IsoDate,
     granularity: Granularity,
   ): Promise<Result<{ data: StatsData }>>;
+
+  // achievements
+  get_achievements(): Promise<Result<AchievementsData>>;
+  ack_achievements(ids: string[]): Promise<Result>;
 
   // import / export / OCR
   export_month(year: number, month: number): Promise<ExportResult>;

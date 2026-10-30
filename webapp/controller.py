@@ -756,6 +756,44 @@ class ShiftController:
             rate = storage.get_pay_rate()
         return R.ok(data=stats.summarize(entries, start, end, granularity, rate))
 
+    # ── achievements ─────────────────────────────────────────────
+
+    def _evaluate_achievements(self) -> tuple[list[dict], dict | None]:
+        import achievements
+        with self._lock:
+            entries = storage.load_all_entries()
+            rate = storage.get_pay_rate()
+            target = storage.get_ui_prefs()["target_hours"]
+            seen = storage.get_achievements_seen()
+        items = achievements.evaluate(entries, target, rate, self._now().date())
+        return items, seen
+
+    def get_achievements(self) -> dict:
+        """items: every achievement (seen ones stay unlocked); newly: met but not
+        yet acknowledged. first_run: nothing was ever acknowledged, so the UI
+        shows one summary toast for `newly` instead of one per unlock."""
+        import achievements
+        items, seen = self._evaluate_achievements()
+        known = seen or {}
+        return R.ok(items=achievements.with_seen(items, known),
+                    newly=achievements.newly(items, known), first_run=seen is None)
+
+    def ack_achievements(self, ids) -> dict:
+        """Store *ids* as celebrated. Ids that are not met right now are skipped;
+        an empty list still ends the first run."""
+        import achievements
+        if (not isinstance(ids, list)
+                or not all(isinstance(i, str) and i in achievements.IDS for i in ids)):
+            return R.invalid("ids", "Unknown achievement.")
+        items, _seen = self._evaluate_achievements()
+        met = {i["id"]: i["met_on"] for i in items if i["met_on"]}
+        with self._lock:
+            try:
+                storage.add_achievements_seen({i: met[i] for i in ids if i in met})
+            except OSError as exc:
+                return R.error("save_failed", f"Achievements could not be saved:\n\n{exc}")
+        return R.ok()
+
     # ── import / export / OCR ────────────────────────────────────
 
     @staticmethod

@@ -18,6 +18,7 @@
   import type { StatsBucket, StatsData } from '../../lib/api/types';
   import { navigate, section, settings, shifts } from '../../lib/stores/app';
   import { setViewMonth, showEntry } from '../../lib/stores/entries';
+  import { achievements, medalUrl, openAchievements, unlockedCount } from '../../lib/stores/achievements';
   import { timer } from '../../lib/stores/timer';
   import { fade, fly, stagger } from '../../lib/motion';
   import { formatDuration, formatMoney, fromIsoDate } from '../../lib/time';
@@ -124,6 +125,14 @@
   const targetHours = $derived($settings.ui_prefs.target_hours);
   const targets = $derived(data ? bucketTargets(data.buckets, data.granularity, data.start, data.end, targetHours) : []);
   const slices = $derived(data ? shiftSlices(data.by_shift, $shifts) : []);
+  const achTotal = $derived($achievements?.items.length || 17);
+  // all-time, newest first: the tile ignores the picked range
+  const latestAch = $derived(
+    ($achievements?.items ?? [])
+      .filter((a) => a.met_on)
+      .sort((a, b) => (a.met_on! < b.met_on! ? 1 : a.met_on! > b.met_on! ? -1 : 0))
+      .slice(0, 3),
+  );
   const empty = $derived(!!data && data.totals.shifts === 0);
   const unit = $derived(data?.granularity ?? granularity);
   const unitWord = $derived(unit === 'day' ? 'day' : unit === 'week' ? 'week' : 'month');
@@ -248,7 +257,7 @@
     </GlassCard>
   {:else if !data}
     <div class="kpis" aria-hidden="true">
-      {#each Array(5) as _, i (i)}<div class="tile-skel glass"></div>{/each}
+      {#each Array(6) as _, i (i)}<div class="tile-skel glass"></div>{/each}
     </div>
     <div class="center"><Spinner size={28} label="Loading stats" /></div>
   {:else}
@@ -320,6 +329,25 @@
             {:else}
               {data!.totals.worked_days === 1 ? 'day' : 'days'} with hours
             {/if}
+          {/snippet}
+        </KpiTile>
+      </div>
+      <div in:fly={{ y: 14, delay: stagger(5, 50) }}>
+        <KpiTile
+          icon="trophy"
+          label="Achievements"
+          value={unlockedCount($achievements)}
+          format={(n) => `${Math.round(n)} / ${achTotal}`}
+          tone="amber"
+          delay={300}
+        >
+          {#snippet sub()}
+            <span class="ach">
+              {#each latestAch as a (a.id)}<img src={medalUrl(a)} alt={a.title} title={a.title} />{/each}
+              <button type="button" class="link" onclick={() => void openAchievements()}>
+                {latestAch.length ? 'View all' : 'See what to unlock'}
+              </button>
+            </span>
           {/snippet}
         </KpiTile>
       </div>
@@ -612,11 +640,22 @@
     font-size: var(--fs-xs);
   }
 
+  /* 6 tiles: 3×2, one row when wide, 2×3 when narrow (never a lone orphan) */
   .kpis {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px;
     transition: opacity var(--dur-med);
+  }
+  @media (min-width: 1280px) {
+    .kpis {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 600px) {
+    .kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
   .kpis > div {
     min-width: 0;
@@ -744,6 +783,20 @@
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .ach {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+  .ach img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+  }
+  .ach .link {
+    margin-left: 4px;
   }
   .link:focus-visible {
     outline: 2px solid var(--focus-ring);

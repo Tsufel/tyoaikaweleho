@@ -9,6 +9,8 @@ export interface Toast {
   /** Action button (Undo / Retry); Ctrl+Z runs the newest one. */
   action?: () => void | Promise<void>;
   label?: string;
+  /** Ctrl+Z may run the action (false for plain links such as "View"). */
+  undo: boolean;
   ms: number;
 }
 
@@ -18,6 +20,8 @@ export interface ToastOptions {
   /** Visible time; default 8000 (the v1.3 undo window). 0 = until dismissed. */
   ms?: number;
   tone?: ToastTone;
+  /** Default true: the action is an undo/retry Ctrl+Z can run. */
+  undo?: boolean;
 }
 
 const MAX_TOASTS = 4;
@@ -33,6 +37,7 @@ export function toast(message: string, opts: ToastOptions = {}): number {
     tone: opts.tone ?? 'info',
     action: opts.action,
     label: opts.action ? opts.label ?? 'Undo' : undefined,
+    undo: opts.undo ?? true,
     ms: opts.ms ?? 8000,
   };
   list.update((all) => [...all, t].slice(-MAX_TOASTS));
@@ -48,14 +53,14 @@ export function clearToasts(): void {
 }
 
 /** True while a toast with an action (Undo/Retry) is on screen. */
-export const undoAvailable = derived(list, (all) => all.some((t) => t.action));
+export const undoAvailable = derived(list, (all) => all.some((t) => t.action && t.undo));
 
 /** Ctrl+Z: run the newest toast action. Returns false when none is visible. */
 export function runUndo(): boolean {
   const all = get(list);
   for (let i = all.length - 1; i >= 0; i--) {
     const t = all[i];
-    if (t.action) {
+    if (t.action && t.undo) {
       dismiss(t.id);
       void t.action();
       return true;

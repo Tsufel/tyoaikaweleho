@@ -424,6 +424,34 @@ def set_ui_prefs(changes: dict) -> dict:
     return prefs
 
 
+def _clean_achievements_seen(raw) -> dict:
+    out = {}
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            if isinstance(k, str) and isinstance(v, str) and _ISO_DATE.fullmatch(v):
+                out[k] = v
+    return out
+
+
+def get_achievements_seen() -> dict | None:
+    """{achievement id: "YYYY-MM-DD" it was met}, or None if achievements have
+    never been acknowledged (first run: everything already met is backfilled)."""
+    raw = _load_raw().get("achievements_seen")
+    return None if raw is None else _clean_achievements_seen(raw)
+
+
+def add_achievements_seen(seen: dict) -> dict:
+    """Merge *seen* into the stored set (earliest date wins) and return it.
+    Always writes, so an empty dict ends the first run."""
+    data = _load_raw()
+    merged = _clean_achievements_seen(data.get("achievements_seen"))
+    for k, v in _clean_achievements_seen(seen).items():
+        merged[k] = min(v, merged.get(k, v))
+    data["achievements_seen"] = merged
+    _save_raw(data)
+    return merged
+
+
 EXPORT_FORMATS = ("Simple", "Full")
 
 

@@ -28,6 +28,8 @@
   import Segmented from './lib/ui/Segmented.svelte';
   import Spinner from './lib/ui/Spinner.svelte';
   import Toasts from './lib/ui/Toasts.svelte';
+  import { startAchievements } from './lib/stores/achievements';
+  import AchievementUnlock from './views/achievements/AchievementUnlock.svelte';
   import ChangelogModal from './views/modals/ChangelogModal.svelte';
   import { handleCloseRequest } from './views/modals/closeFlow';
   import RecoverShiftModal from './views/modals/RecoverShiftModal.svelte';
@@ -112,6 +114,10 @@
   });
   $effect(() => {
     document.documentElement.dataset.paused = String(!$animationsActive);
+  });
+  // after the intro, so the backfill toast / first unlock isn't hidden under it
+  $effect(() => {
+    if (phase === 'ready' && introDone) startAchievements();
   });
 
   onMount(() => {
@@ -272,6 +278,7 @@
 
 <UpdateFlow />
 <ConfirmHost />
+{#if phase === 'ready' && introDone}<AchievementUnlock held={$modalOpen > 0} />{/if}
 <Toasts />
 {#if $lulz}
   {#await loadFx() then m}

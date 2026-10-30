@@ -1,6 +1,7 @@
 # Työaikaweleho v2.x — Achievements and a work pet (design plan)
 
-> Status: **planning** — nothing in this document is implemented yet.
+> Status: **achievements built** (engine, API, persistence, Stats tile, sheet,
+> unlock card). **Pet: designed, art done**, not implemented.
 > Listed in [BACKLOG.md](BACKLOG.md). Interacts with [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md)
 > (the new keys should sync).
 > Original ideas (chat, 2026-10-30): *"Tulevaisuudes voi sit laittaa achievements
@@ -40,12 +41,13 @@ stored state is *what has already been celebrated* and the pet's settings.
 A new pure module `achievements.py` next to `stats.py`:
 
 - Input: all entries, `target_hours` (`ui_prefs`), `pay_rate`, today.
-- Output per achievement: `{id, title, desc, icon, tier, progress: {cur, goal},
-  met_on}` where `met_on` is the date the condition first became true when
+- Output per achievement: `{id, title, desc, icon, tier, hidden, progress: {cur,
+  goal, unit}, met_on}` where `met_on` is the date the condition first became true when
   replaying entries in date order (`None` if not met).
 - Reuses `utils.entry_minutes` (overnight-aware) and the day/week bucketing
   from `stats.summarize`. An entry counts on its start date, as in Stats.
-- Open entries (no `time_out`) are ignored, as in Stats.
+- Open entries (no `time_out`), zero-length shifts and entries dated after today
+  are ignored.
 
 ### Catalogue v1 (~20, all derivable from entries)
 
@@ -57,7 +59,10 @@ A new pure module `achievements.py` next to `stats.py`:
 | Daily target | Target hit on 10 days · on 50 days |
 | Shift types | First overnight shift · 12 h marathon · Early bird (start before 06:00) · Night owl (finish after 22:00) |
 | Earnings | €1 000 earned · €10 000 earned |
-| Lulz | Reach the *inferno* tier (`fireBadge`) · Clock out in blue overtime fire |
+| Lulz | Reach the *inferno* tier (`fireBadge`, ≥ 125 % of target) · Clock out in blue overtime fire (past the target, as `FxDirector` colours the blast) |
+
+Hidden until met ("???" with the `hidden_<tier>` medal): first overnight,
+early bird, night owl, marathon and both Lulz ones.
 
 - Earnings achievements are flagged: `pay_rate` is global and rewrites past
   earnings, so they are only unlocked, never revoked (see *Persistence*).
@@ -76,85 +81,150 @@ A new pure module `achievements.py` next to `stats.py`:
 - Written only when the frontend acknowledges an unlock — never on a timer tick.
 - Once seen, an achievement stays unlocked even if entries are later edited,
   deleted or the pay rate changes. Unseen ones are recomputed every time.
-- **First run backfill:** the first time the feature runs, everything already
-  met is marked seen silently, then one toast: *"You've already earned N
-  achievements"* — no wall of 15 toasts for long-time users.
+- **First run backfill:** while `achievements_seen` is absent,
+  `get_achievements()` reports `first_run: true`; the frontend shows one toast,
+  *"You've already earned N achievements"*, and acks all of `newly` (an empty
+  ack still ends the first run) — no wall of 15 toasts for long-time users.
 
-### API (add to `docs/V2_UI_API.md` when built)
+### API ([V2_UI_API.md](V2_UI_API.md) §5, §10.1)
 
 | method | returns |
 |---|---|
-| `get_achievements()` | `ok{items, newly}` — `newly` = met but not yet seen |
-| `ack_achievements(ids)` | `ok` — stores them in `achievements_seen` |
+| `get_achievements()` | `ok{items, newly, first_run}` — `newly` = met but not yet seen |
+| `ack_achievements(ids)` | `ok` — stores the met ones in `achievements_seen` with their `met_on` |
 
-The frontend calls `get_achievements()` on bootstrap, after `stopShift`
-returns `saved` (`frontend/src/views/timer/timerActions.ts`), after entry
-saves/edits/deletes and on `data:changed`.
+The frontend (`lib/stores/achievements.ts`) calls `get_achievements()` once
+after the intro, then again (debounced 350 ms, coalesced) whenever the viewed
+month is re-read — every save, stop, edit, delete, import and `data:changed`
+path ends in `refreshMonth` — and when `pay_rate` or `target_hours` change.
+That avoids hooking each write path separately.
 
 ### UI
 
-- **Stats:** a 🏆 *12 / 24* KPI tile in `StatsView.svelte` opens an
-  `AchievementsSheet` via `openSheet` (`lib/stores/confirm.ts`): unlocked ones
-  with dates, locked ones with a progress bar, hidden ones as "???".
-- **Unlock:** `toast('🏆 100 hours!', {tone: 'success', label: 'View', action:
-  openAchievements})` (`lib/stores/toasts.ts`); with Lulz on, also a
-  `milestone` flare via `emitFx` (`fx/fire/fxBus.ts`) so it gets the full fire
-  treatment.
+- **Medals:** one Gemini-made medal per achievement plus a `hidden_<tier>`
+  medal, cut out to `frontend/src/assets/medals/<icon>.webp`.
+- **Stats:** a 🏆 *11 / 17* KPI tile in `StatsView.svelte` with the three
+  latest medals opens `AchievementsSheet` via `openSheet`: grouped by tier,
+  unlocked ones with dates, locked ones greyed with a progress bar, hidden ones
+  as "???".
+- **Unlock:** `AchievementUnlock.svelte` (mounted in `App.svelte`) shows a card
+  under the title bar: the medal flips in, glows, gets a shine sweep and a
+  spark burst in the tier colour; with Lulz on, also a `milestone` flare via
+  `emitFx`. It waits ~0.9 s (so it doesn't land on the clock-out blast), pauses
+  while a modal is open, the window is hidden or the pointer is on it, and
+  clicking it opens the sheet. Reduced motion shows it still.
+- **Batches:** more than 3 new unlocks at once (e.g. an import) animate only
+  the 3 rarest; the rest are summed up in one *"…and N more achievements
+  unlocked"* toast. The first-run backfill is one toast instead.
 
 ## Work pet
 
-### Character
+### Art (done)
 
-The wizard (`frontend/src/assets/wizard.webp`) is already the app's mascot, so
-he becomes the pet: a familiar the user can name. He grows through stages by
-level — **apprentice → wizard → archmage** — and achievements unlock
-cosmetics (hats, robe colours, a staff glow).
+Pixel art made with Gemini, two characters with the same four poses:
+
+| Pose | Familiar (winged cat in a star hat) | Wizard |
+|---|---|---|
+| `idle` | standing with a staff | standing, pointing, staff |
+| `fly` | on a broom, wide awake | on a broom, waving |
+| `drowsy` | on a broom, eyes half shut, *zZ* | on a broom, nodding off, *zZ* |
+| `sleep` | curled up asleep | face down asleep, staff dropped |
+
+The originals are 2048 px JPGs on white with ~22.76 px art pixels. They are
+rebuilt at a 180-cell grid (the wizard has some half-cell steps; on the
+familiar this just doubles each pixel), the white background connected to the
+border is made transparent, and each character's four poses are cropped to one
+shared box so swapping poses never shifts the sprite. Output:
+`frontend/src/assets/pets/<character>_<pose>.webp`, lossless, ~10 KB each,
+familiar 142×122, wizard 162×140, drawn with `image-rendering: pixelated`.
+
+### Character and name
+
+Settings → **Pet**: *Off* (default) · *Familiar* · *Wizard*, plus an editable
+name (defaults *Tähti* for the familiar — it wears the star hat — and *Weleho*
+for the wizard). The familiar is the "pet" of the original idea; the wizard is
+there for people who want the mascot himself.
 
 ### Meters (derived, never stored)
 
-- **Energy 0–100** — "gets power as hours pile up":
-  hours worked in the last 7 days ÷ (target × the user's usual workdays in
-  that window). Usual workdays = weekdays the user has actually worked on in
-  the last 8 weeks, so days they never work never drain it. It charges live
-  while the timer runs, from the elapsed time already in `stores/timer`.
-- **XP / level** from lifetime hours on a gentle curve, e.g. level *n* needs
-  `10 · n^1.5` hours total (level 10 ≈ 316 h, level 20 ≈ 894 h).
+- **Energy 0–100** — "gets power as hours pile up": hours worked in the last
+  7 days ÷ (target × the user's usual workdays in that window). Usual workdays
+  = weekdays the user actually worked on in the last 8 weeks, so days they
+  never work never drain it. Charges live while the timer runs, from
+  `elapsedSeconds` in `stores/timer`.
+- **XP / level** from lifetime hours: level *n* needs `10 · n^1.5` h in total
+  (level 10 ≈ 316 h, level 20 ≈ 894 h). Shown as *Lv 12* on the pet sheet.
+- **Rank title** by level instead of new sprites: Apprentice (1–4) →
+  Adept (5–9) → Wizard (10–19) → Archmage (20+), e.g. *"Tähti, Adept
+  familiar"*.
 
-### Moods
+### Pose (state machine)
 
-| Mood | When |
+One pose at a time, picked by a pure `petPose(input)` in `petLogic.ts`:
+
+| Pose | When | Why |
+|---|---|---|
+| `fly` | Timer running and under the daily target | "Working", flying along with you |
+| `drowsy` | Timer running and past the target (the same moment the ring turns to overtime / blue fire) | A gentle hint that the day's hours are done — never a warning or a sound |
+| `idle` | No timer, 06:00–22:00 | Ready for the next shift |
+| `sleep` | No timer and 22:00–06:00, or no shift on any of the last 3 usual workdays (holiday) | Napping on days off; wakes up happy, no penalty or sad face |
+
+Energy never picks a pose, so a quiet week can't make the pet look sad. It is
+only shown on the sheet.
+
+### Animation (CSS only, on the static frames)
+
+| Pose | Loop |
 |---|---|
-| Sleeping | No timer running and outside usual hours, or a few days without shifts. Wakes up happy — no penalty, no sad face |
-| Idle | Default when the app is open and no timer runs |
-| Working | Timer running; energy fills visibly |
-| Hyped | Lulz on and the shift is "on fire" or beyond (`fireBadge`) |
-| Celebrating | Short reaction to fxBus `blast` (shift saved) and `milestone` |
+| `fly` | Bob ±3 px with a slight tilt, 2.4 s; a few pixel sparkles trail the broom |
+| `drowsy` | Slower, deeper bob (3.6 s) with a nod; a pixel *z* floats up now and then |
+| `idle` | Breathing (`scaleY` 1 → 1.02 from the feet) every 4 s; a little hop every ~20 s |
+| `sleep` | Slow breathing; *z z Z* float up |
 
-### Placement and setting
+- **Pose change:** a pixel puff (8 square particles) hides the swap, then the
+  new pose lands with a squash.
+- **Reactions:** hop with squash and stretch and a sparkle burst on fxBus
+  `blast` (shift saved) and `milestone`, and on an achievement unlock.
+- **Petting:** clicking the pet makes it hop and shows a pixel heart; a long
+  press or the context menu opens the pet sheet. Petting is the point.
+- **Guards:** loops run only when `motion === 'full'`; they pause with
+  `animationsActive` (`animation-play-state: paused`); reduced motion shows the
+  static pose and swaps it instantly.
 
-- A small corner companion on `TimerView.svelte` beside the ring; clicking it
-  opens a pet sheet with energy, level, progress to the next stage and the
-  cosmetics wardrobe.
-- An opt-in **Pet** switch in Settings, off by default. State lives in a new
-  top-level `pet: {enabled, name, cosmetics}` in `data.json`, added in the same
-  places a `ui_prefs` key is: `storage.py` defaults / allowlist and
-  `_check_setting`, `frontend/src/lib/api/types.ts`, `lib/stores/settings.ts`.
+### Placement
 
-### Motion
+- Sits on the floor of the Timer card in the bottom-right corner, outside the
+  ring and the controls, at 1× sprite size (0.75× under 600 px wide, hidden
+  under 420 px). It never covers the Start/Stop button.
+- `aria-hidden` for the sprite itself; the button around it is labelled e.g.
+  *"Tähti, flying. Open pet"*.
+- **Pet sheet** (`openSheet`): the current pose large, name (editable), rank
+  and level with a progress bar to the next level, the energy bar with
+  *"18.5 h of 30 h this week"*, and lifetime hours.
 
-Follows the existing guards: animates only when `motion === 'full'`
-(`lib/stores/motion.ts`), pauses with `animationsActive` (hidden or
-unfocused window), and shows static poses when motion is reduced.
+### Cosmetics (later)
 
-### Open question: art
+Aura colours as a `drop-shadow` glow around the sprite, unlocked by
+achievement tiers: bronze glow at 3 bronzes, silver, gold, and a legendary
+flame aura for either Lulz achievement. Picked on the pet sheet; stored as
+`pet_aura`. No new sprites needed.
 
-Either drawn/commissioned sprite states for each mood and stage, or start with
-an animated SVG/CSS version of the current wizard and replace it later. The
-logic does not depend on the choice.
+### Setting storage
+
+In `ui_prefs`, like `lulz` (`storage.UI_PREF_DEFAULTS`, `_check_setting`,
+`types.ts`, `stores/settings.ts`):
+
+- `pet`: `"off" | "familiar" | "wizard"` (default `"off"`)
+- `pet_name`: string, trimmed, max 24 chars, `""` = default name
+- `pet_aura`: `"none" | "bronze" | "silver" | "gold" | "legendary"` (later)
+
+`ui_prefs` only knows booleans and `target_hours` today, so this adds a small
+validated-string branch.
 
 ## Data model changes
 
-- Two new optional top-level keys in `data.json`: `achievements_seen`, `pet`.
+- One new optional top-level key in `data.json`: `achievements_seen`.
+- New `ui_prefs` keys: `pet`, `pet_name` (later `pet_aura`).
 - No change to entries.
 
 ## Migration
@@ -166,7 +236,7 @@ logic does not depend on the choice.
 
 ## Sync interaction
 
-`achievements_seen` and `pet` belong in the *synced settings* list of
+`achievements_seen` and the `pet*` prefs belong in the *synced settings* list of
 [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md). Merge rule for `achievements_seen`: union
 of ids, earliest date wins.
 
@@ -180,14 +250,17 @@ of ids, earliest date wins.
 - `frontend/tests/achievements.test.ts` — unlock toasts shown once, backfill
   toast once.
 - `frontend/tests/petLogic.test.ts` — energy curve, days off never drain,
-  level curve, mood selection, reduced motion = static.
+  level curve and rank titles, pose selection (target crossing, the 22:00 and
+  06:00 edges, the holiday rule), reduced motion = static.
+- `tests/test_storage.py` — `pet` / `pet_name` validation and defaults.
 
 ## Implementation order
 
 1. `achievements.py` engine and tests.
 2. API, `achievements_seen` persistence and first-run backfill.
 3. Stats tile, `AchievementsSheet`, unlock toasts (+ Lulz flare).
-4. Pet logic as a pure module (energy, level, mood) with tests.
-5. Pet companion on the Timer view, pet sheet, Settings switch.
-6. Art pass.
-7. Cosmetics unlocked by achievements.
+4. ~~Art pass~~ — done: sprites in `frontend/src/assets/pets/`.
+5. Pet logic as a pure module (`petLogic.ts`: energy, level, rank, pose) with tests.
+6. `pet` / `pet_name` prefs, Settings control.
+7. Pet companion on the Timer card (poses, loops, reactions, petting) and the pet sheet.
+8. Cosmetics (auras) unlocked by achievements.

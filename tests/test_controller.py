@@ -1066,3 +1066,95 @@ def test_ensure_shifts_file(env, tmp_storage):
     ctrl, _ = env
     path = ctrl.ensure_shifts_file()
     assert path == str(tmp_storage / "shifts.txt") and os.path.exists(path)
+
+
+# ── achievements ─────────────────────────────────────────────────────────────
+
+def _ach(ctrl):
+    r = ctrl.get_achievements()
+    assert r["ok"] and r["status"] == "ok"
+    json.dumps(r, allow_nan=False)
+    return r, {i["id"]: i for i in r["items"]}
+
+
+def test_achievements_first_run_then_ack_all(env):
+    ctrl, _clock = env
+    _add("2026-09-21")
+    r, items = _ach(ctrl)
+    assert r["first_run"] is True
+    assert r["newly"] == ["first_shift"]
+    assert items["first_shift"]["met_on"] == "2026-09-21"
+    assert set(items) == {a["id"] for a in __import__("achievements").CATALOGUE}
+    assert ctrl.ack_achievements(r["newly"])["ok"]
+    r, _ = _ach(ctrl)
+    assert r["first_run"] is False and r["newly"] == []
+    assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}
+
+
+def test_achievements_empty_ack_ends_first_run(env):
+    ctrl, _clock = env
+    assert _ach(ctrl)[0]["first_run"] is True
+    assert ctrl.ack_achievements([])["ok"]
+    r, _ = _ach(ctrl)
+    assert r["first_run"] is False and r["newly"] == []
+    assert storage.get_achievements_seen() == {}
+
+
+def test_achievements_newly_after_first_run(env):
+    ctrl, _clock = env
+    ctrl.ack_achievements([])
+    _add("2026-09-22", "09:00", "17:00")
+    r, _ = _ach(ctrl)
+    assert r["first_run"] is False and r["newly"] == ["first_shift"]
+
+
+def test_achievements_seen_are_permanent(env):
+    ctrl, _clock = env
+    e = _add("2026-09-21")
+    ctrl.ack_achievements(["first_shift"])
+    storage.delete_entry(e.id)
+    r, items = _ach(ctrl)
+    assert items["first_shift"]["met_on"] == "2026-09-21"
+    assert items["first_shift"]["progress"]["cur"] == 1
+    assert r["newly"] == []
+
+
+def test_achievements_ack_skips_unmet_and_rejects_unknown(env):
+    ctrl, _clock = env
+    _add("2026-09-21")
+    assert ctrl.ack_achievements(["hours_1000", "first_shift"])["ok"]
+    assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}
+    for bad in (["nope"], "first_shift", [1], None, {"first_shift": 1}):
+        r = ctrl.ack_achievements(bad)
+        assert r["status"] == "invalid" and r["field"] == "ids"
+    assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}
+
+
+def test_achievements_ignore_future_entries(env):
+    ctrl, clock = env  # today is 2026-09-23
+    _add("2026-09-24")
+    r, items = _ach(ctrl)
+    assert r["newly"] == [] and items["first_shift"]["met_on"] is None
+    clock.now = T0 + timedelta(days=1)
+    assert _ach(ctrl)[0]["newly"] == ["first_shift"]
+
+
+def test_achievements_use_target_and_pay_rate(env):
+    ctrl, _clock = env
+    storage.set_ui_prefs({"target_hours": 4})
+    _add("2026-09-21", "09:00", "14:00")  # 5 h: past a 4 h target
+    _, items = _ach(ctrl)
+    assert items["lulz_blue_overtime"]["met_on"] == "2026-09-21"
+    assert items["lulz_blue_overtime"]["progress"]["goal"] == 4
+    storage.set_pay_rate(250.0)
+    _, items = _ach(ctrl)
+    assert items["earned_1k"]["met_on"] == "2026-09-21"
+
+
+def test_achievements_ack_save_failure(env, monkeypatch):
+    ctrl, _clock = env
+    _add("2026-09-21")
+    monkeypatch.setattr(storage, "add_achievements_seen", _fail)
+    r = ctrl.ack_achievements(["first_shift"])
+    assert r["status"] == "error" and r["error"]["code"] == "save_failed"
+    assert storage.get_achievements_seen() is None

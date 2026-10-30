@@ -5,6 +5,7 @@
 // &empty starts with no shifts; &dlc installs the OCR DLC; &lulz turns Lulz on;
 // &sound turns Lulz sound on; &glass turns Liquid glass on; &glassdebug (DEV only)
 // replaces every liquid-glass lens map with a hard left/right split.
+// &achnew skips the achievements first-run summary so each unlock animates.
 // &certfail makes update checks and installs fail as on a PC missing GitHub's root.
 // window.__welehoMock exposes the same switches at runtime.
 
@@ -54,6 +55,7 @@ import {
   toIsoDateTime,
   weekKey,
 } from '../time';
+import { ACHIEVEMENT_IDS, evaluateAchievements, withSeen } from './mockAchievements';
 
 const VERSION = '2.0.1';
 const CERT_FAIL =
@@ -198,6 +200,9 @@ export function createMockApi(): Api {
     ? { state: 'ok', version: '1.0.2', update_version: null, message: null, ocr_available: true }
     : { state: 'missing', version: null, update_version: null, message: null, ocr_available: false };
   let session: Session | null = null;
+  // null = first run (one summary toast); &achnew starts with nothing acknowledged
+  // but past first run, so every met achievement gets its own unlock.
+  let achievementsSeen: Record<string, string> | null = q.has('achnew') ? {} : null;
   let recoverySession: Session | null = null;
   let closeGuard = false;
   let changelogShown = !q.has('changelog');
@@ -852,6 +857,32 @@ export function createMockApi(): Api {
           open_entries: open,
         },
       });
+    },
+
+    // ── achievements ──
+    async get_achievements() {
+      await latency();
+      const items = evaluateAchievements(entries, settings.ui_prefs.target_hours, settings.pay_rate, new Date());
+      const known = achievementsSeen ?? {};
+      return okR('ok', {
+        items: withSeen(items, known),
+        newly: items.filter((i) => i.met_on && !(i.id in known)).map((i) => i.id),
+        first_run: achievementsSeen === null,
+      });
+    },
+    async ack_achievements(ids) {
+      await latency();
+      if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string' || !ACHIEVEMENT_IDS.has(id))) {
+        return invalid('ids', 'Unknown achievement.');
+      }
+      if (controls.failSave) return err('save_failed', `Achievements could not be saved: ${saveFailMsg()}`);
+      const items = evaluateAchievements(entries, settings.ui_prefs.target_hours, settings.pay_rate, new Date());
+      const seen = { ...(achievementsSeen ?? {}) };
+      for (const i of items) {
+        if (i.met_on && ids.includes(i.id) && !(i.id in seen)) seen[i.id] = i.met_on;
+      }
+      achievementsSeen = seen;
+      return okR('ok');
     },
 
     // ── import / export / OCR ──

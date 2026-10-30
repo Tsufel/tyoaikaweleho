@@ -173,6 +173,12 @@ The current shift must never be lost:
 |---|---|---|
 | `get_stats(start_iso, end_iso, granularity)` | dates inclusive, `'day'\|'week'\|'month'` | `R<{data: StatsData}>` (§10) / `invalid(field:'range')` when end < start or > 3700 days |
 
+### Achievements
+| method | params | returns |
+|---|---|---|
+| `get_achievements()` | — | `R<{items: Achievement[], newly: string[], first_run: boolean}>` (§10.1). Read-only |
+| `ack_achievements(ids)` | `string[]` of catalogue ids | `R<{}>`; stores the met ones (unmet ids are skipped; `[]` still ends the first run); `invalid(field:'ids')` for anything else; `save_failed` |
+
 ### Import / export / OCR
 | method | params | returns |
 |---|---|---|
@@ -403,6 +409,24 @@ StatsData = { start, end, granularity, pay_rate,
 Bucket keys: day `2026-10-29` (label "Thu 29"), week `2026-W44` (label "W44",
 start = Monday), month `2026-10` (label "Oct 2026"). An entry belongs to its
 start date's bucket. `worked_days` = distinct dates with minutes > 0.
+
+### 10.1 `get_achievements` payload
+
+```ts
+Achievement = { id, title, desc, icon,          // icon = id = medal file in assets/medals
+  tier: 'bronze'|'silver'|'gold'|'legendary',
+  hidden,                                       // show "???" + hidden_<tier> medal until met
+  progress: {cur, goal, unit},                  // unit: shifts|h|days|weeks|€; cur ≤ goal
+  met_on: IsoDate | null }
+```
+Derived from the stored entries every call (`achievements.py`); only the
+acknowledged set is stored (`data.json` `achievements_seen: {id: date}`), and an
+acknowledged achievement stays unlocked even if its entries are later deleted.
+`newly` = met and not yet acknowledged. `first_run` = nothing was ever
+acknowledged: show one summary toast ("You've already earned N achievements")
+and ack all of `newly`, instead of one celebration each. Otherwise celebrate each
+of `newly`, then ack them. The frontend asks after bootstrap, after a saved
+stop, after entry saves/deletes and on `data:changed`.
 
 ## 11. Events (Python → JS)
 

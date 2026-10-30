@@ -337,3 +337,46 @@ def test_append_error_log_truncates(tmp_storage, monkeypatch):
     assert len(text.encode("utf-8")) < 400
     assert "entry 19" in text
     assert "entry 00" not in text
+
+
+# ── achievements_seen ────────────────────────────────────────────────────────
+
+def test_achievements_seen_absent_is_none(tmp_storage):
+    assert storage.get_achievements_seen() is None
+
+
+def test_achievements_seen_merge_keeps_earliest(tmp_storage):
+    storage.add_achievements_seen({"first_shift": "2026-09-21"})
+    merged = storage.add_achievements_seen({"first_shift": "2026-10-01",
+                                            "hours_10": "2026-09-25"})
+    assert merged == {"first_shift": "2026-09-21", "hours_10": "2026-09-25"}
+    storage.add_achievements_seen({"first_shift": "2026-09-01"})
+    assert storage.get_achievements_seen()["first_shift"] == "2026-09-01"
+
+
+def test_achievements_seen_empty_is_stored(tmp_storage):
+    assert storage.add_achievements_seen({}) == {}
+    assert storage.get_achievements_seen() == {}
+
+
+def test_achievements_seen_cleaned_on_read(tmp_storage):
+    data = storage._load_raw()
+    data["achievements_seen"] = {"ok": "2026-09-21", "bad": "21.9.2026", "num": 3, "x": None}
+    storage._save_raw(data)
+    assert storage.get_achievements_seen() == {"ok": "2026-09-21"}
+    data["achievements_seen"] = ["not", "a", "dict"]
+    storage._save_raw(data)
+    assert storage.get_achievements_seen() == {}
+
+
+def test_achievements_seen_keeps_entries(tmp_storage):
+    e = storage.WorkEntry(id=storage.new_entry_id(), date="2026-09-21", job_shift="Sales",
+                          time_in="09:00", time_out="17:00")
+    storage.save_entry(e)
+    storage.add_achievements_seen({"first_shift": "2026-09-21"})
+    assert [x.id for x in storage.load_all_entries()] == [e.id]
+    storage.save_entry(WorkEntry(id=storage.new_entry_id(), date="2026-09-22",
+                                 job_shift="Sales", time_in="09:00", time_out="17:00"))
+    storage.set_ui_prefs({"lulz": True})
+    storage.set_pay_rate(15.0)
+    assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}

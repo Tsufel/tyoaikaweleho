@@ -223,6 +223,14 @@ class Api:
     def get_stats(self, start_iso, end_iso, granularity="day"):
         return self._c.get_stats(start_iso, end_iso, granularity or "day")
 
+    @_guarded
+    def get_achievements(self):
+        return self._c.get_achievements()
+
+    @_guarded
+    def ack_achievements(self, ids):
+        return self._c.ack_achievements(ids)
+
     # ── import / export / OCR ────────────────────────────────────
 
     @_guarded
