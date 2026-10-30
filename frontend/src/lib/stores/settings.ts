@@ -4,7 +4,7 @@ import { onEvent } from '../api/events';
 import type { DlcStatus, Settings, UiPrefs } from '../api/types';
 import { toast } from './toasts';
 
-export const DEFAULT_UI_PREFS: UiPrefs = { lulz: false, reduce_effects: false, lulz_sound: false, target_hours: 8 };
+export const DEFAULT_UI_PREFS: UiPrefs = { lulz: false, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8 };
 
 export const DEFAULT_SETTINGS: Settings = {
   appearance: 'System',
@@ -32,7 +32,7 @@ export function applySettings(s: Settings, sh?: string[]): void {
   if (sh) shifts.set(sh);
 }
 
-/** Instant toggles (Lulz / Lulz sound / Reduce effects / target hours), outside the Save button. */
+/** Instant toggles (Lulz / Lulz sound / Reduce effects / Liquid glass / target hours), outside the Save button. */
 export async function saveUiPrefs(prefs: Partial<UiPrefs>): Promise<boolean> {
   const before = get(settings);
   settings.set({ ...before, ui_prefs: { ...before.ui_prefs, ...prefs } });

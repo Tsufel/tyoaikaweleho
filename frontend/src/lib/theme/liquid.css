@@ -1,0 +1,142 @@
+/* liquid.css: the "Liquid glass" material.
+   Every rule is scoped under [data-glass='liquid'] or [data-refract='on']
+   (tests/liquid.test.ts enforces), so with the option off nothing here matches.
+   Tests parse this file: one declaration per line, colours as hex or comma rgba(). */
+
+/* Not inherited: light.ts writes it on the lens node only, so a step never
+   restyles the whole subtree and nested cards keep the 315deg rest angle.
+   The ring (::after) reads its own element's value via inherit. */
+@property --lg-light {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 315deg;
+}
+
+/* Not inherited: the liquidGlass action writes url(#lg-N) on its own node;
+   a lens-less descendant (the Segmented thumb) must not pick up an
+   ancestor's filter. Unset falls back to the var() fallback. */
+@property --lg-filter {
+  syntax: '*';
+  inherits: false;
+}
+
+:root[data-glass='liquid'] {
+  --glass-fill: rgba(13, 11, 32, 0.60);
+  --glass-fill-strong: rgba(18, 16, 41, 0.74);
+  --glass-fill-hover: rgba(30, 27, 66, 0.62);
+  --glass-highlight: rgba(255, 255, 255, 0.22);
+  --glass-blur: 16px;
+  --glass-saturate: 180%;
+  --lg-clear: rgba(16, 14, 40, 0.34);
+  --lg-lens-tint: rgba(255, 255, 255, 0.06);
+  --lg-sheen: rgba(255, 255, 255, 0.04);
+  --lg-edge: rgba(255, 255, 255, 0.07);
+  --lg-platter: rgba(255, 255, 255, 0.13);
+  --lg-rim: rgba(255, 255, 255, 0.85);
+  --lg-rim-weak: rgba(255, 255, 255, 0.10);
+  --lg-rim-back: rgba(255, 255, 255, 0.34);
+  --lg-rim-fire: rgba(255, 190, 130, 0.80);
+  --lg-inner: rgba(255, 255, 255, 0.10);
+  --lg-well: rgba(0, 0, 0, 0.28);
+  --lg-brightness: 0.96;
+  --lg-shadow-sit: 0 1px 1px rgba(0, 0, 0, 0.25), 0 10px 28px -10px rgba(0, 0, 0, 0.55);
+  --lg-shadow-float: 0 2px 4px rgba(0, 0, 0, 0.30), 0 18px 44px -12px rgba(0, 0, 0, 0.60);
+  --lg-shadow-overlay: 0 4px 10px rgba(0, 0, 0, 0.30), 0 30px 70px -18px rgba(0, 0, 0, 0.70);
+}
+
+:root[data-glass='liquid'][data-theme='light'] {
+  --glass-fill: rgba(255, 255, 255, 0.50);
+  --glass-fill-strong: rgba(255, 255, 255, 0.68);
+  --glass-fill-hover: rgba(255, 255, 255, 0.62);
+  --glass-highlight: rgba(255, 255, 255, 0.95);
+  --glass-blur: 14px;
+  --glass-saturate: 190%;
+  --lg-clear: rgba(255, 255, 255, 0.34);
+  --lg-lens-tint: rgba(255, 255, 255, 0.22);
+  --lg-sheen: rgba(255, 255, 255, 0.40);
+  --lg-edge: rgba(80, 70, 140, 0.12);
+  --lg-platter: rgba(255, 255, 255, 0.92);
+  --lg-rim: rgba(255, 255, 255, 1);
+  --lg-rim-weak: rgba(255, 255, 255, 0.40);
+  --lg-rim-back: rgba(255, 255, 255, 0.70);
+  --lg-rim-fire: rgba(255, 150, 70, 0.85);
+  --lg-inner: rgba(255, 255, 255, 0.60);
+  --lg-well: rgba(60, 50, 120, 0.12);
+  --lg-brightness: 1.04;
+  --lg-shadow-sit: 0 1px 1px rgba(40, 30, 90, 0.06), 0 10px 28px -10px rgba(40, 30, 90, 0.18);
+  --lg-shadow-float: 0 2px 4px rgba(40, 30, 90, 0.08), 0 18px 44px -12px rgba(40, 30, 90, 0.24);
+  --lg-shadow-overlay: 0 4px 10px rgba(40, 30, 90, 0.10), 0 30px 70px -18px rgba(40, 30, 90, 0.30);
+}
+
+/* Gel press spring (components restate their transition lists with it).
+   :where() keeps it out of the token blocks above. */
+:where(:root[data-glass='liquid']) {
+  --lg-spring: linear(0, 0.42 9%, 0.96 22%, 1.07 33%, 1.02 48%, 0.996 66%, 1);
+}
+
+/* (0,1,0): component fixed/sticky positioning still wins; the ring needs a box */
+:where(:root[data-glass='liquid']) .glass {
+  position: relative;
+}
+
+/* (0,3,0): beats the global .glass and the component-scoped .panel/.popover/.toast (0,2,0).
+   No transition here: GlassCard and KpiTile keep their own lists and hover lifts. */
+:root[data-glass='liquid'] .glass {
+  background: linear-gradient(180deg, var(--lg-sheen), transparent 38%), var(--glass-fill);
+  -webkit-backdrop-filter: var(--lg-filter, blur(var(--glass-blur))) saturate(var(--glass-saturate)) brightness(var(--lg-brightness));
+  backdrop-filter: var(--lg-filter, blur(var(--glass-blur))) saturate(var(--glass-saturate)) brightness(var(--lg-brightness));
+  border-color: var(--lg-edge);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 0 20px -8px var(--lg-inner), inset 0 -1px 0 var(--lg-well), var(--lg-shadow-sit);
+}
+
+/* Content rides its own compositor layer: when a chart or rolling number
+   animates, only that layer re-rasters, not the card with its blurred inset
+   glow and drop shadow (which on integrated GPUs costs whole frames). */
+:root[data-glass='liquid'] .glass > * {
+  will-change: transform;
+}
+
+:root[data-glass='liquid'] .glass.glass-strong {
+  background: linear-gradient(180deg, var(--lg-sheen), transparent 38%), var(--glass-fill-strong);
+}
+
+/* Specular ring: a conic rim whose bright side sits at --lg-light
+   (static 315deg on cards; lens surfaces follow the pointer). */
+:root[data-glass='liquid'] .glass::after {
+  --lg-light: inherit;
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(from var(--lg-light), var(--lg-rim) 0deg, var(--lg-rim-weak) 75deg, var(--lg-rim-back) 180deg, var(--lg-rim-weak) 285deg, var(--lg-rim) 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  transition: --lg-light 260ms var(--ease-out);
+}
+
+:root[data-glass='liquid'] .glass.lg-float {
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 0 20px -8px var(--lg-inner), inset 0 -1px 0 var(--lg-well), var(--lg-shadow-float);
+}
+
+:root[data-glass='liquid'] .glass.lg-overlay {
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 0 24px -8px var(--lg-inner), inset 0 -1px 0 var(--lg-well), var(--lg-shadow-overlay);
+}
+
+:root[data-glass='liquid'] .glass.lg-float::after,
+:root[data-glass='liquid'] .glass.lg-overlay::after {
+  padding: 1.5px;
+}
+
+:root[data-glass='liquid'] .glass.interactive:hover,
+:root[data-glass='liquid'] .glass.tile:hover {
+  --lg-rim-weak: var(--lg-rim-back);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 0 20px -8px var(--lg-inner), inset 0 -1px 0 var(--lg-well), var(--lg-shadow-float);
+}
+
+/* Lulz running: the Timer rim turns warm */
+:root[data-glass='liquid'] .glass.lg-fire::after {
+  --lg-rim: var(--lg-rim-fire);
+}

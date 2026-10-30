@@ -166,7 +166,7 @@ The current shift must never be lost:
 | `get_settings()` | — | `R<{settings: Settings, shifts: string[]}>` |
 | `save_settings(draft)` | `SettingsDraft` | `R<{settings: Settings, shifts: string[]}>` §6.9 |
 | `add_job_shift(name)` | `string` | `R<{added: boolean, shifts: string[]}>`; `added:false` + message `"'X' is already in the shift list."` when present (case-insensitive); `invalid` when blank |
-| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects) that do not go through the Settings Save button |
+| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects/Liquid glass) that do not go through the Settings Save button |
 
 ### Stats
 | method | params | returns |
@@ -355,9 +355,12 @@ Bootstrap = {
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
-  ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false, target_hours:8}}`.
+  ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
+  liquid_glass:false, target_hours:8}}`.
   `lulz_sound` (default off) enables the synthesized fire sound; it only plays
-  while Lulz is effective. Bool prefs are read leniently (a non-bool stored
+  while Lulz is effective. `liquid_glass` (default off) turns on the iOS-style
+  Liquid glass appearance (see `stores/glass.ts`). Frontend and backend ship
+  together: `merge_ui_prefs` rejects unknown keys. Bool prefs are read leniently (a non-bool stored
   value falls back to false) but saved strictly (non-bool → `invalid`).
 - `DlcStatus {state:'missing'|'ok'|'incompatible', version, update_version,
   message, ocr_available}` (`ocr_available` = Import ▸ From image enabled).
@@ -444,6 +447,48 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   reduce_effects + prefers-reduced-motion), `lulz` (forced off under reduced
   motion), `lulzSound` (`lulz && ui_prefs.lulz_sound`), `prefersReducedMotion`.
   `<html>` carries `data-motion` and `data-paused` (page hidden/minimised) for CSS.
+- `stores/glass.ts` (re-exported from `stores/app.ts`): Liquid glass state.
+  `glassMode: 'off'|'css'|'refract'` is `off` while `ui_prefs.liquid_glass` is
+  off or `glassBlock` is set; `css` (tint, sheen and rim, no SVG refraction)
+  under `reduce_effects`, after `refractBroken`, or when
+  `CSS.supports('backdrop-filter', 'url(#a)')` fails (or the
+  `glass/surfaces.ts` `REFRACT_ENABLED` kill-switch is false); else `refract`.
+  `glassLive` (`glassMode !== 'off' && motion === 'full'`) gates the pointer
+  light, gel press, thumb lens and materialize. `glassBlock:
+  'transparency'|'contrast'|null` comes from `prefersReducedTransparency`
+  (`prefers-reduced-transparency: reduce`) and `prefersHighContrast`
+  (`prefers-contrast: more` or `forced-colors: active`); while set, the
+  Settings switch is disabled and the app looks like the option is off.
+  `refractBroken` (writable, session-only) is set on lens-map failure or by
+  the frame guard. `startGlass()` (started next to `startTheme` in App) puts
+  `data-glass="liquid"` on `<html>` in the css and refract modes and
+  `data-refract="on"` in refract only; both attributes are deleted (never set
+  to `off`) while the mode is `off`.
+- Mock flags: `&glass` seeds `liquid_glass: true`; `&glassdebug` (DEV only)
+  replaces every lens map with a hard left/right split for alignment checks.
+- Liquid glass material (`lib/glass/`, `lib/theme/liquid.css`):
+  - `liquid.css` holds the liquid tokens (dark and light, same keys) and the
+    shared `.glass` treatment (tint + top sheen, specular conic rim at
+    `--lg-light`, inner glow, `--lg-shadow-sit|float|overlay` via the
+    `lg-float` / `lg-overlay` classes). Every selector is scoped under
+    `[data-glass='liquid']` or `[data-refract='on']` (enforced by
+    `tests/liquid.test.ts`), so nothing matches while the option is off.
+    Components add their own scoped rules as
+    `:global(:root[data-glass='liquid']) .x`; `lg-gel` marks chips that get
+    the gel press (`scale` on `--lg-spring`).
+  - `use:liquidGlass={'topbar'}` (or `{ key: 'pill', active }`) gives an
+    element its own SVG refraction lens in the refract tier: it measures the
+    border box, asks `glassRegistry` (`registry.svelte.ts`) for a
+    displacement map (`lensMap.ts` pure field, `lensImage.ts` PNG encode,
+    shared by key, LRU of 16 idle maps, at most `MAX_LENSES` = 6 lenses) and
+    sets `--lg-filter: url(#id)` only once `<LiquidFilters />` has rendered
+    that filter. Surfaces are tuned in `surfaces.ts`. `pulseLens(node)`
+    briefly over-bends a lens (Segmented thumb press).
+  - `<LiquidFilters />` (mounted by App only in refract) renders the filters,
+    runs the frame guard (`frameGuard.ts`: median frame > 24ms sets
+    `refractBroken`, dropping to the css tier) and drives the pointer light
+    (`light.ts`, writes `--lg-light` on registered lens nodes only, while
+    `glassLive` and the window is active).
 - `stores/modals.ts`: `pushModal(focus) → {id, release}`, `modalOpen` (count),
   `topModal`, `focusTopModal()`. App marks the shell `inert` while
   `modalOpen > 0`.

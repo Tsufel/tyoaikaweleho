@@ -744,7 +744,7 @@ def test_get_settings_defaults(env):
     assert s["pay_rate"] == 20.0 and s["pay_rate_text"] == "20"
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
-                             "target_hours": 8.0}
+                             "liquid_glass": False, "target_hours": 8.0}
 
 
 def test_save_settings(env):
@@ -765,6 +765,14 @@ def test_save_settings_lulz_sound(env):
     assert r["status"] == "saved"
     assert r["settings"]["ui_prefs"]["lulz_sound"] is True
     assert storage.get_ui_prefs()["lulz_sound"] is True
+
+
+def test_save_settings_liquid_glass(env):
+    ctrl, _ = env
+    r = ctrl.save_settings(_settings_draft(ui_prefs={"liquid_glass": True}))
+    assert r["status"] == "saved"
+    assert r["settings"]["ui_prefs"]["liquid_glass"] is True
+    assert storage.get_ui_prefs()["liquid_glass"] is True
 
 
 def test_save_settings_ignores_bad_appearance(env):
@@ -806,6 +814,9 @@ def test_save_ui_prefs(env, monkeypatch):
     r = ctrl.save_ui_prefs({"lulz_sound": True})
     assert r["status"] == "saved" and r["settings"]["ui_prefs"]["lulz_sound"] is True
     assert ctrl.save_ui_prefs({"lulz_sound": 1})["status"] == "invalid"
+    r = ctrl.save_ui_prefs({"liquid_glass": True})
+    assert r["status"] == "saved" and r["settings"]["ui_prefs"]["liquid_glass"] is True
+    assert ctrl.save_ui_prefs({"liquid_glass": 1})["status"] == "invalid"
     monkeypatch.setattr(storage, "_save_raw", _fail)
     assert ctrl.save_ui_prefs({"lulz": False})["error"]["code"] == "save_failed"
 

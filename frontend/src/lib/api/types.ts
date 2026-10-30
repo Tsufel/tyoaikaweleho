@@ -244,6 +244,8 @@ export interface UiPrefs {
   reduce_effects: boolean;
   /** Synthesized fire sound while Lulz is on. Default false. */
   lulz_sound: boolean;
+  /** Liquid glass appearance (iOS-style refraction, specular rim). Instant toggle. */
+  liquid_glass: boolean;
   /** Daily target for the hero ring, hours (1–24). Default 8. */
   target_hours: number;
 }

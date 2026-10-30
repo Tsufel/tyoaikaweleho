@@ -12,8 +12,9 @@
     unwrapLaps,
   } from './timerLogic';
 
-  /** Idle ring as a dial: drag the knob clockwise (or use arrows / wheel) to
-   *  back-date the start; the ring fills as if the shift had been running.
+  /** Idle ring as a dial: wind the knob back anticlockwise, like turning a
+   *  clock's hands back (or use arrows / wheel), to back-date the start. The
+   *  fill runs from the knob (start) clockwise to 12 o'clock (now).
    *  `picked` is the chosen start (epoch ms, 5-min grid) or null for "now". */
   let {
     picked = $bindable(null),
@@ -36,7 +37,7 @@
   const targetMs = $derived(Math.max(1, targetHours || 8) * 3_600_000);
   const maxLaps = $derived((DIAL_MAX_MIN * 60_000) / targetMs);
   const laps = $derived(picked == null ? 0 : Math.max(0, (now - picked) / targetMs));
-  const knob = $derived(ringPoint(laps));
+  const knob = $derived(ringPoint(-laps));
   const offsetMin = $derived(picked == null ? 0 : Math.round((now - picked) / 60_000));
   const valueText = $derived(
     picked == null
@@ -49,7 +50,8 @@
 
   function lapsAt(e: PointerEvent, fresh = false): number {
     const b = svg!.getBoundingClientRect();
-    const raw = pointerFraction(e.clientX, e.clientY, b.left + b.width / 2, b.top + b.height / 2);
+    // laps grow anticlockwise: back in time
+    const raw = (1 - pointerFraction(e.clientX, e.clientY, b.left + b.width / 2, b.top + b.height / 2)) % 1;
     return unwrapLaps(dragLaps, raw, maxLaps, fresh);
   }
 
@@ -87,9 +89,9 @@
     if (disabled) return;
     const step: Record<string, number> = {
       ArrowUp: -5,
-      ArrowRight: -5,
+      ArrowLeft: -5,
       ArrowDown: 5,
-      ArrowLeft: 5,
+      ArrowRight: 5,
       PageUp: -60,
       PageDown: 60,
     };

@@ -73,4 +73,20 @@
     opacity: 0.5;
     cursor: default;
   }
+
+  /* Liquid glass: a glossy thumb that turns to clear gel while pressed */
+  :global(:root[data-glass='liquid']) .thumb {
+    box-shadow: var(--shadow-sm), inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .thumb {
+    transition:
+      transform var(--dur-med) var(--ease-spring),
+      scale 460ms var(--lg-spring),
+      background-color var(--dur-fast);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .switch:not(:disabled):active .thumb {
+    scale: 1.18 1;
+    background: rgba(255, 255, 255, 0.6);
+    transition-duration: var(--dur-med), 90ms, 90ms;
+  }
 </style>

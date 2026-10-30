@@ -6,6 +6,16 @@ import { commitEdits } from './editGuard';
 
 export { settings, shifts, dlc, saveUiPrefs } from './settings';
 export { motion, lulz, prefersReducedMotion, type MotionLevel } from './motion';
+export {
+  glassMode,
+  glassLive,
+  glassBlock,
+  prefersReducedTransparency,
+  prefersHighContrast,
+  refractBroken,
+  type GlassMode,
+  type GlassBlock,
+} from './glass';
 export { modalOpen, focusTopModal } from './modals';
 
 export const bootstrap = writable<Bootstrap | null>(null);

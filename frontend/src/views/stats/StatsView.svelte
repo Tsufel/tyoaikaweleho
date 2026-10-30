@@ -175,7 +175,7 @@
     <div class="nav">
       <button
         type="button"
-        class="chev"
+        class="chev lg-gel"
         aria-label="Previous period"
         use:tooltip={'Previous period'}
         disabled={!!rangeError}
@@ -194,7 +194,7 @@
       </Button>
       <button
         type="button"
-        class="chev"
+        class="chev lg-gel"
         aria-label="Next period"
         use:tooltip={'Next period'}
         disabled={!!rangeError}
@@ -776,5 +776,27 @@
     color: var(--on-accent);
     background: radial-gradient(circle at 30% 30%, var(--chart-bar-b), var(--accent-strong) 60%, var(--accent-strong-2));
     box-shadow: 0 10px 40px -6px var(--accent-glow);
+  }
+
+  /* Liquid glass: clear chips (icon only) with gel press */
+  :global(:root[data-glass='liquid']) .chev {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--lg-clear);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  :global(:root[data-glass='liquid']) .chev:hover:not(:disabled) {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill-hover);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 18px -4px var(--accent-glow);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .chev.lg-gel {
+    transition:
+      background var(--dur-fast),
+      transform var(--dur-fast),
+      box-shadow var(--dur-med),
+      scale 460ms var(--lg-spring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .chev.lg-gel:active:not(:disabled) {
+    transform: none;
+    scale: 1.06 0.94;
+    transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-med), 90ms;
   }
 </style>

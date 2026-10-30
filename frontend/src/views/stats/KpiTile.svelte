@@ -118,4 +118,16 @@
     color: var(--text-subtle);
     min-height: 1.3em;
   }
+
+  /* Liquid glass: keep the tone glow and border on hover over the liquid
+     float shadow ((0,6,0) beats liquid.css's .glass.tile:hover) */
+  :global(:root[data-glass='liquid']) .tile.glass:hover {
+    border-color: color-mix(in srgb, var(--tone) 40%, var(--glass-border));
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      inset 0 0 20px -8px var(--lg-inner),
+      inset 0 -1px 0 var(--lg-well),
+      0 10px 34px -10px color-mix(in srgb, var(--tone) 55%, transparent),
+      var(--lg-shadow-float);
+  }
 </style>

@@ -11,6 +11,9 @@
   import { animationsActive, bootstrap, lulz, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
   import { goToCurrentMonth, refreshMonth, setViewMonth, shiftMonth, viewMonth } from './lib/stores/entries';
   import { applyRecoveryResult, pendingRecovery } from './lib/stores/recovery';
+  import { glassMode, startGlass } from './lib/stores/glass';
+  import LiquidFilters from './lib/glass/LiquidFilters.svelte';
+  import { liquidGlass } from './lib/glass/liquidGlass';
   import { applySettings, dlc } from './lib/stores/settings';
   import { setTimer } from './lib/stores/timer';
   import { runUndo } from './lib/stores/toasts';
@@ -113,6 +116,8 @@
 
   onMount(() => {
     const stopTheme = startTheme(readable(true));
+    // html[data-glass] / html[data-refract]: absent while Liquid glass is off
+    const stopGlass = startGlass();
     const offClose = onEvent('close:requested', () => void handleCloseRequest());
     const offActivate = onEvent('app:activate', () => window.focus());
     // load() failed and Python's watchdog showed the window anyway
@@ -140,6 +145,7 @@
 
     return () => {
       stopTheme();
+      stopGlass();
       offClose();
       offActivate();
       clearTimeout(introFallback);
@@ -153,9 +159,12 @@
 </script>
 
 <MeshBackground />
+{#if $glassMode === 'refract'}
+  <LiquidFilters />
+{/if}
 
 <div class="shell" data-fx-root inert={$modalOpen > 0 || !introDone}>
-  <header class="topbar glass">
+  <header class="topbar glass lg-float" use:liquidGlass={'topbar'}>
     <div class="brand">
       <img src={logo} alt="" width="28" height="28" />
       <span class="name">Työaikaweleho</span>
@@ -172,20 +181,20 @@
     <div class="right">
       {#if $route === 'main'}
         <div class="month-nav" role="group" aria-label="Month">
-          <button type="button" class="nav" aria-label="Previous month" use:tooltip={{ text: 'Previous month', kbd: 'PgUp' }} onclick={() => shiftMonth(-1)}>
+          <button type="button" class="nav lg-gel" aria-label="Previous month" use:tooltip={{ text: 'Previous month', kbd: 'PgUp' }} onclick={() => shiftMonth(-1)}>
             <Icon name="chevron-left" size={16} />
           </button>
           <button
             bind:this={monthBtn}
             type="button"
-            class="month"
+            class="month lg-gel"
             aria-haspopup="dialog"
             aria-expanded={monthOpen}
             onclick={() => (monthOpen = !monthOpen)}
           >
             {monthLabel($viewMonth.year, $viewMonth.month)}
           </button>
-          <button type="button" class="nav" aria-label="Next month" use:tooltip={{ text: 'Next month', kbd: 'PgDn' }} onclick={() => shiftMonth(1)}>
+          <button type="button" class="nav lg-gel" aria-label="Next month" use:tooltip={{ text: 'Next month', kbd: 'PgDn' }} onclick={() => shiftMonth(1)}>
             <Icon name="chevron-right" size={16} />
           </button>
         </div>
@@ -361,6 +370,24 @@
   .month[aria-expanded='true'] {
     background: var(--neutral-fill-hover);
     color: var(--text);
+  }
+  /* Liquid glass: capsule topbar, clear chip group, gel press */
+  :global(:root[data-glass='liquid']) .topbar {
+    border-radius: 28px;
+  }
+  :global(:root[data-glass='liquid']) .month-nav {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--lg-clear);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .lg-gel {
+    transition:
+      background-color var(--dur-fast),
+      color var(--dur-fast),
+      scale 460ms var(--lg-spring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .lg-gel:active {
+    scale: 1.06 0.94;
+    transition-duration: var(--dur-fast), var(--dur-fast), 90ms;
   }
   .content {
     flex: 1;

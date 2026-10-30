@@ -66,15 +66,18 @@ def test_unknown_placement_version_falls_back(tmp_storage):
 def test_ui_prefs_defaults_and_lenient_read(tmp_storage):
     assert storage.get_ui_prefs() == storage.UI_PREF_DEFAULTS
     _write(tmp_storage, {"entries": [], "ui_prefs": {"lulz": "yes", "target_hours": 99,
-                                                     "reduce_effects": True, "lulz_sound": "yes"}})
+                                                     "reduce_effects": True, "lulz_sound": "yes",
+                                                     "liquid_glass": "x"}})
     assert storage.get_ui_prefs() == {"lulz": False, "reduce_effects": True,
-                                      "lulz_sound": False, "target_hours": 8.0}
+                                      "lulz_sound": False, "liquid_glass": False,
+                                      "target_hours": 8.0}
 
 
 def test_set_ui_prefs_partial(tmp_storage):
     storage.set_ui_prefs({"lulz": True})
     assert storage.set_ui_prefs({"target_hours": 6}) == {"lulz": True, "reduce_effects": False,
-                                                         "lulz_sound": False, "target_hours": 6.0}
+                                                         "lulz_sound": False, "liquid_glass": False,
+                                                         "target_hours": 6.0}
 
 
 def test_set_ui_prefs_lulz_sound_round_trips(tmp_storage):
@@ -84,8 +87,16 @@ def test_set_ui_prefs_lulz_sound_round_trips(tmp_storage):
     assert storage.get_ui_prefs()["lulz_sound"] is False
 
 
+def test_set_ui_prefs_liquid_glass_round_trips(tmp_storage):
+    assert storage.set_ui_prefs({"liquid_glass": True})["liquid_glass"] is True
+    assert storage.get_ui_prefs()["liquid_glass"] is True
+    storage.set_ui_prefs({"liquid_glass": False})
+    assert storage.get_ui_prefs()["liquid_glass"] is False
+
+
 @pytest.mark.parametrize("changes", [{"target_hours": 0.5}, {"target_hours": float("nan")},
                                      {"lulz": 1}, {"lulz_sound": "yes"}, {"lulz_sound": None},
+                                     {"liquid_glass": "yes"}, {"liquid_glass": None},
                                      {"nope": True}, "x"])
 def test_set_ui_prefs_invalid(tmp_storage, changes):
     with pytest.raises(ValueError):
@@ -98,12 +109,14 @@ def test_save_settings_all_at_once(tmp_storage):
     storage.save_settings({"pay_rate": 21, "default_start_time": "07:30",
                            "default_job_shift": "Support", "export_format": "Full",
                            "export_include_pay": True, "appearance_mode": "Light",
-                           "ui_prefs": {"lulz": True, "lulz_sound": True}})
+                           "ui_prefs": {"lulz": True, "lulz_sound": True,
+                                        "liquid_glass": True}})
     data = json.loads((tmp_storage / "data.json").read_text(encoding="utf-8"))
     assert data["pay_rate"] == 21.0 and isinstance(data["pay_rate"], float)
     assert storage.get_default_start_time() == "07:30"
     assert storage.get_appearance_mode() == "Light"
     assert storage.get_ui_prefs()["lulz"] is True and storage.get_ui_prefs()["lulz_sound"] is True
+    assert storage.get_ui_prefs()["liquid_glass"] is True
 
 
 @pytest.mark.parametrize("values", [

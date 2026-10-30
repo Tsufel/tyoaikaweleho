@@ -196,4 +196,44 @@
     outline-offset: 2px;
     border-radius: var(--radius-md);
   }
+
+  /* Liquid glass: capsule shapes, glossier fills and a gel press (individual
+     `scale`, so the hover lift stays a transform). Inert without the root attribute. */
+  :global(:root[data-glass='liquid']) .btn,
+  :global(:root[data-glass='liquid']) .btn:focus-visible {
+    border-radius: var(--radius-pill);
+  }
+  :global(:root[data-glass='liquid']) .secondary {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  :global(:root[data-glass='liquid']) .secondary:not(:disabled):hover {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill-hover);
+  }
+  /* top highlight raised to about .30 over the variants' own .20-.25 inset */
+  :global(:root[data-glass='liquid']) .primary::after,
+  :global(:root[data-glass='liquid']) .danger::after,
+  :global(:root[data-glass='liquid']) .success::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 55%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .btn {
+    transition:
+      transform var(--dur-fast) var(--ease-out),
+      background-color var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-med) var(--ease-out),
+      border-color var(--dur-fast) var(--ease-out),
+      filter var(--dur-fast) var(--ease-out),
+      scale 460ms var(--lg-spring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .btn:not(:disabled):active {
+    transform: none;
+    scale: 0.97;
+    transition-duration: 60ms, 60ms, 60ms, 60ms, 60ms, 90ms;
+  }
 </style>

@@ -5,6 +5,7 @@
   import { fade, scale } from '../motion';
   import { focusables, portal } from './actions';
   import Icon from './Icon.svelte';
+  import { liquidGlass } from '../glass/liquidGlass';
 
   interface Props {
     title?: string;
@@ -145,7 +146,7 @@
   <div class="center">
     <div
       bind:this={panel}
-      class="panel glass glass-strong {size} {cls}"
+      class="panel glass glass-strong lg-overlay {size} {cls}"
       class:nudge={nudging}
       {role}
       aria-modal="true"
@@ -153,6 +154,7 @@
       aria-describedby={describedby}
       tabindex="-1"
       transition:scale={{ start: 0.94, duration: 240 }}
+      use:liquidGlass={'modal'}
     >
       {#if header}
         {@render header()}
@@ -194,6 +196,11 @@
     background: var(--scrim);
     backdrop-filter: blur(3px);
     pointer-events: auto;
+  }
+  /* Liquid glass: keep the page sharp enough for the panel's lens to bend */
+  :global(:root[data-glass='liquid']) .backdrop {
+    -webkit-backdrop-filter: blur(1.5px);
+    backdrop-filter: blur(1.5px);
   }
   .center {
     position: absolute;

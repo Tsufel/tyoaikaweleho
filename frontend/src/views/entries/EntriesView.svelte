@@ -387,7 +387,7 @@
   <header class="head">
     <div class="title">
       <h2 id="entries-title">Shifts this month</h2>
-      <button type="button" class="month-btn" onclick={openPicker} aria-haspopup="dialog" aria-label="{label}, choose month">
+      <button type="button" class="month-btn lg-gel" onclick={openPicker} aria-haspopup="dialog" aria-label="{label}, choose month">
         <Icon name="calendar" size={15} />
         <span>{label}</span>
         <Icon name="chevron-down" size={14} />
@@ -907,5 +907,32 @@
       width: 100%;
       order: -1;
     }
+  }
+
+  /* Liquid glass: sheen chip (its label is muted, so no clear tint), gel
+     press, and a rim under the sticky header */
+  :global(:root[data-glass='liquid']) .month-btn {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  :global(:root[data-glass='liquid']) .month-btn:hover {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill-hover);
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 6px 18px -8px var(--accent-glow);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .month-btn.lg-gel {
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out),
+      box-shadow var(--dur-fast) var(--ease-out),
+      scale 460ms var(--lg-spring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .month-btn.lg-gel:active {
+    transform: none;
+    scale: 1.06 0.94;
+    transition-duration: var(--dur-fast), var(--dur-fast), var(--dur-fast), var(--dur-fast), 90ms;
+  }
+  :global(:root[data-glass='liquid']) thead th {
+    box-shadow: inset 0 -1px 0 var(--lg-rim-weak);
   }
 </style>

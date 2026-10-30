@@ -10,6 +10,8 @@
   import { bootstrap, navigate } from '../../lib/stores/app';
   import { alert, askYesNoCancel, reportError } from '../../lib/stores/confirm';
   import { refreshMonth } from '../../lib/stores/entries';
+  import { liquidGlass } from '../../lib/glass/liquidGlass';
+  import { glassBlock } from '../../lib/stores/glass';
   import { prefersReducedMotion } from '../../lib/stores/motion';
   import { applySettings, dlc, saveUiPrefs, settings, shifts } from '../../lib/stores/settings';
   import { refreshTimer } from '../../lib/stores/timer';
@@ -186,6 +188,9 @@
   async function toggleReduce(v: boolean) {
     await saveUiPrefs({ reduce_effects: v });
   }
+  async function toggleGlass(v: boolean) {
+    await saveUiPrefs({ liquid_glass: v });
+  }
 
   const offs = [
     registerCommand('settings.save', () => void save()),
@@ -201,11 +206,12 @@
   const lulzBlocked = $derived(reduceFx || $prefersReducedMotion);
   const lulzSound = $derived($settings.ui_prefs.lulz_sound);
   const soundOff = $derived(!lulz || lulzBlocked);
+  const glassOn = $derived($settings.ui_prefs.liquid_glass);
   const checkedAgo = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 </script>
 
 <section class="settings" aria-labelledby="settings-title">
-  <header class="top glass glass-strong" in:fly={{ y: -8 }}>
+  <header class="top glass glass-strong lg-float" in:fly={{ y: -8 }} use:liquidGlass={'settingsTop'}>
     <Button variant="ghost" icon="chevron-left" onclick={back} tooltip={{ text: 'Back', kbd: 'Esc' }}>Back</Button>
     <h2 id="settings-title">
       <span class="title-icon"><Icon name="settings" size={18} /></span>
@@ -266,6 +272,23 @@
         <h3 id="s-look"><Icon name="sun" size={16} /> Appearance</h3>
         <p class="muted small">Previewed live. Saved when you press Save.</p>
         <Segmented label="Appearance" value={form.appearance} options={appearanceOptions} onchange={setAppearance} />
+        <div class="switch-row look-row">
+          <div>
+            <div class="row-title">Liquid glass</div>
+            <div class="muted small">
+              {#if $glassBlock === 'transparency'}
+                Off while Windows transparency effects are off.
+              {:else if $glassBlock === 'contrast'}
+                Off while high contrast is on.
+              {:else if glassOn && reduceFx}
+                Refraction is paused while Reduce effects is on.
+              {:else}
+                Clear, refractive glass like on iPhone. Saved instantly.
+              {/if}
+            </div>
+          </div>
+          <Switch label="Liquid glass" checked={glassOn && !$glassBlock} disabled={!!$glassBlock} onchange={toggleGlass} />
+        </div>
 
         <div class="divider"></div>
         <h3 id="s-fx"><Icon name="flame" size={16} /> Effects</h3>
@@ -633,6 +656,9 @@
   }
   .row-title {
     font-weight: 650;
+  }
+  .look-row {
+    margin-top: 14px;
   }
   .two {
     display: grid;

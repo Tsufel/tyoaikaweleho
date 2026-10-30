@@ -3,7 +3,8 @@
 // &recovery=<hours> leaves an unfinished shift; &running=<hours> starts with a
 // running shift; &changelog shows the changelog; &update emits update:available;
 // &empty starts with no shifts; &dlc installs the OCR DLC; &lulz turns Lulz on;
-// &sound turns Lulz sound on.
+// &sound turns Lulz sound on; &glass turns Liquid glass on; &glassdebug (DEV only)
+// replaces every liquid-glass lens map with a hard left/right split.
 // window.__welehoMock exposes the same switches at runtime.
 
 import { emitEvent } from './events';
@@ -187,7 +188,7 @@ export function createMockApi(): Api {
     default_job_shift: 'Sales',
     export_format: 'Simple',
     export_include_pay: false,
-    ui_prefs: { lulz: q.has('lulz'), reduce_effects: false, lulz_sound: q.has('sound'), target_hours: 8 },
+    ui_prefs: { lulz: q.has('lulz'), reduce_effects: false, lulz_sound: q.has('sound'), liquid_glass: q.has('glass'), target_hours: 8 },
   };
   let dlc: DlcStatus = q.has('dlc')
     ? { state: 'ok', version: '1.0.2', update_version: null, message: null, ocr_available: true }

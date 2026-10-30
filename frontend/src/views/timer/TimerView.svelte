@@ -53,11 +53,15 @@
   let dialDragging = $state(false);
   /** When an untouched pick falls back to the live clock. */
   let dialResetAt = $state(0);
+  /** Ring drawn rewound (ending at "now") from the first dial turn until the
+   *  shift runs, so a reset drains it the way it came. */
+  let dialRewind = $state(false);
   $effect(() => {
     if (running) {
       dialStart = null;
       dialDragging = false;
-    }
+      dialRewind = false;
+    } else if (dialStart != null) dialRewind = true;
   });
   // every change (or grab / release) of the dial, or a start attempt ending,
   // restarts the countdown
@@ -143,7 +147,7 @@
   }
 </script>
 
-<section class="timer glass" class:running class:lulz={$lulz} class:celebrate aria-label="Timer">
+<section class="timer glass" class:running class:lulz={$lulz} class:lg-fire={$lulz && running} class:celebrate aria-label="Timer">
   {#if $lulz}
     <div class="fire-box" aria-hidden="true">
       {#await loadFire() then m}
@@ -169,7 +173,7 @@
 
   <div class="stage-slot">
     <div class="stage" bind:this={stage}>
-      <HeroRing {progress} {running} {hue} overHue={blueFire ? 195 : null} targetHours={target}>
+      <HeroRing {progress} {running} {hue} overHue={blueFire ? 195 : null} rewind={dialRewind} targetHours={target}>
         {#if running}
           <span class="ring-label">Elapsed</span>
           <span class="clock num" role="timer" aria-label={`Elapsed ${spokenDuration($elapsedSeconds)}`}>

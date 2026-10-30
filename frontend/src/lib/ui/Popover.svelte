@@ -2,6 +2,7 @@
   import { onMount, type Snippet } from 'svelte';
   import { scale } from '../motion';
   import { clickOutside, portal } from './actions';
+  import { liquidGlass } from '../glass/liquidGlass';
 
   interface Props {
     /** Element the popover is positioned against. */
@@ -82,7 +83,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={el}
-  class="popover glass glass-strong {cls}"
+  class="popover glass glass-strong lg-overlay {cls}"
   class:up={pos.up}
   data-popover
   role={role === 'none' ? undefined : role}
@@ -92,6 +93,7 @@
   style:width={matchWidth ? `${pos.width}px` : undefined}
   use:portal
   use:clickOutside={{ fn: onclose, ignore: [anchor] }}
+  use:liquidGlass={'popover'}
   onkeydown={onKeydown}
   transition:scale={{ start: 0.96, duration: 160 }}
 >

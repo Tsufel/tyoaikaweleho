@@ -2,6 +2,7 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import './lib/theme/tokens.css';
 import './lib/theme/global.css';
+import './lib/theme/liquid.css';
 import { mount } from 'svelte';
 import App from './App.svelte';
 import { api } from './lib/api';

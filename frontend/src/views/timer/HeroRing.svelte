@@ -12,6 +12,7 @@
     hue,
     targetHours,
     overHue = null,
+    rewind = false,
     children,
   }: {
     progress: number;
@@ -20,6 +21,10 @@
     targetHours: number;
     /** Tint the overtime lap with this hue instead of the warm amber → pink (Lulz blue overtime). */
     overHue?: number | null;
+    /** Start dial: the fill ends at 12 o'clock ("now") and reaches back
+     *  anticlockwise to the picked start. Turning it off swings the arc
+     *  forward into the running layout (start at 12, growing clockwise). */
+    rewind?: boolean;
     children?: Snippet;
   } = $props();
 
@@ -27,10 +32,15 @@
   const { size, r, stroke } = RING;
   const c = size / 2;
   const shown = new Spring(0, { stiffness: 0.07, damping: 0.55 });
+  const wind = new Spring(0, { stiffness: 0.08, damping: 0.6 });
 
   $effect(() => {
     const p = Math.max(0, progress);
     void shown.set(p, { instant: reduced() || Math.abs(p - shown.target) < 0.02 });
+  });
+  $effect(() => {
+    // on at once (the dial was just grabbed); off swings the arc forward
+    void wind.set(rewind ? 1 : 0, { instant: reduced() || rewind });
   });
 
   const lap1 = $derived(Math.min(1, Math.max(0, shown.current)));
@@ -38,6 +48,7 @@
   const head = $derived(ringPoint(shown.current >= 1 ? 1 + lap2 : lap1));
   const ticks = $derived(hourTicks(targetHours));
   const hue2 = $derived(hue + 46);
+  const spin = $derived(-wind.current * shown.current * 360);
 </script>
 
 <div class="ring" class:running style:--h={hue} style:--h2={hue2}>
@@ -69,48 +80,50 @@
       />
     {/each}
 
-    {#if lap1 > 0.001}
-      <circle
-        class="arc glow"
-        cx={c}
-        cy={c}
-        {r}
-        stroke="url(#arc-{uid})"
-        stroke-width={stroke}
-        pathLength="100"
-        stroke-dasharray="{lap1 * 100} 100"
-        transform="rotate(-90 {c} {c})"
-      />
-      <circle
-        class="arc"
-        cx={c}
-        cy={c}
-        {r}
-        stroke="url(#arc-{uid})"
-        stroke-width={stroke}
-        pathLength="100"
-        stroke-dasharray="{lap1 * 100} 100"
-        transform="rotate(-90 {c} {c})"
-      />
-    {/if}
-    {#if lap2 > 0.001}
-      <circle
-        class="arc over"
-        class:tinted={overHue != null}
-        style:--oh={overHue}
-        cx={c}
-        cy={c}
-        {r}
-        stroke="url(#over-{uid})"
-        stroke-width={stroke - 4}
-        pathLength="100"
-        stroke-dasharray="{lap2 * 100} 100"
-        transform="rotate(-90 {c} {c})"
-      />
-    {/if}
-    {#if running && shown.current > 0.004}
-      <circle class="head" cx={head.x} cy={head.y} r={stroke / 2 - 2.5} />
-    {/if}
+    <g transform="rotate({spin} {c} {c})">
+      {#if lap1 > 0.001}
+        <circle
+          class="arc glow"
+          cx={c}
+          cy={c}
+          {r}
+          stroke="url(#arc-{uid})"
+          stroke-width={stroke}
+          pathLength="100"
+          stroke-dasharray="{lap1 * 100} 100"
+          transform="rotate(-90 {c} {c})"
+        />
+        <circle
+          class="arc"
+          cx={c}
+          cy={c}
+          {r}
+          stroke="url(#arc-{uid})"
+          stroke-width={stroke}
+          pathLength="100"
+          stroke-dasharray="{lap1 * 100} 100"
+          transform="rotate(-90 {c} {c})"
+        />
+      {/if}
+      {#if lap2 > 0.001}
+        <circle
+          class="arc over"
+          class:tinted={overHue != null}
+          style:--oh={overHue}
+          cx={c}
+          cy={c}
+          {r}
+          stroke="url(#over-{uid})"
+          stroke-width={stroke - 4}
+          pathLength="100"
+          stroke-dasharray="{lap2 * 100} 100"
+          transform="rotate(-90 {c} {c})"
+        />
+      {/if}
+      {#if running && shown.current > 0.004}
+        <circle class="head" cx={head.x} cy={head.y} r={stroke / 2 - 2.5} />
+      {/if}
+    </g>
   </svg>
   <div class="center">
     {@render children?.()}

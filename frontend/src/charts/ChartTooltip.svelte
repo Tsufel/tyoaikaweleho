@@ -67,4 +67,8 @@
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
+
+  :global(:root[data-glass='liquid']) .tip {
+    box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 0 0 1px var(--lg-rim-weak), var(--lg-shadow-float);
+  }
 </style>

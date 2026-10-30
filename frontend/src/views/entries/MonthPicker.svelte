@@ -60,11 +60,11 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="picker" onkeydown={onKeydown}>
     <div class="current" aria-live="polite">
-      <button type="button" class="step" aria-label="Previous month" onclick={() => step(-1)}>
+      <button type="button" class="step lg-gel" aria-label="Previous month" onclick={() => step(-1)}>
         <Icon name="chevron-left" size={18} />
       </button>
       <span class="label">{MONTHS[m - 1]} <span class="num">{y ?? yearText}</span></span>
-      <button type="button" class="step" aria-label="Next month" onclick={() => step(1)}>
+      <button type="button" class="step lg-gel" aria-label="Next month" onclick={() => step(1)}>
         <Icon name="chevron-right" size={18} />
       </button>
     </div>
@@ -187,5 +187,29 @@
   button:focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+
+  /* Liquid glass: clear chip (icon only) with gel press */
+  :global(:root[data-glass='liquid']) .step {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--lg-clear);
+    box-shadow: inset 0 1px 0 var(--glass-highlight);
+  }
+  :global(:root[data-glass='liquid']) .step:hover {
+    background: linear-gradient(180deg, var(--lg-sheen), transparent 60%), var(--neutral-fill-hover);
+  }
+  /* the inset highlight above outranks button:focus-visible: keep the ring */
+  :global(:root[data-glass='liquid']) .step:focus-visible {
+    box-shadow: inset 0 1px 0 var(--glass-highlight), 0 0 0 3px var(--focus-ring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .step.lg-gel {
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      transform var(--dur-fast) var(--ease-out),
+      scale 460ms var(--lg-spring);
+  }
+  :global(:root[data-glass='liquid']:not([data-motion='reduced'])) .step.lg-gel:active {
+    transform: none;
+    scale: 1.06 0.94;
+    transition-duration: var(--dur-fast), var(--dur-fast), 90ms;
   }
 </style>

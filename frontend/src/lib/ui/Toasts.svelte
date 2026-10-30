@@ -3,6 +3,7 @@
   import { dismiss, runToastAction, toasts, type Toast } from '../stores/toasts';
   import { fly, flip } from '../motion';
   import Icon, { type IconName } from './Icon.svelte';
+  import { liquidGlass } from '../glass/liquidGlass';
 
   // per-toast countdown that pauses while hovered / focused
   const timers = new Map<number, { left: number; started: number; handle?: ReturnType<typeof setTimeout> }>();
@@ -65,7 +66,14 @@
 >
   <div aria-live="polite" aria-atomic="false" class="stack">
     {#each $toasts as t (t.id)}
-      <div class="toast glass glass-strong {t.tone}" role={t.tone === 'error' ? 'alert' : 'status'} in:fly={{ y: 16 }} out:fly={{ y: 8, duration: 160 }} animate:flip>
+      <div
+        class="toast glass glass-strong lg-float {t.tone}"
+        role={t.tone === 'error' ? 'alert' : 'status'}
+        in:fly={{ y: 16 }}
+        out:fly={{ y: 8, duration: 160 }}
+        animate:flip
+        use:liquidGlass={'toast'}
+      >
         <span class="ic"><Icon name={ICONS[t.tone]} size={18} /></span>
         <span class="msg">{t.message}</span>
         {#if t.action}

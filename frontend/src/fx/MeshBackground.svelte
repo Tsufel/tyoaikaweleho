@@ -1,18 +1,12 @@
-<script lang="ts">
-  /** Aurora mesh: five blurred blobs drifting on CSS transforms (compositor
-   *  only, no JS per frame). Paused via :root[data-paused] and static under
-   *  :root[data-motion='reduced'] (global.css). */
-  const NOISE =
-    "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")";
-</script>
-
+<!-- Aurora mesh: five soft blobs drifting on CSS transforms (compositor
+     only, no JS per frame). Paused via :root[data-paused] and static under
+     :root[data-motion='reduced'] (global.css). -->
 <div class="mesh fx-anim" aria-hidden="true">
   <span class="blob b1"></span>
   <span class="blob b2"></span>
   <span class="blob b3"></span>
   <span class="blob b4"></span>
   <span class="blob b5"></span>
-  <span class="noise" style:background-image={NOISE}></span>
 </div>
 
 <style>
@@ -27,29 +21,42 @@
       var(--bg);
     contain: strict;
   }
+  /* The softness is baked into the gradient (the radial profile of a cone
+     blurred by 70px) instead of a blur filter: a filtered layer is re-blurred
+     every frame it moves, and under glass every backdrop-filter re-samples it. */
   .blob {
     position: absolute;
     width: 62vmax;
     height: 62vmax;
-    border-radius: 50%;
-    filter: blur(70px);
+    background: radial-gradient(
+      circle,
+      color-mix(in srgb, var(--c) 80%, transparent) 0%,
+      color-mix(in srgb, var(--c) 76%, transparent) 10%,
+      color-mix(in srgb, var(--c) 65%, transparent) 20%,
+      color-mix(in srgb, var(--c) 51%, transparent) 30%,
+      color-mix(in srgb, var(--c) 36%, transparent) 40%,
+      color-mix(in srgb, var(--c) 22%, transparent) 50%,
+      color-mix(in srgb, var(--c) 10%, transparent) 60%,
+      color-mix(in srgb, var(--c) 3%, transparent) 70%,
+      transparent 80%
+    );
     will-change: transform;
     animation: drift 38s ease-in-out infinite alternate;
   }
   .b1 {
-    background: radial-gradient(circle, var(--mesh-1), transparent 65%);
+    --c: var(--mesh-1);
     left: -18vmax;
     top: -22vmax;
   }
   .b2 {
-    background: radial-gradient(circle, var(--mesh-2), transparent 65%);
+    --c: var(--mesh-2);
     right: -22vmax;
     top: -10vmax;
     animation-duration: 46s;
     animation-delay: -12s;
   }
   .b3 {
-    background: radial-gradient(circle, var(--mesh-3), transparent 65%);
+    --c: var(--mesh-3);
     left: 18vmax;
     bottom: -30vmax;
     animation-duration: 52s;
@@ -57,7 +64,7 @@
     animation-name: drift2;
   }
   .b4 {
-    background: radial-gradient(circle, var(--mesh-4), transparent 65%);
+    --c: var(--mesh-4);
     right: -14vmax;
     bottom: -26vmax;
     width: 48vmax;
@@ -67,19 +74,13 @@
     animation-name: drift2;
   }
   .b5 {
-    background: radial-gradient(circle, var(--mesh-5), transparent 65%);
+    --c: var(--mesh-5);
     left: -12vmax;
     bottom: -18vmax;
     width: 44vmax;
     height: 44vmax;
     animation-duration: 58s;
     animation-delay: -30s;
-  }
-  .noise {
-    position: absolute;
-    inset: 0;
-    opacity: var(--noise-opacity);
-    mix-blend-mode: overlay;
   }
   @keyframes drift {
     0% {

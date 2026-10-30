@@ -367,8 +367,8 @@ def set_window_placement(placement: dict):
 
 
 UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "lulz_sound": False,
-                    "target_hours": 8.0}
-_BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound")
+                    "liquid_glass": False, "target_hours": 8.0}
+_BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound", "liquid_glass")
 TARGET_HOURS_RANGE = (1.0, 24.0)
 
 
@@ -410,7 +410,8 @@ def merge_ui_prefs(base, changes: dict) -> dict:
 
 
 def get_ui_prefs() -> dict:
-    """{lulz, reduce_effects, lulz_sound, target_hours}, defaults for anything unset."""
+    """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours}, defaults for
+    anything unset."""
     return _clean_ui_prefs(_load_raw().get("ui_prefs"))
 
 

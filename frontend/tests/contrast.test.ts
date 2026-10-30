@@ -1,28 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { contrastRatio, over } from '../src/lib/theme/tokens';
+import { cssBlock } from './cssBlocks';
 
 // WCAG AA on the two base surfaces of each theme (successor of tests/test_theme.py).
 const css = readFileSync('src/lib/theme/tokens.css', 'utf8');
 
-function block(selector: RegExp): Record<string, string> {
-  const m = selector.exec(css);
-  if (!m) throw new Error(`no block for ${selector}`);
-  const start = css.indexOf('{', m.index) + 1;
-  let depth = 1;
-  let i = start;
-  while (depth && i < css.length) {
-    if (css[i] === '{') depth++;
-    else if (css[i] === '}') depth--;
-    i++;
-  }
-  const vars: Record<string, string> = {};
-  for (const v of css.slice(start, i - 1).matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) vars[v[1]] = v[2].trim();
-  return vars;
-}
-
-const dark = block(/:root\s*[,{]/);
-const lightRaw = block(/\[data-theme=['"]?light['"]?\]/);
+const dark = cssBlock(css, /:root\s*[,{]/);
+const lightRaw = cssBlock(css, /\[data-theme=['"]?light['"]?\]/);
 const light = { ...dark, ...lightRaw };
 
 type Pair = [fg: string, bg: string, min: number];
