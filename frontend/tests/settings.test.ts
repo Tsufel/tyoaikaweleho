@@ -32,7 +32,7 @@ const S: Settings = {
   default_job_shift: 'Morning',
   export_format: 'Simple',
   export_include_pay: false,
-  ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8 },
+  ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '' },
 };
 
 const dlc = (p: Partial<DlcStatus>): DlcStatus => ({
@@ -71,6 +71,8 @@ describe('settings form', () => {
       lulz_sound: true,
       liquid_glass: false,
       target_hours: 6,
+      pet: 'off',
+      pet_name: '',
     });
   });
 

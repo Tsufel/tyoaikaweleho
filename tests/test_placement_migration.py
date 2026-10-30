@@ -67,17 +67,19 @@ def test_ui_prefs_defaults_and_lenient_read(tmp_storage):
     assert storage.get_ui_prefs() == storage.UI_PREF_DEFAULTS
     _write(tmp_storage, {"entries": [], "ui_prefs": {"lulz": "yes", "target_hours": 99,
                                                      "reduce_effects": True, "lulz_sound": "yes",
-                                                     "liquid_glass": "x"}})
+                                                     "liquid_glass": "x", "pet": "dragon",
+                                                     "pet_name": 5}})
     assert storage.get_ui_prefs() == {"lulz": False, "reduce_effects": True,
                                       "lulz_sound": False, "liquid_glass": False,
-                                      "target_hours": 8.0}
+                                      "target_hours": 8.0, "pet": "off", "pet_name": ""}
 
 
 def test_set_ui_prefs_partial(tmp_storage):
     storage.set_ui_prefs({"lulz": True})
     assert storage.set_ui_prefs({"target_hours": 6}) == {"lulz": True, "reduce_effects": False,
                                                          "lulz_sound": False, "liquid_glass": False,
-                                                         "target_hours": 6.0}
+                                                         "target_hours": 6.0, "pet": "off",
+                                                         "pet_name": ""}
 
 
 def test_set_ui_prefs_lulz_sound_round_trips(tmp_storage):

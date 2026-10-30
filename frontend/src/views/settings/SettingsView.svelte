@@ -4,7 +4,7 @@
   import wizard from '../../assets/wizard.webp';
   import { emitFx } from '../../fx/fire/fxBus';
   import { api } from '../../lib/api';
-  import type { Appearance, ExportFormat } from '../../lib/api/types';
+  import type { Appearance, ExportFormat, PetKind } from '../../lib/api/types';
   import { fly, stagger } from '../../lib/motion';
   import { registerCommand } from '../../lib/shortcuts';
   import { bootstrap, navigate } from '../../lib/stores/app';
@@ -46,6 +46,8 @@
     type FormField,
   } from './settingsLogic';
   import { dlcBusy, installDlc, openDownloadPage, promptUpdate, removeDlc } from './updateFlow';
+  import { DEFAULT_PET_NAME, PET_NAME_MAX } from '../pet/petLogic';
+  import { commitPetName } from '../pet/petState';
 
   const initial = formFromSettings(get(settings));
   let form = $state({ ...initial });
@@ -191,6 +193,27 @@
   async function toggleGlass(v: boolean) {
     await saveUiPrefs({ liquid_glass: v });
   }
+  const petOptions: { value: PetKind; label: string }[] = [
+    { value: 'off', label: 'Off' },
+    { value: 'familiar', label: 'Familiar' },
+    { value: 'wizard', label: 'Wizard' },
+  ];
+  async function setPet(v: PetKind) {
+    await saveUiPrefs({ pet: v });
+  }
+  let petNameDraft = $state(get(settings).ui_prefs.pet_name);
+  let petNameInput = $state<HTMLInputElement>();
+  // follow a rename made in the pet sheet, unless the user is typing here
+  $effect(() => {
+    const saved = $settings.ui_prefs.pet_name;
+    if (document.activeElement !== petNameInput) petNameDraft = saved;
+  });
+  async function savePetName() {
+    const sent = petNameDraft;
+    const saved = await commitPetName(sent);
+    // keep anything typed while the save was in flight
+    if (petNameDraft === sent) petNameDraft = saved;
+  }
 
   const offs = [
     registerCommand('settings.save', () => void save()),
@@ -205,6 +228,7 @@
   const reduceFx = $derived($settings.ui_prefs.reduce_effects);
   const lulzBlocked = $derived(reduceFx || $prefersReducedMotion);
   const lulzSound = $derived($settings.ui_prefs.lulz_sound);
+  const petKind = $derived($settings.ui_prefs.pet);
   const soundOff = $derived(!lulz || lulzBlocked);
   const glassOn = $derived($settings.ui_prefs.liquid_glass);
   const checkedAgo = (at: number) => new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -329,6 +353,34 @@
           </div>
           <Switch label="Reduce effects" checked={reduceFx} onchange={toggleReduce} />
         </div>
+        <div class="switch-row">
+          <div>
+            <div class="row-title">Pet <span aria-hidden="true">🐾</span></div>
+            <div class="muted small">A companion on the Timer that grows with your hours. Saved instantly.</div>
+          </div>
+          <Segmented label="Pet" size="sm" value={petKind} options={petOptions} onchange={setPet} />
+        </div>
+        {#if petKind !== 'off'}
+          <Field
+            label="Pet name"
+            forId="set-petname"
+            hint="Up to {PET_NAME_MAX} characters. Leave empty for {DEFAULT_PET_NAME[petKind]}."
+            class="pet-name"
+          >
+            <TextInput
+              id="set-petname"
+              bind:value={petNameDraft}
+              bind:el={petNameInput}
+              maxlength={PET_NAME_MAX}
+              placeholder={DEFAULT_PET_NAME[petKind]}
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby={describedBy('set-petname')}
+              onblur={savePetName}
+              onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), void savePetName())}
+            />
+          </Field>
+        {/if}
       </div>
     </GlassCard>
 
@@ -660,6 +712,9 @@
   }
   .row-title {
     font-weight: 650;
+  }
+  .settings :global(.pet-name) {
+    padding: 0 0 8px;
   }
   .look-row {
     margin-top: 14px;

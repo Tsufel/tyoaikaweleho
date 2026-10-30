@@ -13,6 +13,7 @@
   import Kbd from '../../lib/ui/Kbd.svelte';
   import Popover from '../../lib/ui/Popover.svelte';
   import TimePicker from '../../lib/ui/TimePicker.svelte';
+  import PetCompanion from '../pet/PetCompanion.svelte';
   import HeroRing from './HeroRing.svelte';
   import RollingText from './RollingText.svelte';
   import StartDial from './StartDial.svelte';
@@ -36,6 +37,8 @@
 
   let pickerBtn = $state<HTMLButtonElement>();
   let stage = $state<HTMLDivElement>();
+  let cardEl = $state<HTMLElement>();
+  let controlsEl = $state<HTMLDivElement>();
   let stopBtn = $state<HTMLButtonElement>();
   let pickerOpen = $state(false);
   let celebrate = $state(false);
@@ -147,7 +150,7 @@
   }
 </script>
 
-<section class="timer glass" class:running class:lulz={$lulz} class:lg-fire={$lulz && running} class:celebrate aria-label="Timer">
+<section bind:this={cardEl} class="timer glass" class:running class:lulz={$lulz} class:lg-fire={$lulz && running} class:celebrate aria-label="Timer">
   {#if $lulz}
     <div class="fire-box" aria-hidden="true">
       {#await loadFire() then m}
@@ -221,7 +224,7 @@
     {/if}
   </p>
 
-  <div class="controls">
+  <div class="controls" bind:this={controlsEl}>
     {#if running}
       <button
         bind:this={stopBtn}
@@ -285,6 +288,9 @@
       </div>
     {/if}
   </div>
+  {#if $settings.ui_prefs.pet === 'familiar' || $settings.ui_prefs.pet === 'wizard'}
+    <PetCompanion card={cardEl} ring={stage} controls={controlsEl} />
+  {/if}
 </section>
 
 {#if pickerOpen}

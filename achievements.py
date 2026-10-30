@@ -99,6 +99,25 @@ def _closed_shifts(entries, today: date):
     return out
 
 
+PET_WINDOW_DAYS = 56
+
+
+def pet_stats(entries, today: date | None = None) -> dict:
+    """What the pet is derived from (petLogic.ts): lifetime minutes, and minutes
+    per start date for the last 8 weeks (today included, days without a shift
+    left out). Open and future entries don't count, as for achievements."""
+    today = today or date.today()
+    first = today - timedelta(days=PET_WINDOW_DAYS - 1)
+    lifetime = 0
+    days: dict[str, int] = {}
+    for d, _start, mins in _closed_shifts(entries, today):
+        lifetime += mins
+        if d >= first:
+            key = d.isoformat()
+            days[key] = days.get(key, 0) + mins
+    return {"lifetime_minutes": lifetime, "days": days}
+
+
 def _prev_workday(d: date) -> date:
     d -= timedelta(days=1)
     while d.weekday() >= 5:

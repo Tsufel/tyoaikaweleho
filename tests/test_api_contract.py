@@ -162,7 +162,7 @@ def test_every_method_returns_json(rig):
         ("add_job_shift", ("Night",)),
         ("get_stats", ("2026-09-01", "2026-09-30", "day")),
         ("get_achievements", ()), ("ack_achievements", (["first_shift"],)),
-        ("ack_achievements", (["nope"],)),
+        ("ack_achievements", (["nope"],)), ("get_pet_stats", ()),
         ("export_month", (2026, 9)), ("import_excel", ()), ("ocr_pick_and_extract", ()),
         ("ocr_save", ([],)), ("check_updates", ()), ("open_download_page", ()),
         ("install_update", ()),

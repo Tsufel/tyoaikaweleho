@@ -709,6 +709,10 @@ class ShiftController:
             if isinstance(prefs, dict) and "target_hours" in prefs and "target_hours" in str(exc):
                 return R.invalid("target_hours",
                                  "Daily target must be between 1 and 24 hours.")
+            if isinstance(prefs, dict) and "pet_name" in prefs and "pet_name" in str(exc):
+                if "control characters" in str(exc):
+                    return R.invalid("pet_name", "Pet names can't contain control characters.")
+                return R.invalid("pet_name", "Give your pet a name of at most 24 characters.")
             return R.invalid("ui_prefs", str(exc))
         return None
 
@@ -793,6 +797,14 @@ class ShiftController:
             except OSError as exc:
                 return R.error("save_failed", f"Achievements could not be saved:\n\n{exc}")
         return R.ok()
+
+    def get_pet_stats(self) -> dict:
+        """lifetime_minutes and days {iso: minutes} for the last 8 weeks; the
+        frontend derives the pet's energy, level and pose from them."""
+        import achievements
+        with self._lock:
+            entries = storage.load_all_entries()
+        return R.ok(**achievements.pet_stats(entries, self._now().date()))
 
     # ── import / export / OCR ────────────────────────────────────
 

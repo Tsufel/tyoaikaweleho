@@ -4,7 +4,15 @@ import { onEvent } from '../api/events';
 import type { DlcStatus, Settings, UiPrefs } from '../api/types';
 import { toast } from './toasts';
 
-export const DEFAULT_UI_PREFS: UiPrefs = { lulz: false, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8 };
+export const DEFAULT_UI_PREFS: UiPrefs = {
+  lulz: false,
+  reduce_effects: false,
+  lulz_sound: false,
+  liquid_glass: false,
+  target_hours: 8,
+  pet: 'off',
+  pet_name: '',
+};
 
 export const DEFAULT_SETTINGS: Settings = {
   appearance: 'System',

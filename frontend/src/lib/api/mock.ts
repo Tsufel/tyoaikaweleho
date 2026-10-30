@@ -6,6 +6,7 @@
 // &sound turns Lulz sound on; &glass turns Liquid glass on; &glassdebug (DEV only)
 // replaces every liquid-glass lens map with a hard left/right split.
 // &achnew skips the achievements first-run summary so each unlock animates.
+// &pet=familiar|wizard turns the Timer card pet on.
 // &certfail makes update checks and installs fail as on a PC missing GitHub's root.
 // window.__welehoMock exposes the same switches at runtime.
 
@@ -55,7 +56,7 @@ import {
   toIsoDateTime,
   weekKey,
 } from '../time';
-import { ACHIEVEMENT_IDS, evaluateAchievements, withSeen } from './mockAchievements';
+import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
 
 const VERSION = '2.0.1';
 const CERT_FAIL =
@@ -194,7 +195,15 @@ export function createMockApi(): Api {
     default_job_shift: 'Sales',
     export_format: 'Simple',
     export_include_pay: false,
-    ui_prefs: { lulz: q.has('lulz'), reduce_effects: false, lulz_sound: q.has('sound'), liquid_glass: q.has('glass'), target_hours: 8 },
+    ui_prefs: {
+      lulz: q.has('lulz'),
+      reduce_effects: false,
+      lulz_sound: q.has('sound'),
+      liquid_glass: q.has('glass'),
+      target_hours: 8,
+      pet: q.get('pet') === 'wizard' ? 'wizard' : q.get('pet') === 'familiar' ? 'familiar' : 'off',
+      pet_name: '',
+    },
   };
   let dlc: DlcStatus = q.has('dlc')
     ? { state: 'ok', version: '1.0.2', update_version: null, message: null, ocr_available: true }
@@ -782,6 +791,18 @@ export function createMockApi(): Api {
     },
     async save_ui_prefs(prefs: Partial<UiPrefs>) {
       if (controls.failSave) return err('save_failed', `Settings could not be written: ${saveFailMsg()}`);
+      if (prefs.pet !== undefined && !['off', 'familiar', 'wizard'].includes(prefs.pet)) {
+        return invalid('ui_prefs', 'pet must be off, familiar or wizard');
+      }
+      if (prefs.pet_name !== undefined) {
+        const name = typeof prefs.pet_name === 'string' ? prefs.pet_name.trim().replace(/\s+/g, ' ') : null;
+        // like storage._pet_name_error: control characters first, then length in code points
+        if (name !== null && /[\p{Cc}\p{Cs}\p{Co}\p{Zl}\p{Zp}‪-‮⁦-⁩]/u.test(prefs.pet_name as string)) {
+          return invalid('pet_name', "Pet names can't contain control characters.");
+        }
+        if (name === null || [...name].length > 24) return invalid('pet_name', 'Give your pet a name of at most 24 characters.');
+        prefs = { ...prefs, pet_name: name };
+      }
       settings = { ...settings, ui_prefs: { ...settings.ui_prefs, ...prefs } };
       return okR('saved', { settings: structuredClone(settings) });
     },
@@ -883,6 +904,10 @@ export function createMockApi(): Api {
       }
       achievementsSeen = seen;
       return okR('ok');
+    },
+    async get_pet_stats() {
+      await latency();
+      return okR('ok', petStats(entries, new Date()));
     },
 
     // ── import / export / OCR ──

@@ -5,8 +5,8 @@ doc in `docs/` once they are planned.
 
 | Idea | Status | Rough size | Depends on | Plan |
 |---|---|---|---|---|
-| Achievements — badges earned from logged hours, shown in Stats | planned | M | — | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#achievements) |
-| Work pet — the wizard as a companion that gains energy as hours pile up | planned | L | Achievements | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#work-pet) |
+| Achievements — badges earned from logged hours, shown in Stats | done | M | — | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#achievements) |
+| Work pet — the wizard as a companion that gains energy as hours pile up | done (auras later) | L | Achievements | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#work-pet) |
 | Accounts / login — local accounts with encrypted per-user data | planned | L | — | [V2_AUTH_PLAN.md](V2_AUTH_PLAN.md) |
 | Cloud sync — the same data on several PCs | planned | XL | Accounts / login | [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md) |
 

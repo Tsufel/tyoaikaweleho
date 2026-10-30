@@ -178,6 +178,7 @@ The current shift must never be lost:
 |---|---|---|
 | `get_achievements()` | — | `R<{items: Achievement[], newly: string[], first_run: boolean}>` (§10.1). Read-only |
 | `ack_achievements(ids)` | `string[]` of catalogue ids | `R<{}>`; stores the met ones (unmet ids are skipped; `[]` still ends the first run); `invalid(field:'ids')` for anything else; `save_failed` |
+| `get_pet_stats()` | — | `R<{lifetime_minutes, days: {IsoDate: minutes}}>` (§10.2). Read-only |
 
 ### Import / export / OCR
 | method | params | returns |
@@ -368,7 +369,10 @@ Bootstrap = {
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
-  liquid_glass:false, target_hours:8}}`.
+  liquid_glass:false, target_hours:8, pet:'off', pet_name:''}}`.
+  `pet` is `'off'|'familiar'|'wizard'`; `pet_name` is stored trimmed with inner
+  whitespace collapsed, at most 24 printable characters (`''` = the default name
+  "Tähti" / "Weleho"); a bad name is `invalid(field:'pet_name')`.
   `lulz_sound` (default off) enables the synthesized fire sound; it only plays
   while Lulz is effective. `liquid_glass` (default off) turns on the iOS-style
   Liquid glass appearance (see `stores/glass.ts`). Frontend and backend ship
@@ -427,6 +431,16 @@ acknowledged: show one summary toast ("You've already earned N achievements")
 and ack all of `newly`, instead of one celebration each. Otherwise celebrate each
 of `newly`, then ack them. The frontend asks after bootstrap, after a saved
 stop, after entry saves/deletes and on `data:changed`.
+
+### 10.2 `get_pet_stats` payload
+
+`lifetime_minutes` sums every closed shift up to today; `days` has the minutes per
+start date for the last 56 days (today included, empty days left out). Open and
+future entries don't count, as for achievements. The frontend derives the pet
+from it (`views/pet/petLogic.ts`): energy = hours in the last 7 days ÷ (target ×
+usual workdays in those 7 days), usual workdays being the weekdays worked on at
+least twice in the 8 weeks; level n needs 10·(n−1)^1.5 lifetime hours (level 1 at 0 h); the running
+timer adds its elapsed time live. It refreshes on the same triggers as achievements.
 
 ## 11. Events (Python → JS)
 

@@ -1,7 +1,7 @@
 // Port of achievements.py for the dev mock (mock.ts). Keep the rules in step
 // with the Python engine; tests/test_achievements.py is the spec.
 
-import type { Achievement, AchievementTier, WorkEntry } from './types';
+import type { Achievement, AchievementTier, PetStats, WorkEntry } from './types';
 import { entryMinutes, fromIsoDate, isOvernight, toIsoDate } from '../time';
 
 interface Def {
@@ -166,4 +166,21 @@ export function withSeen(items: Achievement[], seen: Record<string, string>): Ac
   return items.map((i) =>
     i.id in seen ? { ...i, met_on: seen[i.id], progress: { ...i.progress, cur: i.progress.goal } } : i,
   );
+}
+
+/** Port of achievements.pet_stats: lifetime minutes, and minutes per start date
+ *  for the last 56 days (today included). */
+export function petStats(entries: WorkEntry[], today: Date): PetStats {
+  const todayIso = toIsoDate(today);
+  const first = toIsoDate(addDays(today, -55));
+  let lifetime = 0;
+  const days: Record<string, number> = {};
+  for (const e of entries) {
+    if (clock(e.time_in) === null || clock(e.time_out) === null || !fromIsoDate(e.date) || e.date > todayIso) continue;
+    const mins = entryMinutes(e.time_in, e.time_out);
+    if (mins <= 0) continue;
+    lifetime += mins;
+    if (e.date >= first) days[e.date] = (days[e.date] ?? 0) + mins;
+  }
+  return { lifetime_minutes: lifetime, days };
 }

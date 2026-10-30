@@ -1,7 +1,8 @@
 # Työaikaweleho v2.x — Achievements and a work pet (design plan)
 
 > Status: **achievements built** (engine, API, persistence, Stats tile, sheet,
-> unlock card). **Pet: designed, art done**, not implemented.
+> unlock card). **Pet built** (logic, prefs, Settings control, Timer companion,
+> pet sheet); auras (step 8) not yet.
 > Listed in [BACKLOG.md](BACKLOG.md). Interacts with [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md)
 > (the new keys should sync).
 > Original ideas (chat, 2026-10-30): *"Tulevaisuudes voi sit laittaa achievements
@@ -152,8 +153,8 @@ there for people who want the mascot himself.
   = weekdays the user actually worked on in the last 8 weeks, so days they
   never work never drain it. Charges live while the timer runs, from
   `elapsedSeconds` in `stores/timer`.
-- **XP / level** from lifetime hours: level *n* needs `10 · n^1.5` h in total
-  (level 10 ≈ 316 h, level 20 ≈ 894 h). Shown as *Lv 12* on the pet sheet.
+- **XP / level** from lifetime hours: level *n* needs `10 · (n−1)^1.5` h in total (level 1 at 0 h, level 2 at 10 h)
+  (level 10 ≈ 270 h, level 20 ≈ 828 h). Shown as *Lv 12* on the pet sheet.
 - **Rank title** by level instead of new sprites: Apprentice (1–4) →
   Adept (5–9) → Wizard (10–19) → Archmage (20+), e.g. *"Tähti, Adept
   familiar"*.
@@ -174,33 +175,46 @@ only shown on the sheet.
 
 ### Animation (CSS only, on the static frames)
 
+`PetSprite` stacks the one frame several times, each copy clipped to one part,
+so parts move on their own with no extra art: the body splits at a seam row
+(`petSpriteLayers.ts`; the lower copy reaches one art pixel up under the upper
+so the clip edges never show), and every sparkle and z the art already has is
+its own copy. `scripts/pet_particles.py` finds those floating bits in the
+sprites and writes their boxes to `petParticles.ts`; re-run it after changing
+the art (a test fails when the file is stale). Moves are whole art pixels in
+`step-end` steps, like frame-by-frame sprite animation.
+
 | Pose | Loop |
 |---|---|
-| `fly` | Bob ±3 px with a slight tilt, 2.4 s; a few pixel sparkles trail the broom |
-| `drowsy` | Slower, deeper bob (3.6 s) with a nod; a pixel *z* floats up now and then |
-| `idle` | Breathing (`scaleY` 1 → 1.02 from the feet) every 4 s; a little hop every ~20 s |
-| `sleep` | Slow breathing; *z z Z* float up |
+| `idle` | Breathing: the rows above the seam drop one art pixel and back (1.8 s); the staff (and the wizard's hand on it), the familiar's yellow star and the wizard's raised pointing hand stay put, drawn on top as a still copy, so the staff doesn't shrink with each breath; sparkles twinkle |
+| `drowsy` | Nodding off: the head sinks one pixel, then two, and snaps back up (3.2 s); the *z*'s float up in turn |
+| `sleep` | Slow breathing (3.6 s); the *z*'s float up, drift a pixel and fade |
+| `fly` | Hover up and down two pixels (1.6 s), the shadow shrinking as it rises; the broom sparkles trail off behind |
 
 - **Pose change:** a pixel puff (8 square particles) hides the swap, then the
   new pose lands with a squash.
-- **Reactions:** hop with squash and stretch and a sparkle burst on fxBus
-  `blast` (shift saved) and `milestone`, and on an achievement unlock.
+- **Reactions:** a hop and a sparkle burst after every saved shift (the
+  `burst` store, also bumped by manual saves), on fxBus `milestone` (Lulz) and
+  on an achievement unlock.
 - **Petting:** clicking the pet makes it hop and shows a pixel heart; a long
-  press or the context menu opens the pet sheet. Petting is the point.
+  press, the context menu or the keyboard (Enter / Space) opens the pet sheet.
+  Petting is the point.
 - **Guards:** loops run only when `motion === 'full'`; they pause with
   `animationsActive` (`animation-play-state: paused`); reduced motion shows the
   static pose and swaps it instantly.
 
 ### Placement
 
-- Sits on the floor of the Timer card in the bottom-right corner, outside the
-  ring and the controls, at 1× sprite size (0.75× under 600 px wide, hidden
-  under 420 px). It never covers the Start/Stop button.
+- Sits in the bigger of two free spots on the Timer card: the bottom-right
+  corner under the controls, or beside the ring standing on its baseline
+  (`petSpot` in `petState.ts`, re-run by a `ResizeObserver`). At most 1×; when
+  it has to shrink it switches to smooth scaling so no pixels drop out, and
+  under 64 px wide it hides. It never covers the ring, the dial or the buttons.
 - `aria-hidden` for the sprite itself; the button around it is labelled e.g.
-  *"Tähti, flying. Open pet"*.
+  *"Tähti, flying, energy 80%. Open pet"*.
 - **Pet sheet** (`openSheet`): the current pose large, name (editable), rank
   and level with a progress bar to the next level, the energy bar with
-  *"18.5 h of 30 h this week"*, and lifetime hours.
+  *"18.5 h of 30 h in the last 7 days"*, and lifetime hours.
 
 ### Cosmetics (later)
 
@@ -251,7 +265,16 @@ of ids, earliest date wins.
   toast once.
 - `frontend/tests/petLogic.test.ts` — energy curve, days off never drain,
   level curve and rank titles, pose selection (target crossing, the 22:00 and
-  06:00 edges, the holiday rule), reduced motion = static.
+  06:00 edges, the holiday rule).
+- `frontend/tests/petUi.test.ts` — companion placement (`petSpot`), label,
+  petting vs opening the sheet, the sheet's name save.
+- `frontend/tests/petSprite.test.ts` — the animation layers: seams, still
+  boxes (on the art grid, clear of the particles, covered by the lower
+  layer's islands), particle clips and phases, the plain picture without
+  motion. The `STILL` boxes are hand-picked from the art, so check them when
+  the idle sprites change.
+- `tests/test_pet_particles.py` — `petParticles.ts` matches the art, and the
+  sleepy poses keep their z's.
 - `tests/test_storage.py` — `pet` / `pet_name` validation and defaults.
 
 ## Implementation order
@@ -260,7 +283,7 @@ of ids, earliest date wins.
 2. API, `achievements_seen` persistence and first-run backfill.
 3. Stats tile, `AchievementsSheet`, unlock toasts (+ Lulz flare).
 4. ~~Art pass~~ — done: sprites in `frontend/src/assets/pets/`.
-5. Pet logic as a pure module (`petLogic.ts`: energy, level, rank, pose) with tests.
-6. `pet` / `pet_name` prefs, Settings control.
-7. Pet companion on the Timer card (poses, loops, reactions, petting) and the pet sheet.
+5. ~~Pet logic as a pure module (`petLogic.ts`: energy, level, rank, pose) with tests.~~ — done
+6. ~~`pet` / `pet_name` prefs, Settings control.~~ — done
+7. ~~Pet companion on the Timer card (poses, loops, reactions, petting) and the pet sheet.~~ — done
 8. Cosmetics (auras) unlocked by achievements.

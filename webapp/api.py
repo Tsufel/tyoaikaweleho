@@ -231,6 +231,10 @@ class Api:
     def ack_achievements(self, ids):
         return self._c.ack_achievements(ids)
 
+    @_guarded
+    def get_pet_stats(self):
+        return self._c.get_pet_stats()
+
     # ── import / export / OCR ────────────────────────────────────
 
     @_guarded

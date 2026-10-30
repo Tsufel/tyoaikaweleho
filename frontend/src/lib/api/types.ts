@@ -248,6 +248,19 @@ export interface UiPrefs {
   liquid_glass: boolean;
   /** Daily target for the hero ring, hours (1–24). Default 8. */
   target_hours: number;
+  /** Timer card companion. Default 'off'. */
+  pet: PetKind;
+  /** Trimmed, at most 24 characters; '' = the default name. */
+  pet_name: string;
+}
+
+export type PetKind = 'off' | 'familiar' | 'wizard';
+
+export interface PetStats {
+  /** Every closed shift ever, by start date (open and future ones excluded). */
+  lifetime_minutes: number;
+  /** Minutes per start date for the last 56 days (today included); days without a shift are left out. */
+  days: Record<IsoDate, number>;
 }
 
 export interface Settings {
@@ -485,6 +498,7 @@ export interface Api {
   // achievements
   get_achievements(): Promise<Result<AchievementsData>>;
   ack_achievements(ids: string[]): Promise<Result>;
+  get_pet_stats(): Promise<Result<PetStats>>;
 
   // import / export / OCR
   export_month(year: number, month: number): Promise<ExportResult>;

@@ -744,7 +744,8 @@ def test_get_settings_defaults(env):
     assert s["pay_rate"] == 20.0 and s["pay_rate_text"] == "20"
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
-                             "liquid_glass": False, "target_hours": 8.0}
+                             "liquid_glass": False, "target_hours": 8.0, "pet": "off",
+                             "pet_name": ""}
 
 
 def test_save_settings(env):
@@ -819,6 +820,28 @@ def test_save_ui_prefs(env, monkeypatch):
     assert ctrl.save_ui_prefs({"liquid_glass": 1})["status"] == "invalid"
     monkeypatch.setattr(storage, "_save_raw", _fail)
     assert ctrl.save_ui_prefs({"lulz": False})["error"]["code"] == "save_failed"
+
+
+def test_save_ui_prefs_pet(env):
+    ctrl, _ = env
+    r = ctrl.save_ui_prefs({"pet": "wizard", "pet_name": "  Merlin   the  Grey "})
+    assert r["status"] == "saved"
+    assert r["settings"]["ui_prefs"]["pet"] == "wizard"
+    assert r["settings"]["ui_prefs"]["pet_name"] == "Merlin the Grey"
+    assert ctrl.save_ui_prefs({"pet_name": ""})["settings"]["ui_prefs"]["pet_name"] == ""
+    for bad in ({"pet": "dragon"}, {"pet": None}, {"pet": True}):
+        assert ctrl.save_ui_prefs(bad)["field"] == "ui_prefs"
+    for bad in ("x" * 25, 3, None, "bell\x07", "evil‮gnp", "two lines"):
+        r = ctrl.save_ui_prefs({"pet_name": bad})
+        assert r["status"] == "invalid" and r["field"] == "pet_name"
+    assert "control characters" in ctrl.save_ui_prefs({"pet_name": "bell\x07"})["message"]
+    assert "24 characters" in ctrl.save_ui_prefs({"pet_name": "x" * 25})["message"]
+    # emoji with joiners and ZWNJ names are fine
+    for good in ("\U0001f9d9‍♂️", "\U0001f408‍⬛", "Mi‌na"):
+        r = ctrl.save_ui_prefs({"pet_name": good})
+        assert r["status"] == "saved" and r["settings"]["ui_prefs"]["pet_name"] == good
+    assert ctrl.save_ui_prefs({"pet_name": "x" * 24})["status"] == "saved"
+    assert storage.get_ui_prefs()["pet"] == "wizard"
 
 
 def test_add_job_shift(env):
@@ -1128,6 +1151,21 @@ def test_achievements_ack_skips_unmet_and_rejects_unknown(env):
         r = ctrl.ack_achievements(bad)
         assert r["status"] == "invalid" and r["field"] == "ids"
     assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}
+
+
+def test_pet_stats(env):
+    ctrl, clock = env  # today is 2026-09-23
+    r = ctrl.get_pet_stats()
+    assert r["ok"] and r == {**r, "lifetime_minutes": 0, "days": {}}
+    _add("2026-07-01", "08:00", "16:00")  # outside the 8-week window, still lifetime
+    _add("2026-07-30", "09:00", "10:00")  # first day of the 8-week window
+    _add("2026-09-22", "22:00", "02:00")  # overnight: counts on its start date
+    _add("2026-09-22", "08:00", "09:30")
+    _add("2026-09-24", "08:00", "16:00")  # future
+    r = ctrl.get_pet_stats()
+    json.dumps(r, allow_nan=False)
+    assert r["lifetime_minutes"] == 480 + 60 + 240 + 90
+    assert r["days"] == {"2026-07-30": 60, "2026-09-22": 330}
 
 
 def test_achievements_ignore_future_entries(env):

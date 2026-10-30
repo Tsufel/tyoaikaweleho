@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 import uuid
 from dataclasses import dataclass, asdict
 from datetime import date, datetime, time
@@ -367,9 +368,36 @@ def set_window_placement(placement: dict):
 
 
 UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "lulz_sound": False,
-                    "liquid_glass": False, "target_hours": 8.0}
+                    "liquid_glass": False, "target_hours": 8.0, "pet": "off", "pet_name": ""}
 _BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound", "liquid_glass")
 TARGET_HOURS_RANGE = (1.0, 24.0)
+PETS = ("off", "familiar", "wizard")
+PET_NAME_MAX = 24
+
+
+# Control, surrogate, private-use and line/paragraph separator characters, and
+# the bidi overrides. Joiners (ZWJ in emoji, ZWNJ in Persian/Indic names) and
+# variation selectors are fine.
+_BAD_NAME_CATEGORIES = ("Cc", "Cs", "Co", "Zl", "Zp")
+_BIDI_CONTROLS = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))}
+
+
+def _pet_name_error(v) -> str | None:
+    """Why *v* can't be a pet name, or None when it can."""
+    if not isinstance(v, str):
+        return f"pet_name must be text of at most {PET_NAME_MAX} characters"
+    if any(unicodedata.category(c) in _BAD_NAME_CATEGORIES or c in _BIDI_CONTROLS for c in v):
+        return "pet_name has control characters"
+    if len(" ".join(v.split())) > PET_NAME_MAX:
+        return f"pet_name must be text of at most {PET_NAME_MAX} characters"
+    return None
+
+
+def _clean_pet_name(v) -> str | None:
+    """Trimmed name, or None when *v* is not a usable one ("" = default name)."""
+    if _pet_name_error(v):
+        return None
+    return " ".join(v.split())
 
 
 def _valid_target_hours(v) -> bool:
@@ -386,6 +414,11 @@ def _clean_ui_prefs(raw) -> dict:
                 prefs[key] = raw[key]
         if _valid_target_hours(raw.get("target_hours")):
             prefs["target_hours"] = float(raw["target_hours"])
+        if raw.get("pet") in PETS:
+            prefs["pet"] = raw["pet"]
+        name = _clean_pet_name(raw.get("pet_name"))
+        if name is not None:
+            prefs["pet_name"] = name
     return prefs
 
 
@@ -404,14 +437,23 @@ def merge_ui_prefs(base, changes: dict) -> dict:
             if not _valid_target_hours(value):
                 raise ValueError("target_hours must be between 1 and 24")
             prefs[key] = float(value)
+        elif key == "pet":
+            if value not in PETS:
+                raise ValueError("pet must be off, familiar or wizard")
+            prefs[key] = value
+        elif key == "pet_name":
+            problem = _pet_name_error(value)
+            if problem:
+                raise ValueError(problem)
+            prefs[key] = " ".join(value.split())
         else:
             raise ValueError(f"unknown ui pref: {key}")
     return prefs
 
 
 def get_ui_prefs() -> dict:
-    """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours}, defaults for
-    anything unset."""
+    """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours, pet, pet_name},
+    defaults for anything unset."""
     return _clean_ui_prefs(_load_raw().get("ui_prefs"))
 
 

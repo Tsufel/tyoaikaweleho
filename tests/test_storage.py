@@ -380,3 +380,30 @@ def test_achievements_seen_keeps_entries(tmp_storage):
     storage.set_ui_prefs({"lulz": True})
     storage.set_pay_rate(15.0)
     assert storage.get_achievements_seen() == {"first_shift": "2026-09-21"}
+
+
+def test_ui_prefs_pet_defaults_and_bad_stored_values(tmp_storage):
+    prefs = storage.get_ui_prefs()
+    assert prefs["pet"] == "off" and prefs["pet_name"] == ""
+    data = storage._load_raw()
+    data["ui_prefs"] = {"pet": "dragon", "pet_name": "x" * 40, "lulz": True}
+    storage._save_raw(data)
+    prefs = storage.get_ui_prefs()
+    assert prefs["pet"] == "off" and prefs["pet_name"] == "" and prefs["lulz"] is True
+    data["ui_prefs"] = {"pet": "familiar", "pet_name": " Tähti "}
+    storage._save_raw(data)
+    prefs = storage.get_ui_prefs()
+    assert prefs["pet"] == "familiar" and prefs["pet_name"] == "Tähti"
+
+
+def test_set_ui_prefs_pet_keeps_other_prefs(tmp_storage):
+    storage.set_ui_prefs({"lulz": True, "target_hours": 7.5})
+    storage.set_ui_prefs({"pet": "wizard", "pet_name": "Weleho"})
+    prefs = storage.get_ui_prefs()
+    assert prefs["lulz"] is True and prefs["target_hours"] == 7.5
+    assert prefs["pet"] == "wizard" and prefs["pet_name"] == "Weleho"
+    with pytest.raises(ValueError):
+        storage.set_ui_prefs({"pet": "cat"})
+    with pytest.raises(ValueError):
+        storage.set_ui_prefs({"pet_name": "x" * 25})
+    assert storage.get_ui_prefs()["pet"] == "wizard"
