@@ -1,7 +1,7 @@
 import { get, readable, writable } from 'svelte/store';
 import { emitFx } from '../../fx/fire/fxBus';
 import { api, runFlow } from '../../lib/api';
-import type { ConfirmList, HHMM, StartMode, StopResult, StopSource, TimerResult } from '../../lib/api/types';
+import type { ConfirmList, EntryRow, HHMM, StartMode, StopResult, StopSource, TimerResult } from '../../lib/api/types';
 import { alert, reportError } from '../../lib/stores/confirm';
 import { showEntry } from '../../lib/stores/entries';
 import { offerRecovery } from '../../lib/stores/recovery';
@@ -17,6 +17,8 @@ export const jobDraft = writable('');
 export const busy = writable(false);
 /** Bumped after every saved shift (fire burst / ring flourish). */
 export const burst = writable(0);
+/** The entry the last saved shift wrote, set just before burst is bumped. */
+export const savedEntry = writable<EntryRow | null>(null);
 /** Wall-clock ms, ticking on each second boundary (idle start dial). */
 export const wallClock = readable(Date.now(), (set) => {
   let t: ReturnType<typeof setTimeout>;
@@ -80,6 +82,7 @@ export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopRes
     if (r.timer) setTimer(r.timer);
     else await refreshTimer();
     if (r.status === 'saved') {
+      savedEntry.set(r.entry ?? null);
       burst.update((n) => n + 1);
       emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
       if (r.entry) {

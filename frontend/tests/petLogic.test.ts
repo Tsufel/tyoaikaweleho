@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import type { PetStats } from '../src/lib/api/types';
 import {
+  FRIDAY_LINES,
+  TIRED_AT,
+  TIRED_LINES,
   energy,
+  fridayShift,
   level,
   levelHours,
   petName,
   petPose,
+  pickLine,
   rankOf,
+  tiredLines,
   usualWeekdays,
 } from '../src/views/pet/petLogic';
 
@@ -135,13 +141,14 @@ describe('petPose', () => {
   const busy = stats(workweeks(8));
   const at = (h: number, d = FRI) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, 30);
 
-  it('flies while working and gets drowsy in overtime, day or night', () => {
-    expect(petPose({ running: true, overTarget: false, now: at(23), stats: busy })).toBe('fly');
-    expect(petPose({ running: true, overTarget: true, now: at(10), stats: busy })).toBe('drowsy');
+  it('flies fresh into a shift and tires towards its end, day or night', () => {
+    const p = (progress: number, h = 10) => petPose({ running: true, progress, now: at(h), stats: busy });
+    expect([p(0), p(0.5), p(TIRED_AT - 0.01), p(0.3, 23)]).toEqual(['fly', 'fly', 'fly', 'fly']);
+    expect([p(TIRED_AT), p(0.9), p(1.4), p(0.8, 23)]).toEqual(['drowsy', 'drowsy', 'drowsy', 'drowsy']);
   });
 
   it('is idle by day and asleep 22–06 when not working', () => {
-    const p = (h: number) => petPose({ running: false, overTarget: false, now: at(h), stats: busy });
+    const p = (h: number) => petPose({ running: false, progress: 0, now: at(h), stats: busy });
     expect([p(5), p(6), p(12), p(21), p(22)]).toEqual(['sleep', 'idle', 'idle', 'idle', 'sleep']);
   });
 
@@ -150,13 +157,13 @@ describe('petPose', () => {
     const old = workweeks(8);
     for (const k of [1, 2, 3]) delete old[day(-k)];
     const s = stats(old);
-    expect(petPose({ running: false, overTarget: false, now: FRI, stats: s })).toBe('sleep');
+    expect(petPose({ running: false, progress: 0, now: FRI, stats: s })).toBe('sleep');
     // only two usual workdays off: still awake
-    expect(petPose({ running: false, overTarget: false, now: FRI, stats: stats({ ...old, [day(-3)]: 480 }) })).toBe(
+    expect(petPose({ running: false, progress: 0, now: FRI, stats: stats({ ...old, [day(-3)]: 480 }) })).toBe(
       'idle',
     );
     // a shift today wakes it
-    expect(petPose({ running: false, overTarget: false, now: FRI, stats: stats({ ...old, [day(0)]: 60 }) })).toBe(
+    expect(petPose({ running: false, progress: 0, now: FRI, stats: stats({ ...old, [day(0)]: 60 }) })).toBe(
       'idle',
     );
   });
@@ -164,11 +171,45 @@ describe('petPose', () => {
   it('a weekend is not three days off', () => {
     const mon = new Date(2026, 10, 2, 12, 0);
     const s = stats({ ...workweeks(8), [day(0)]: 480 });
-    expect(petPose({ running: false, overTarget: false, now: mon, stats: s })).toBe('idle');
+    expect(petPose({ running: false, progress: 0, now: mon, stats: s })).toBe('idle');
   });
 
   it('a brand-new pet with no hours is awake, and so is one without stats yet', () => {
-    expect(petPose({ running: false, overTarget: false, now: FRI, stats: stats({}) })).toBe('idle');
-    expect(petPose({ running: false, overTarget: false, now: FRI, stats: null })).toBe('idle');
+    expect(petPose({ running: false, progress: 0, now: FRI, stats: stats({}) })).toBe('idle');
+    expect(petPose({ running: false, progress: 0, now: FRI, stats: null })).toBe('idle');
+  });
+});
+
+describe('lines', () => {
+  const THU = new Date(2026, 9, 29, 15, 0);
+  const SAT = new Date(2026, 9, 31, 2, 0);
+
+  it('the tired pet wishes for Friday on any day but Friday', () => {
+    expect(tiredLines(THU)).toEqual(TIRED_LINES);
+    expect(tiredLines(FRI)).toEqual(['Oispa kaljaa', 'Koht himaan']);
+  });
+
+  it('the fly-by is for shifts saved on a Friday, or started on one', () => {
+    expect(fridayShift(null, FRI)).toBe(true);
+    expect(fridayShift({ date: day(-1) }, FRI)).toBe(true);
+    expect(fridayShift({ date: day(-1) }, THU)).toBe(false);
+    expect(fridayShift(null, THU)).toBe(false);
+    // Friday night into Saturday
+    expect(fridayShift({ date: day(0) }, SAT)).toBe(true);
+    expect(fridayShift({ date: day(1) }, SAT)).toBe(false);
+    expect(fridayShift({ date: 'nonsense' }, SAT)).toBe(false);
+  });
+
+  it('never picks the same line twice in a row', () => {
+    for (const r of [0, 0.34, 0.5, 0.67, 0.99]) {
+      for (const last of FRIDAY_LINES) {
+        const l = pickLine(FRIDAY_LINES, last, () => r);
+        expect(FRIDAY_LINES).toContain(l);
+        expect(l).not.toBe(last);
+      }
+    }
+    expect(pickLine(['Koht himaan'], 'Koht himaan', () => 0.9)).toBe('Koht himaan');
+    expect(pickLine(TIRED_LINES, null, () => 0)).toBe('Oispa kaljaa');
+    expect(pickLine(TIRED_LINES, null, () => 0.999999)).toBe('Koht himaan');
   });
 });

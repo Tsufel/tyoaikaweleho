@@ -1,4 +1,4 @@
-import { derived, get, type Readable } from 'svelte/store';
+import { derived, get, writable, type Readable } from 'svelte/store';
 import type { PetKind, PetStats } from '../../lib/api/types';
 import { toIsoDate } from '../../lib/time';
 import { openSheet } from '../../lib/stores/confirm';
@@ -53,12 +53,16 @@ export const petView: Readable<PetView> = derived(
     return {
       kind,
       name: petName(kind, $s.ui_prefs.pet_name),
-      pose: petPose({ running, overTarget: running && ringProgress($elapsed, target) > 1, now, stats }),
+      pose: petPose({ running, progress: running ? ringProgress($elapsed, target) : 0, now, stats }),
       energy: stats ? energy(stats, now, target) : null,
       level: stats ? level(stats.lifetime_minutes) : null,
     };
   },
 );
+
+/** The Friday fly-by in progress (PetFlyby): the Timer companion steps out
+ *  while its pet is crossing the screen, and achievement cards wait for it. */
+export const petFlyby = writable<{ id: number; line: string } | null>(null);
 
 const SPRITES = import.meta.glob<string>('../../assets/pets/*.webp', { eager: true, query: '?url', import: 'default' });
 

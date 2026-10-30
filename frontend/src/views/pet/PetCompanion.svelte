@@ -2,9 +2,11 @@
   // The Timer card's pet (docs/V2_GAMIFICATION_PLAN.md). Click to pet it;
   // right-click, a long press or the keyboard opens the pet sheet. It hops at
   // a saved shift, a Lulz milestone or an unlock, and puffs when it changes
-  // pose. It sits in whichever free spot of the card is bigger, under the
-  // controls or beside the ring, and hides when neither fits, so it never
-  // covers the ring, the dial or the buttons.
+  // pose. Tired near the end of a shift, it sighs a line now and then (and
+  // when petted); it steps out while it does the Friday fly-by. It sits in
+  // whichever free spot of the card is bigger, under the controls or beside
+  // the ring, and hides when neither fits, so it never covers the ring, the
+  // dial or the buttons.
   import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { onFx } from '../../fx/fire/fxBus';
@@ -13,11 +15,18 @@
   import { watchPetStats } from '../../lib/stores/pet';
   import { tooltip } from '../../lib/ui/actions';
   import { burst } from '../timer/timerActions';
-  import { POSE_LABEL, type PetPose } from './petLogic';
-  import { SPRITE_SIZE, openPetSheet, petSpot, petView, type PetSpot } from './petState';
+  import { POSE_LABEL, pickLine, tiredLines, type PetPose } from './petLogic';
+  import { SPRITE_SIZE, openPetSheet, petFlyby, petSpot, petView, type PetSpot } from './petState';
+  import PetBubble from './PetBubble.svelte';
   import PetSprite from './PetSprite.svelte';
 
   const LONG_PRESS_MS = 550;
+  /** A tired pet's first sigh, then one every so often, each shown a while. */
+  const SIGH_FIRST_MS = 4000;
+  const SIGH_EVERY_MS = 10 * 60_000;
+  const BUBBLE_MS = 6000;
+  /** Room the bubble keeps from the card's edge (the card clips). */
+  const BUBBLE_EDGE = 8;
   const PUFF = Array.from({ length: 8 }, (_, i) => i * 45);
   const SPARKS = [
     { x: 12, y: 18, d: 0 },
@@ -119,7 +128,60 @@
     queued = n;
   });
 
+  // Tired (drowsy only happens mid-shift): sigh a line now and then, not
+  // while the app is hidden, never the same one twice in a row.
+  const tired = $derived(v.pose === 'drowsy');
+  let bubble = $state<{ id: number; text: string } | null>(null);
+  let bubbleSeq = 0;
+  let lastLine: string | null = null;
+  function sigh() {
+    const text = pickLine(tiredLines(new Date()), lastLine);
+    lastLine = text;
+    const id = ++bubbleSeq;
+    bubble = { id, text };
+    later(() => {
+      if (bubble?.id === id) bubble = null;
+    }, BUBBLE_MS);
+  }
+  /** Centred over the pet, but slid left when that would run off the card,
+   *  the tail still pointing at the pet. */
+  function fitBubble(node: HTMLElement) {
+    const cardW = card?.clientWidth;
+    if (!spot || !cardW) return;
+    const w = node.offsetWidth;
+    const over = spot.x + spot.w / 2 + w / 2 + BUBBLE_EDGE - cardW;
+    if (over > 0) node.style.setProperty('--tail-shift', `${Math.min(over, w / 2 - 12)}px`);
+  }
+  $effect(() => {
+    if (!tired) {
+      bubble = null;
+      return;
+    }
+    let t: ReturnType<typeof setTimeout>;
+    const next = (ms: number) => {
+      t = setTimeout(() => {
+        if (document.visibilityState !== 'hidden') sigh();
+        next(SIGH_EVERY_MS);
+      }, ms);
+    };
+    next(SIGH_FIRST_MS);
+    return () => clearTimeout(t);
+  });
+
+  // Away on the Friday fly-by; puffs back in when it lands.
+  const away = $derived(!!$petFlyby);
+  let wasAway = false;
+  $effect(() => {
+    const a = away;
+    if (wasAway && !a && fxOn()) {
+      puff++;
+      replay((on) => (squash = on), 450);
+    }
+    wasAway = a;
+  });
+
   function pet() {
+    if (tired && !bubble) sigh();
     if (fxOn()) replay((on) => (hop = on), 650);
     const id = ++heartSeq;
     hearts = [...hearts.slice(-3), { id, x: 30 + ((id * 37) % 40) }];
@@ -178,6 +240,7 @@
 
 <div
   class="pet"
+  class:away
   bind:this={root}
   hidden={!spot}
   style:left="{spot?.x ?? 0}px"
@@ -225,6 +288,11 @@
         {/each}
       {/if}
     {/key}
+    {#if bubble && !away}
+      {#key bubble.id}
+        <span class="say" use:fitBubble><PetBubble text={bubble.text} pop={full} /></span>
+      {/key}
+    {/if}
     {#each hearts as h (h.id)}
       <svg class="heart" class:still={!full} style="left: {h.x}%" viewBox="0 0 7 6">
         <path d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z" />
@@ -258,6 +326,9 @@
   .body:focus-visible {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
+  }
+  .away {
+    visibility: hidden;
   }
   .hop,
   .squash {
@@ -328,6 +399,12 @@
       transform: rotate(var(--a)) translateX(44px) scale(0.3);
       opacity: 0;
     }
+  }
+  .say {
+    position: absolute;
+    left: 50%;
+    bottom: 86%;
+    transform: translateX(calc(-50% - var(--tail-shift, 0px)));
   }
   .spark,
   .heart {

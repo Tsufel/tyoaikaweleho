@@ -16,8 +16,11 @@ const { DEFAULT_SETTINGS, applySettings, settings } = await import('../src/lib/s
 const { petStats } = await import('../src/lib/stores/pet');
 const { dialogs } = await import('../src/lib/stores/confirm');
 const { IDLE_TIMER, setTimer } = await import('../src/lib/stores/timer');
-const { commitPetName, petSpot, petView, PET_MIN_W } = await import('../src/views/pet/petState');
+const { commitPetName, petFlyby, petSpot, petView, PET_MIN_W } = await import('../src/views/pet/petState');
+const { FRIDAY_LINES, TIRED_LINES } = await import('../src/views/pet/petLogic');
+const { burst, savedEntry } = await import('../src/views/timer/timerActions');
 const PetCompanion = (await import('../src/views/pet/PetCompanion.svelte')).default;
+const PetFlyby = (await import('../src/views/pet/PetFlyby.svelte')).default;
 const PetSheet = (await import('../src/views/pet/PetSheet.svelte')).default;
 
 // Reduced motion: no loops or transitions, so jsdom needs no Web Animations.
@@ -119,6 +122,124 @@ describe('PetCompanion', () => {
     render(PetCompanion, {});
     for (let i = 0; i < 6; i++) await fireEvent.click(body(), { detail: 1 });
     expect(document.querySelectorAll('.heart')).toHaveLength(4);
+  });
+
+  describe('when tired', () => {
+    const bubble = () => document.querySelector('.bubble');
+    // 7 of the 8 target hours in: past TIRED_AT
+    const late = () => setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 7 * 3600_000 });
+    afterEach(() => {
+      vi.useRealTimers();
+      setTimer(IDLE_TIMER);
+    });
+
+    it('sighs a line a few seconds in, then again every so often', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      late();
+      render(PetCompanion, {});
+      await tick();
+      expect(bubble()).toBeNull();
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(TIRED_LINES).toContain(bubble()?.textContent);
+      await vi.advanceTimersByTimeAsync(6000);
+      expect(bubble()).toBeNull();
+      // the next one comes 10 min after the first (at 604 s), shown for 6 s
+      await vi.advanceTimersByTimeAsync(10 * 60_000 - 3000);
+      expect(bubble()).not.toBeNull();
+    });
+
+    it('sighs when petted, and hushes once the shift ends', async () => {
+      late();
+      render(PetCompanion, {});
+      await tick();
+      await fireEvent.click(body(), { detail: 1 });
+      expect(bubble()).not.toBeNull();
+      setTimer(IDLE_TIMER);
+      await tick();
+      expect(bubble()).toBeNull();
+    });
+
+    it('stays quiet early in a shift', async () => {
+      setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 3600_000 });
+      render(PetCompanion, {});
+      await tick();
+      await fireEvent.click(body(), { detail: 1 });
+      expect(bubble()).toBeNull();
+    });
+
+    it('steps out during the fly-by', async () => {
+      late();
+      render(PetCompanion, {});
+      await tick();
+      await fireEvent.click(body(), { detail: 1 });
+      petFlyby.set({ id: 1, line: 'Jo oli aikakin' });
+      await tick();
+      expect(document.querySelector('.pet')!.classList.contains('away')).toBe(true);
+      expect(bubble()).toBeNull();
+      petFlyby.set(null);
+    });
+  });
+});
+
+describe('PetFlyby', () => {
+  const FRIDAY = new Date(2026, 9, 30, 16, 5);
+  const THURSDAY = new Date(2026, 9, 29, 16, 5);
+  const save = (date: string) => {
+    savedEntry.set({ date } as never);
+    burst.update((n) => n + 1);
+  };
+  afterEach(() => {
+    vi.useRealTimers();
+    petFlyby.set(null);
+  });
+
+  it('flies by with a Friday line when a shift is saved on a Friday', async () => {
+    vi.useFakeTimers({ now: FRIDAY, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    render(PetFlyby, {});
+    await tick();
+    expect(get(petFlyby)).toBeNull();
+    save('2026-10-30');
+    await tick();
+    const line = get(petFlyby)?.line;
+    expect(FRIDAY_LINES).toContain(line);
+    // announced through the always-mounted live region; the drawing is hidden
+    expect(screen.getByRole('status').textContent).toBe(line);
+    expect(document.querySelector('.flyby')!.getAttribute('aria-hidden')).toBe('true');
+    // reduced motion: a still visit
+    await vi.advanceTimersByTimeAsync(4500);
+    expect(get(petFlyby)).toBeNull();
+    expect(document.querySelector('.flyby')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('');
+  });
+
+  it('counts a Friday shift that ran past midnight', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 31, 1), toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    render(PetFlyby, {});
+    save('2026-10-30');
+    await tick();
+    expect(get(petFlyby)).not.toBeNull();
+  });
+
+  it('stays home on other days and when the pet is off', async () => {
+    vi.useFakeTimers({ now: THURSDAY, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    render(PetFlyby, {});
+    save('2026-10-29');
+    await tick();
+    expect(get(petFlyby)).toBeNull();
+
+    vi.setSystemTime(FRIDAY);
+    useSettings({ pet: 'off' });
+    save('2026-10-30');
+    await tick();
+    expect(get(petFlyby)).toBeNull();
+  });
+
+  it('does not fly for a shift saved before it mounted', async () => {
+    vi.useFakeTimers({ now: FRIDAY, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    save('2026-10-30');
+    render(PetFlyby, {});
+    await tick();
+    expect(get(petFlyby)).toBeNull();
   });
 });
 

@@ -178,8 +178,8 @@ One pose at a time, picked by a pure `petPose(input)` in `petLogic.ts`:
 
 | Pose | When | Why |
 |---|---|---|
-| `fly` | Timer running and under the daily target | "Working", flying along with you |
-| `drowsy` | Timer running and past the target (the same moment the ring turns to overtime / blue fire) | A gentle hint that the day's hours are done — never a warning or a sound |
+| `fly` | Timer running, under 75 % of the daily target (`TIRED_AT`) | "Working", flying along with you, fresh |
+| `drowsy` | Timer running and 75 % of the target or more, overtime included | Tires towards the end of the shift (6 h of 8) — a gentle hint, never a warning or a sound |
 | `idle` | No timer, 06:00–22:00 | Ready for the next shift |
 | `sleep` | No timer and 22:00–06:00, or no shift on any of the last 3 usual workdays (holiday) | Napping on days off; wakes up happy, no penalty or sad face |
 
@@ -212,6 +212,21 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
 - **Petting:** clicking the pet makes it hop and shows a pixel heart; a long
   press, the context menu or the keyboard (Enter / Space) opens the pet sheet.
   Petting is the point.
+- **Tired sighs:** while `drowsy`, a pixel speech bubble (`PetBubble`) over
+  the pet says one of *"Oispa kaljaa"*, *"Oispa perjantai"*, *"Koht himaan"*
+  (`TIRED_LINES`) 4 s in and then every 10 minutes, for 6 s each, never the
+  same line twice in a row and not while the app is hidden. Petting a tired
+  pet sighs too. On Fridays *"Oispa perjantai"* is left out. The bubble goes
+  as soon as the pose changes.
+- **Friday fly-by (easter egg):** a shift saved on a Friday, or one that
+  started on a Friday and ran past midnight (`fridayShift`), sends the pet
+  across the whole window on its broom (`PetFlyby`, mounted in `App` so it
+  plays whichever view ended the shift). It rides in from the left, hovers
+  mid-screen with a bubble — *"Lähetään vittuun täst keilahallist"*, *"Jo oli
+  aikakin"* or *"Nyt sitä kaljaa"* (`FRIDAY_LINES`) — and leaves to the right
+  (6 s; clicks pass through). Meanwhile the Timer companion steps out (it
+  puffs back in when the flight lands) and achievement cards wait their turn.
+  Reduced motion shows it still, mid-screen, for 4.5 s. Off when the pet is.
 - **Guards:** loops run only when `motion === 'full'`; they pause with
   `animationsActive` (`animation-play-state: paused`); reduced motion shows the
   static pose and swaps it instantly.
@@ -280,7 +295,11 @@ of ids, earliest date wins.
   level curve and rank titles, pose selection (target crossing, the 22:00 and
   06:00 edges, the holiday rule).
 - `frontend/tests/petUi.test.ts` — companion placement (`petSpot`), label,
-  petting vs opening the sheet, the sheet's name save.
+  petting vs opening the sheet, the sheet's name save, tired sighs (timing,
+  petting, hushing at the end of the shift, stepping out for the fly-by) and
+  the Friday fly-by (Friday, past midnight, other days, pet off).
+- `frontend/tests/petLogic.test.ts` also covers the line helpers
+  (`tiredLines`, `fridayShift`, `pickLine`).
 - `frontend/tests/petSprite.test.ts` — the animation layers: seams, still
   boxes (on the art grid, clear of the particles, covered by the lower
   layer's islands), particle clips and phases, the plain picture without

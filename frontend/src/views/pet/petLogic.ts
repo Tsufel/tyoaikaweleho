@@ -3,7 +3,7 @@
 // hours, so editing an old entry simply changes the pet. Rest never punishes:
 // days the user doesn't usually work don't drain energy, and the pet only naps.
 
-import type { PetKind, PetStats } from '../../lib/api/types';
+import type { PetKind, PetStats, WorkEntry } from '../../lib/api/types';
 import { fromIsoDate, toIsoDate } from '../../lib/time';
 
 export type PetPose = 'idle' | 'fly' | 'drowsy' | 'sleep';
@@ -89,18 +89,22 @@ export function level(lifetimeMinutes: number, liveMinutes = 0): Level {
   return { level: n, rank: rankOf(n), progress: Math.min(1, (hours - lo) / (next - lo)), hours, next };
 }
 
+/** Share of the daily target after which a running shift's pet is tired. */
+export const TIRED_AT = 0.75;
+
 export interface PoseInput {
   running: boolean;
-  /** The running shift is past the daily target (the ring is in overtime). */
-  overTarget: boolean;
+  /** The running shift's share of the daily target (the ring's progress). */
+  progress: number;
   now: Date;
   stats: PetStats | null;
 }
 
-/** fly while working, drowsy in overtime, idle by day, asleep at night or after
- *  a few usual workdays off. Energy never picks the pose. */
-export function petPose({ running, overTarget, now, stats }: PoseInput): PetPose {
-  if (running) return overTarget ? 'drowsy' : 'fly';
+/** fly while working, drowsy towards the end of the shift (and in overtime),
+ *  idle by day, asleep at night or after a few usual workdays off. Energy
+ *  never picks the pose. */
+export function petPose({ running, progress, now, stats }: PoseInput): PetPose {
+  if (running) return progress >= TIRED_AT ? 'drowsy' : 'fly';
   const h = now.getHours();
   if (h >= 22 || h < 6) return 'sleep';
   if (stats && stats.lifetime_minutes > 0 && restedDays(stats, now)) return 'sleep';
@@ -120,4 +124,30 @@ function restedDays(stats: PetStats, now: Date): boolean {
     seen++;
   }
   return true;
+}
+
+/** What the tired pet says now and then near the end of a shift. */
+export const TIRED_LINES = ['Oispa kaljaa', 'Oispa perjantai', 'Koht himaan'];
+/** What the pet says flying off after a Friday shift. */
+export const FRIDAY_LINES = ['Lähetään vittuun täst keilahallist', 'Jo oli aikakin', 'Nyt sitä kaljaa'];
+
+export const isFriday = (d: Date) => weekday(d) === 4;
+
+/** The tired lines for today: no wishing for Friday on a Friday. */
+export function tiredLines(now: Date): string[] {
+  return isFriday(now) ? TIRED_LINES.filter((l) => l !== 'Oispa perjantai') : TIRED_LINES;
+}
+
+/** A saved shift earns the Friday fly-by when it ends on a Friday, or started
+ *  on one and ran past midnight. */
+export function fridayShift(entry: Pick<WorkEntry, 'date'> | null | undefined, now: Date): boolean {
+  if (isFriday(now)) return true;
+  const start = entry ? fromIsoDate(entry.date) : null;
+  return !!start && isFriday(start);
+}
+
+/** A line from lines, not the one said last time when there is a choice. */
+export function pickLine(lines: string[], last: string | null, rand: () => number = Math.random): string {
+  const pool = lines.length > 1 ? lines.filter((l) => l !== last) : lines;
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
 }
