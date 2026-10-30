@@ -271,6 +271,18 @@ class Api:
         return result
 
     @_guarded
+    def open_download_page(self):
+        """Releases page in the browser: the way out when an in-app update
+        can't connect. Fixed URL, nothing comes from the page."""
+        import updater
+        url = updater.download_page_url()
+        try:
+            os.startfile(url)
+        except OSError as exc:
+            return R.error("internal", f"Could not open:\n{url}\n\n{exc}")
+        return R.ok()
+
+    @_guarded
     def install_update(self):
         pending = self._c.pending_update
         if self._frozen and pending is not None:

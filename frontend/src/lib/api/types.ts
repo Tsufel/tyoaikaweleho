@@ -463,6 +463,7 @@ export interface Api {
 
   // updates & DLC
   check_updates(): Promise<CheckUpdatesResult>;
+  open_download_page(): Promise<Result>;
   install_update(): Promise<Result>;
   get_dlc_status(): Promise<Result<{ dlc: DlcStatus }>>;
   dlc_install(): Promise<Result<{ verified: boolean; dlc: DlcStatus }>>;

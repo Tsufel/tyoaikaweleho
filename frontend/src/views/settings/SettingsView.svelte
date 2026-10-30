@@ -45,7 +45,7 @@
     type CheckState,
     type FormField,
   } from './settingsLogic';
-  import { dlcBusy, installDlc, promptUpdate, removeDlc } from './updateFlow';
+  import { dlcBusy, installDlc, openDownloadPage, promptUpdate, removeDlc } from './updateFlow';
 
   const initial = formFromSettings(get(settings));
   let form = $state({ ...initial });
@@ -261,6 +261,10 @@
             </p>
           {:else if check.kind === 'error'}
             <p class="state bad" in:fly={{ y: 4 }}><Icon name="error" size={15} /> {check.message}</p>
+            <p class="state small">
+              <button type="button" class="link" onclick={() => void openDownloadPage()}>Open download page</button>
+              <span class="muted">to install the latest version by hand.</span>
+            </p>
           {/if}
         </div>
       </div>

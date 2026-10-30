@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 import storage
 import timer as timer_module
-from services import dlc
+from services import dlc, net
 from timer import WorkTimer
 from utils import (MIN_SHIFT_SECONDS, entry_minutes, format_duration, format_rate,
                    is_long_shift, is_overnight, parse_date_input, parse_pay_rate,
@@ -896,7 +896,7 @@ class ShiftController:
         except dlc.DlcError as exc:
             return R.error("dlc_failed", str(exc), dlc=self.dlc_status())
         except Exception as exc:
-            return R.error("dlc_failed", f"Could not install the DLC:\n\n{exc}",
+            return R.error("dlc_failed", "Could not install the DLC:\n\n" + net.describe_error(exc),
                            dlc=self.dlc_status())
         dlc.reload()
         return R.ok(verified=verified, dlc=self.dlc_status())
@@ -932,7 +932,8 @@ class ShiftController:
         try:
             release = updater.fetch_latest_release()
         except Exception as exc:
-            return R.error("network", f"Could not check for updates:\n{exc}")
+            return R.error("network", "Could not check for updates:\n"
+                                      + net.describe_error(exc))
         available = bool(release and updater._is_newer(release[0], current_version))
         if available:
             self.remember_update(*release)
@@ -973,5 +974,6 @@ class ShiftController:
         try:
             updater.apply_update(url, sha)
         except Exception as exc:
-            return R.error("update_failed", f"The update could not be installed:\n\n{exc}")
+            return R.error("update_failed", "The update could not be installed:\n\n"
+                                            + net.describe_error(exc))
         return R.ok(version=version)

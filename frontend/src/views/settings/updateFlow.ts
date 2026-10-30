@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store';
 import { api, runFlow } from '../../lib/api';
 import type { DlcStatus } from '../../lib/api/types';
 import { bootstrap } from '../../lib/stores/app';
-import { alert, openSheet, reportError } from '../../lib/stores/confirm';
+import { alert, askYesNo, openSheet, reportError } from '../../lib/stores/confirm';
 import { modalOpen } from '../../lib/stores/modals';
 import { pendingRecovery } from '../../lib/stores/recovery';
 import { dlc } from '../../lib/stores/settings';
@@ -75,7 +75,19 @@ async function updateFailed(message: string) {
   if (failureShown) return;
   failureShown = true;
   overlay.set(null);
-  await alert('Update failed', message, 'error');
+  const manual = await askYesNo('Update failed', `${message}\n\nYou can download the installer from GitHub instead.`, {
+    icon: 'error',
+    yes: 'Open download page',
+    no: 'Close',
+  });
+  if (manual) await openDownloadPage();
+}
+
+/** Releases page in the browser, the manual way out when an update can't
+ *  connect. If even that fails the error carries the URL to copy. */
+export async function openDownloadPage(): Promise<void> {
+  const r = await api.open_download_page();
+  if (!r.ok) await alert('Could not open the download page', dlcError(r, 'The browser could not be opened.'), 'error');
 }
 
 export async function installUpdate(version: string): Promise<void> {

@@ -9,6 +9,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from services import net
+
 _DOWNLOAD_TIMEOUT = 30  # seconds
 
 
@@ -51,7 +53,7 @@ def fetch_latest_release(timeout: int = 5) -> tuple[str, str, str | None] | None
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with net.urlopen(req, timeout) as r:
             data = json.loads(r.read())
     except urllib.error.HTTPError as exc:
         if exc.code == 404:   # repo has no published releases
@@ -60,13 +62,19 @@ def fetch_latest_release(timeout: int = 5) -> tuple[str, str, str | None] | None
     return _parse_release(data)
 
 
+def download_page_url() -> str:
+    """Releases page, for installing by hand when an in-app update can't."""
+    from version import GITHUB_REPO
+    return f"https://github.com/{GITHUB_REPO}/releases/latest"
+
+
 def fetch_latest_dlc_version(timeout: int = 5) -> str:
     """Return the DLC version published on the dlc branch. Raises on
     network errors."""
     from version import GITHUB_REPO
     url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/dlc/dlc_version.txt"
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with net.urlopen(req, timeout) as r:
         return r.read().decode().strip().split()[0]
 
 
@@ -129,7 +137,7 @@ def _is_safe_download_url(url: str) -> bool:
 
 def _download_to(url: str, dest_path: str, timeout: int = _DOWNLOAD_TIMEOUT):
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-    with urllib.request.urlopen(req, timeout=timeout) as r, \
+    with net.urlopen(req, timeout) as r, \
             open(dest_path, "wb") as f:
         try:
             expected = int(r.headers.get("Content-Length") or -1)
@@ -153,7 +161,7 @@ def _download_to(url: str, dest_path: str, timeout: int = _DOWNLOAD_TIMEOUT):
 def _fetch_expected_sha256(sha256_url: str) -> str:
     """Download a .sha256 asset and return the hex digest it contains."""
     req = urllib.request.Request(sha256_url, headers={"User-Agent": "Tyoaikaweleho"})
-    with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as r:
+    with net.urlopen(req, _DOWNLOAD_TIMEOUT) as r:
         text = r.read().decode("utf-8", errors="replace")
     # Format: "<hex digest>" or "<hex digest>  <filename>"
     token = text.strip().split()[0].lower()

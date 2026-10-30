@@ -162,7 +162,8 @@ def test_every_method_returns_json(rig):
         ("add_job_shift", ("Night",)),
         ("get_stats", ("2026-09-01", "2026-09-30", "day")),
         ("export_month", (2026, 9)), ("import_excel", ()), ("ocr_pick_and_extract", ()),
-        ("ocr_save", ([],)), ("check_updates", ()), ("install_update", ()),
+        ("ocr_save", ([],)), ("check_updates", ()), ("open_download_page", ()),
+        ("install_update", ()),
         ("get_dlc_status", ()), ("dlc_install", ()), ("dlc_remove", (None,)),
         ("close_app", (None,)),
     ]
@@ -343,3 +344,28 @@ def test_event_bus_drops_unserialisable_payload(tmp_storage):
         time.sleep(0.01)
     bus.close()
     assert len(window.scripts) == 1 and '"good"' in window.scripts[0]
+
+
+def test_certificate_failures_get_a_plain_explanation(rig, monkeypatch):
+    import ssl
+    import urllib.error
+
+    import updater
+
+    def boom(*a, **k):
+        raise urllib.error.URLError(
+            ssl.SSLCertVerificationError(1, "unable to get local issuer certificate"))
+
+    monkeypatch.setattr(updater, "fetch_latest_release", boom)
+    res = _check(rig[0].check_updates())
+    assert res["error"]["code"] == "network"
+    assert "certificate could not be verified" in res["error"]["message"]
+    assert "CERTIFICATE_VERIFY_FAILED" not in res["error"]["message"]
+
+
+def test_open_download_page_opens_the_releases_page(rig, monkeypatch):
+    from version import GITHUB_REPO
+    opened = []
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+    assert _check(rig[0].open_download_page())["ok"]
+    assert opened == [f"https://github.com/{GITHUB_REPO}/releases/latest"]

@@ -45,7 +45,7 @@ def server(tmp_path, monkeypatch):
     base = f"http://127.0.0.1:{srv.server_address[1]}"
     real = urllib.request.urlopen
 
-    def urlopen(req, timeout=None):
+    def urlopen(req, timeout=None, context=None):
         url = req.full_url
         if url.startswith("https://github.com"):
             url = base + url[len("https://github.com"):]

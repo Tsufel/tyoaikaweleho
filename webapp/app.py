@@ -7,6 +7,7 @@ import threading
 import traceback
 
 import storage
+from services import net
 from utils import get_app_dir
 from webapp import win32
 from webapp.api import Api
@@ -266,6 +267,10 @@ def run(dev_url: str | None = None, smoke: bool = False) -> int:
             if not shell.ready.wait(SMOKE_TIMEOUT_S):
                 _say("smoke-test: frontend_ready was not called within "
                       f"{SMOKE_TIMEOUT_S:.0f} s")
+                outcome["code"] = 1
+            elif not net.has_bundled_roots():
+                _say("smoke-test: certifi's cacert.pem is missing (update "
+                     "checks would fail on PCs without GitHub's root)")
                 outcome["code"] = 1
             else:
                 _say("smoke-test: ok")

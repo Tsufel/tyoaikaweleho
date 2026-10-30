@@ -15,7 +15,8 @@ binaries = []
 hiddenimports = ['winrt.windows.media.ocr', 'winrt.windows.graphics.imaging',
                  'winrt.windows.storage.streams', 'winrt.windows.foundation',
                  'winrt.runtime']
-for pkg in ('webview', 'winocr', 'PIL'):
+# certifi: cacert.pem for services/net.py's root list
+for pkg in ('webview', 'winocr', 'PIL', 'certifi'):
     tmp_ret = collect_all(pkg)
     datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 

@@ -15,6 +15,8 @@ import tempfile
 import urllib.parse
 import urllib.request
 
+from services import net
+
 _DOWNLOAD_TIMEOUT = 30  # seconds
 
 DLC_FILENAME = "image_ocr.py"
@@ -120,7 +122,7 @@ def _fetch(url: str, repo: str) -> bytes:
     if not _is_safe_url(url, repo):
         raise DlcError("DLC download URL is not trusted — install aborted.")
     req = urllib.request.Request(url, headers={"User-Agent": "Tyoaikaweleho"})
-    with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as r:
+    with net.urlopen(req, _DOWNLOAD_TIMEOUT) as r:
         return r.read()
 
 

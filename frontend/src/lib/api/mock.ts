@@ -5,6 +5,7 @@
 // &empty starts with no shifts; &dlc installs the OCR DLC; &lulz turns Lulz on;
 // &sound turns Lulz sound on; &glass turns Liquid glass on; &glassdebug (DEV only)
 // replaces every liquid-glass lens map with a hard left/right split.
+// &certfail makes update checks and installs fail as on a PC missing GitHub's root.
 // window.__welehoMock exposes the same switches at runtime.
 
 import { emitEvent } from './events';
@@ -54,7 +55,10 @@ import {
   weekKey,
 } from '../time';
 
-const VERSION = '2.0.0';
+const VERSION = '2.0.1';
+const CERT_FAIL =
+  "GitHub's security certificate could not be verified, so the connection was stopped.\n\n" +
+  'Antivirus HTTPS scanning, a network proxy or a wrong date and time on this PC can cause this.';
 const DEFAULT_SHIFTS = ['Sales', 'Support', 'Warehouse', 'Sales/Support', 'Training', 'Onboarding'];
 const HOUR = 3_600_000;
 
@@ -902,6 +906,7 @@ export function createMockApi(): Api {
     // ── updates & DLC ──
     async check_updates() {
       await wait(600);
+      if (q.has('certfail')) return err('network', `Could not check for updates:\n${CERT_FAIL}`);
       const latest = q.has('update') ? '2.1.0' : VERSION;
       const available = latest !== VERSION;
       if (available) emitEvent('update:available', { version: latest, current: VERSION });
@@ -910,8 +915,13 @@ export function createMockApi(): Api {
         dlc: dlc.version ? { current: dlc.version, latest: dlc.version, available: false } : null,
       });
     },
+    async open_download_page() {
+      console.info('[mock] would open the releases page');
+      return okR('ok');
+    },
     async install_update() {
       await wait(300);
+      if (q.has('certfail')) return err('update_failed', `The update could not be installed:\n\n${CERT_FAIL}`);
       return err('not_frozen', 'Updates can only be installed from the installed app, not when running from source.');
     },
     async get_dlc_status() {

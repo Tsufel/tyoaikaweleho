@@ -1,6 +1,13 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.0.1": [
+        "Fixed \"Could not check for updates\" (certificate verify failed) on "
+        "PCs where Windows was missing GitHub's security certificate; update "
+        "checks, updates and DLC downloads now work there",
+        "If a check or update still can't connect, an Open download page "
+        "button takes you straight to the latest installer",
+    ],
     "2.0.0": [
         "Brand-new glassy look: frosted-glass panels over an animated "
         "gradient background, smooth animations, light and dark themes",
