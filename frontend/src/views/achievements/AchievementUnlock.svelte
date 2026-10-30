@@ -10,8 +10,10 @@
    *  with the medal flipping in. Waits a beat first so it doesn't land on top of
    *  the clock-out blast, and only counts down while the window is watched. */
 
-  /** A modal is open: don't start one now; hide the shown one and pause its countdown. */
-  let { held = false }: { held?: boolean } = $props();
+  /** held: a modal is open, so don't start one now; hide the shown one and
+   *  pause its countdown. waiting: a shift is on, so don't start one now, but
+   *  let the shown one (already acknowledged) finish. */
+  let { held = false, waiting = false }: { held?: boolean; waiting?: boolean } = $props();
 
   const ENTER_DELAY_MS = 900;
   const SHOW_MS = 4600;
@@ -35,7 +37,7 @@
 
   $effect(() => {
     const id = head?.id ?? null;
-    const wait = held;
+    const wait = held || waiting;
     if (id && id === untrack(() => shownId)) return;
     clearTimeout(waitTimer);
     clearInterval(tick);

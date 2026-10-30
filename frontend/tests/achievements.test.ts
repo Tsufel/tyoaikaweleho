@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Achievement, AchievementsData } from '../src/lib/api/types';
 
 const fakeApi = vi.hoisted(() => ({ get_achievements: vi.fn(), ack_achievements: vi.fn() }));
-const fakeStores = vi.hoisted(() => ({ month: null as any, settings: null as any }));
+const fakeStores = vi.hoisted(() => ({ month: null as any, settings: null as any, timer: null as any }));
 
 vi.mock('../src/lib/api/bridge', () => ({ api: fakeApi, ready: Promise.resolve(), isMock: true }));
 vi.mock('../src/lib/stores/entries', async () => {
@@ -15,6 +15,11 @@ vi.mock('../src/lib/stores/settings', async () => {
   const { writable } = await import('svelte/store');
   fakeStores.settings = writable({ pay_rate: 20, ui_prefs: { target_hours: 8 } });
   return { settings: fakeStores.settings };
+});
+vi.mock('../src/lib/stores/timer', async () => {
+  const { writable } = await import('svelte/store');
+  fakeStores.timer = writable({ running: false });
+  return { timer: fakeStores.timer };
 });
 
 const ach = await import('../src/lib/stores/achievements');
@@ -38,6 +43,7 @@ beforeEach(() => {
   fakeApi.get_achievements.mockReset();
   fakeApi.ack_achievements.mockReset().mockResolvedValue({ ok: true, status: 'ok' });
   clearToasts();
+  fakeStores.timer.set({ running: false, recovery_pending: false });
   ach.resetAchievementsSession();
 });
 afterEach(() => vi.useRealTimers());
@@ -120,6 +126,55 @@ describe('checkAchievements', () => {
     expect(fakeApi.ack_achievements).toHaveBeenCalledWith(['q_a']);
     ach.nextUnlock();
     expect(get(ach.unlockQueue).map((a) => a.id)).toEqual(['q_b']);
+  });
+
+  it('holds everything while a shift runs: nothing queued, toasted or acked until it ends', async () => {
+    fakeStores.timer.set({ running: true });
+    const tiers = ['bronze', 'gold', 'silver', 'bronze', 'legendary'] as const;
+    const items = tiers.map((tier, i) => ({ ...item(`s_${i}`), tier }));
+    fakeApi.get_achievements.mockResolvedValue(ok({ items, newly: items.map((a) => a.id), first_run: false }));
+    await ach.checkAchievements();
+    // the sheet and the tile still see them
+    expect(get(ach.achievements)?.items).toHaveLength(5);
+    expect(get(ach.unlockQueue)).toEqual([]);
+    expect(get(toasts)).toEqual([]);
+    expect(fakeApi.ack_achievements).not.toHaveBeenCalled();
+
+    fakeStores.timer.set({ running: false });
+    await ach.checkAchievements();
+    expect(get(ach.unlockQueue).map((a) => a.tier)).toEqual(['legendary', 'gold', 'silver']);
+    expect(get(toasts).map((t) => t.message)).toEqual(['🏆 …and 2 more achievements unlocked']);
+  });
+
+  it('a first run mid-shift snapshots the backfill but acks nothing, so the shift still gets cards', async () => {
+    fakeStores.timer.set({ running: true });
+    fakeApi.get_achievements.mockResolvedValue(
+      ok({ items: [item('sf_a'), item('sf_b', null)], newly: ['sf_a'], first_run: true }),
+    );
+    await ach.checkAchievements();
+    expect(get(toasts)).toEqual([]);
+    // closing the app now keeps the first run in Python, toast and all
+    expect(fakeApi.ack_achievements).not.toHaveBeenCalled();
+
+    // the shift's own entry earns sf_b; still the first run in Python
+    fakeStores.timer.set({ running: false });
+    fakeApi.get_achievements.mockResolvedValue(
+      ok({ items: [item('sf_a'), item('sf_b')], newly: ['sf_a', 'sf_b'], first_run: true }),
+    );
+    await ach.checkAchievements();
+    expect(fakeApi.ack_achievements).toHaveBeenCalledWith(['sf_a']);
+    expect(get(toasts).map((t) => t.message)).toEqual(["🏆 You've already earned 1 achievement"]);
+    expect(get(ach.unlockQueue).map((a) => a.id)).toEqual(['sf_b']);
+  });
+
+  it('a shift waiting to be recovered holds them too', async () => {
+    fakeStores.timer.set({ running: false, recovery_pending: true });
+    fakeApi.get_achievements.mockResolvedValue(ok({ items: [item('sr_a')], newly: ['sr_a'], first_run: false }));
+    await ach.checkAchievements();
+    expect(get(ach.unlockQueue)).toEqual([]);
+    fakeStores.timer.set({ running: false, recovery_pending: false });
+    await ach.checkAchievements();
+    expect(get(ach.unlockQueue).map((a) => a.id)).toEqual(['sr_a']);
   });
 
   it('a thrown ack while showing is caught', async () => {
@@ -212,6 +267,30 @@ describe('startAchievements', () => {
     fakeStores.settings.update((s: any) => ({ ...s, ui_prefs: { target_hours: 6 } }));
     await vi.advanceTimersByTimeAsync(400);
     expect(fakeApi.get_achievements).toHaveBeenCalledTimes(3);
+  });
+
+  it('re-checks when a shift ends, so what it earned pops up then', async () => {
+    vi.useFakeTimers();
+    fakeApi.get_achievements.mockResolvedValue(ok({ items: [], newly: [], first_run: false }));
+    ach.startAchievements();
+    // the start-up check, when this test runs on its own
+    await vi.advanceTimersByTimeAsync(400);
+    fakeApi.get_achievements.mockClear();
+    fakeApi.get_achievements.mockResolvedValue(ok({ items: [item('t_a')], newly: ['t_a'], first_run: false }));
+
+    fakeStores.timer.set({ running: true });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fakeApi.get_achievements).not.toHaveBeenCalled();
+    // an edit mid-shift re-reads the month: checked, but held
+    fakeStores.month.set({ year: 2026, month: 10, entries: [] });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fakeApi.get_achievements).toHaveBeenCalledTimes(1);
+    expect(get(ach.unlockQueue)).toEqual([]);
+
+    fakeStores.timer.set({ running: false });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(fakeApi.get_achievements).toHaveBeenCalledTimes(2);
+    expect(get(ach.unlockQueue).map((a) => a.id)).toEqual(['t_a']);
   });
 });
 

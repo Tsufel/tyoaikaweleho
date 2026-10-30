@@ -1,9 +1,10 @@
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { api } from '../api/bridge';
-import type { Achievement, AchievementTier, AchievementsData } from '../api/types';
+import type { Achievement, AchievementTier, AchievementsData, TimerState } from '../api/types';
 import { openSheet } from './confirm';
 import { month } from './entries';
 import { settings } from './settings';
+import { timer } from './timer';
 import { toast } from './toasts';
 
 // Achievements are derived from the entries by Python (achievements.py), so
@@ -12,6 +13,9 @@ import { toast } from './toasts';
 // or the settings change (target hours, pay rate). Unlocks are celebrated by
 // AchievementUnlock (mounted in App), which acknowledges each one as it shows it,
 // so closing the app before a card appears celebrates it again next launch.
+// Nothing is celebrated while a shift runs (or waits to be recovered): those
+// unlocks stay unacknowledged (Python keeps listing them as new) until the
+// shift ends, and the check that follows pops them up.
 
 export const achievements = writable<AchievementsData | null>(null);
 /** Waiting to be celebrated, oldest first. */
@@ -26,7 +30,8 @@ const CHECK_DELAY_MS = 350;
 const MAX_PARADE = 3;
 const RANK: Record<AchievementTier, number> = { bronze: 0, silver: 1, gold: 2, legendary: 3 };
 let started = false;
-let timer: ReturnType<typeof setTimeout> | undefined;
+let unsubs: (() => void)[] = [];
+let checkTimer: ReturnType<typeof setTimeout> | undefined;
 let running = false;
 let again = false;
 /** Celebrated this session, so a failed ack can't loop the same unlock. */
@@ -36,6 +41,11 @@ let backfilled: Set<string> | null = null;
 /** Backfilled but not stored as seen yet: rides along with every ack until one
  *  succeeds, so no other ack can end the first run without them. */
 const backfillPending = new Set<string>();
+/** How many the first-run toast sums up, while it waits for the shift to end. */
+let backfillToast = 0;
+
+/** A shift is running, or one left unfinished waits to be recovered. */
+export const onShift = (t: Pick<TimerState, 'running' | 'recovery_pending'>) => t.running || t.recovery_pending;
 
 /** Medal image per icon id (assets/medals/<id>.webp). */
 const MEDALS = import.meta.glob<string>('../../assets/medals/*.webp', {
@@ -108,31 +118,29 @@ async function checkOnce(): Promise<void> {
   let newly = data.newly;
   if (data.first_run) {
     if (!backfilled) {
-      // Backfill: one summary toast instead of a parade.
+      // Backfill: one summary toast instead of a parade, for what was met when
+      // it was first seen, so what a running shift earns later still gets its
+      // own card.
       backfilled = new Set(newly);
       for (const id of newly) {
         celebrated.add(id);
         backfillPending.add(id);
       }
-      const n = newly.length;
-      if (n) {
-        toast(`🏆 You've already earned ${n} achievement${n === 1 ? '' : 's'}`, {
-          tone: 'success',
-          label: 'View',
-          action: () => void openAchievements(),
-          undo: false,
-          ms: 10000,
-        });
-      }
-      await ack([]);
-      return;
+      backfillToast = newly.length;
     }
-    // The backfill ack failed: retry it (an empty ack still ends the first run),
-    // and celebrate anything earned since as a normal unlock.
+    // Mid-shift nothing is acked, not even the backfill: closing the app before
+    // the shift ends keeps the first run, so the toast comes again next launch.
+    if (onShift(get(timer))) return;
+    // The ack (an empty one still ends the first run) is retried while it fails;
+    // anything earned since the backfill is celebrated as a normal unlock.
     const old = backfilled;
     await ack([]);
+    showBackfillToast();
     newly = newly.filter((id) => !old.has(id));
   }
+  // Mid-shift: the sheet and the tile are up to date, the celebrating waits.
+  if (onShift(get(timer))) return;
+  showBackfillToast();
   const fresh = data.items.filter((i) => newly.includes(i.id) && !celebrated.has(i.id));
   if (!fresh.length) return;
   for (const a of fresh) celebrated.add(a.id);
@@ -154,14 +162,27 @@ async function checkOnce(): Promise<void> {
   if (rest) await ack(summed.map((a) => a.id));
 }
 
+function showBackfillToast() {
+  const n = backfillToast;
+  if (!n || onShift(get(timer))) return;
+  backfillToast = 0;
+  toast(`🏆 You've already earned ${n} achievement${n === 1 ? '' : 's'}`, {
+    tone: 'success',
+    label: 'View',
+    action: () => void openAchievements(),
+    undo: false,
+    ms: 10000,
+  });
+}
+
 /** AchievementUnlock is showing this one: it counts as celebrated now. */
 export function markShown(a: Achievement): void {
   void ack([a.id]);
 }
 
 function schedule() {
-  clearTimeout(timer);
-  timer = setTimeout(() => void checkAchievements(), CHECK_DELAY_MS);
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(() => void checkAchievements(), CHECK_DELAY_MS);
 }
 
 /** Called once by App after the intro, so nothing pops up under it. */
@@ -169,14 +190,24 @@ export function startAchievements(): void {
   if (started) return;
   started = true;
   let lastPrefs = '';
-  month.subscribe(() => schedule());
-  settings.subscribe((s) => {
-    const key = `${s.pay_rate}|${s.ui_prefs.target_hours}`;
-    if (key === lastPrefs) return;
-    const first = lastPrefs === '';
-    lastPrefs = key;
-    if (!first) schedule();
-  });
+  // The shift ended (saved, discarded, recovered or stopped elsewhere):
+  // celebrate what it earned.
+  let was = onShift(get(timer));
+  unsubs = [
+    month.subscribe(() => schedule()),
+    timer.subscribe((t) => {
+      const now = onShift(t);
+      if (was && !now) schedule();
+      was = now;
+    }),
+    settings.subscribe((s) => {
+      const key = `${s.pay_rate}|${s.ui_prefs.target_hours}`;
+      if (key === lastPrefs) return;
+      const first = lastPrefs === '';
+      lastPrefs = key;
+      if (!first) schedule();
+    }),
+  ];
 }
 
 /** Done showing the head of the queue. */
@@ -188,11 +219,16 @@ export function clearUnlocks(): void {
   unlockQueue.set([]);
 }
 
-/** Tests only: forget what this session celebrated. */
+/** Tests only: forget what this session celebrated, and stop listening. */
 export function resetAchievementsSession(): void {
+  for (const u of unsubs) u();
+  unsubs = [];
+  started = false;
+  clearTimeout(checkTimer);
   celebrated.clear();
   backfilled = null;
   backfillPending.clear();
+  backfillToast = 0;
   clearUnlocks();
   achievements.set(null);
   achievementsError.set(null);

@@ -429,8 +429,12 @@ acknowledged achievement stays unlocked even if its entries are later deleted.
 `newly` = met and not yet acknowledged. `first_run` = nothing was ever
 acknowledged: show one summary toast ("You've already earned N achievements")
 and ack all of `newly`, instead of one celebration each. Otherwise celebrate each
-of `newly`, then ack them. The frontend asks after bootstrap, after a saved
-stop, after entry saves/deletes and on `data:changed`.
+of `newly`, then ack them. The frontend asks after bootstrap, whenever a
+shift ends (saved, discarded, recovered or stopped elsewhere), after entry
+saves/deletes and on `data:changed`. While a shift is running (or
+`recovery_pending`) it celebrates and acks nothing, not even a first-run
+backfill, so the shift's unlocks stay in `newly` (and `first_run` stays true)
+and pop up after the shift ends.
 
 ### 10.2 `get_pet_stats` payload
 

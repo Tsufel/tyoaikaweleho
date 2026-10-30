@@ -74,6 +74,28 @@ describe('AchievementUnlock', () => {
     expect(get(ach.unlockQueue)).toEqual([]);
   });
 
+  it('during a shift starts no card, but lets the one already showing finish', async () => {
+    vi.useFakeTimers();
+    const { rerender } = render(AchievementUnlock, { waiting: false });
+    ach.unlockQueue.set([item('w_a'), item('w_b')]);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(card()?.textContent).toContain('Title w_a');
+
+    // a shift starts: w_a (already acked) stays up and counts down
+    await rerender({ waiting: true });
+    expect(card()?.textContent).toContain('Title w_a');
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(get(ach.unlockQueue).map((a) => a.id)).toEqual(['w_b']);
+    expect(card()).toBeNull();
+    expect(fakeApi.ack_achievements).toHaveBeenCalledTimes(1);
+
+    // the shift ends: w_b shows
+    await rerender({ waiting: false });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(card()?.textContent).toContain('Title w_b');
+    expect(fakeApi.ack_achievements).toHaveBeenLastCalledWith(['w_b']);
+  });
+
   it('pauses while focused and gives focus back on dismiss', async () => {
     vi.useFakeTimers();
     const outside = document.createElement('button');

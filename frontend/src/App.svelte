@@ -15,7 +15,7 @@
   import LiquidFilters from './lib/glass/LiquidFilters.svelte';
   import { liquidGlass } from './lib/glass/liquidGlass';
   import { applySettings, dlc } from './lib/stores/settings';
-  import { setTimer } from './lib/stores/timer';
+  import { setTimer, timer } from './lib/stores/timer';
   import { runUndo } from './lib/stores/toasts';
   import { startTheme } from './lib/theme/theme';
   import { MONTHS, monthLabel } from './lib/time';
@@ -28,7 +28,7 @@
   import Segmented from './lib/ui/Segmented.svelte';
   import Spinner from './lib/ui/Spinner.svelte';
   import Toasts from './lib/ui/Toasts.svelte';
-  import { startAchievements } from './lib/stores/achievements';
+  import { onShift, startAchievements } from './lib/stores/achievements';
   import AchievementUnlock from './views/achievements/AchievementUnlock.svelte';
   import ChangelogModal from './views/modals/ChangelogModal.svelte';
   import { handleCloseRequest } from './views/modals/closeFlow';
@@ -278,7 +278,7 @@
 
 <UpdateFlow />
 <ConfirmHost />
-{#if phase === 'ready' && introDone}<AchievementUnlock held={$modalOpen > 0} />{/if}
+{#if phase === 'ready' && introDone}<AchievementUnlock held={$modalOpen > 0} waiting={onShift($timer)} />{/if}
 <Toasts />
 {#if $lulz}
   {#await loadFx() then m}

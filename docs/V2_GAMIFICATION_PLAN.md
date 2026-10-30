@@ -100,6 +100,18 @@ month is re-read — every save, stop, edit, delete, import and `data:changed`
 path ends in `refreshMonth` — and when `pay_rate` or `target_hours` change.
 That avoids hooking each write path separately.
 
+Nothing pops up during a shift (or while an unfinished one waits to be
+recovered). A check still updates the sheet and the tile, but it queues no
+cards, shows no toasts and acks nothing, so Python keeps listing those unlocks
+in `newly`. When the shift ends (End shift, a discard, a recovery, or a stop
+from elsewhere), the store checks again and the shift's unlocks pop up then;
+closing the app mid-shift celebrates them on the next launch. A queued card
+that hasn't shown yet waits for the end of the shift too, while one already on
+screen (and so already acked) finishes. A first run met mid-shift
+notes what is met then as the backfill but acks nothing either, so the first
+run (and its summary toast) survives closing the app; when the shift ends the
+backfill is acked with its toast, and what the shift itself earned gets cards.
+
 ### UI
 
 - **Medals:** one Gemini-made medal per achievement plus a `hidden_<tier>`
@@ -111,8 +123,9 @@ That avoids hooking each write path separately.
 - **Unlock:** `AchievementUnlock.svelte` (mounted in `App.svelte`) shows a card
   under the title bar: the medal flips in, glows, gets a shine sweep and a
   spark burst in the tier colour; with Lulz on, also a `milestone` flare via
-  `emitFx`. It waits ~0.9 s (so it doesn't land on the clock-out blast), pauses
-  while a modal is open, the window is hidden or the pointer is on it, and
+  `emitFx`. It waits ~0.9 s (so it doesn't land on the clock-out blast), waits
+  for a running shift to end, pauses while a modal is open, the window is
+  hidden or the pointer is on it, and
   clicking it opens the sheet. Reduced motion shows it still.
 - **Batches:** more than 3 new unlocks at once (e.g. an import) animate only
   the 3 rarest; the rest are summed up in one *"…and N more achievements
