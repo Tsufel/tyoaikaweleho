@@ -68,10 +68,11 @@ def test_ui_prefs_defaults_and_lenient_read(tmp_storage):
     _write(tmp_storage, {"entries": [], "ui_prefs": {"lulz": "yes", "target_hours": 99,
                                                      "reduce_effects": True, "lulz_sound": "yes",
                                                      "liquid_glass": "x", "pet": "dragon",
-                                                     "pet_name": 5}})
+                                                     "pet_name": 5, "pet_hint_seen": 1}})
     assert storage.get_ui_prefs() == {"lulz": False, "reduce_effects": True,
                                       "lulz_sound": False, "liquid_glass": False,
-                                      "target_hours": 8.0, "pet": "off", "pet_name": ""}
+                                      "target_hours": 8.0, "pet": "off", "pet_name": "",
+                                      "pet_hint_seen": False}
 
 
 def test_set_ui_prefs_partial(tmp_storage):
@@ -79,7 +80,7 @@ def test_set_ui_prefs_partial(tmp_storage):
     assert storage.set_ui_prefs({"target_hours": 6}) == {"lulz": True, "reduce_effects": False,
                                                          "lulz_sound": False, "liquid_glass": False,
                                                          "target_hours": 6.0, "pet": "off",
-                                                         "pet_name": ""}
+                                                         "pet_name": "", "pet_hint_seen": False}
 
 
 def test_set_ui_prefs_lulz_sound_round_trips(tmp_storage):
@@ -96,9 +97,18 @@ def test_set_ui_prefs_liquid_glass_round_trips(tmp_storage):
     assert storage.get_ui_prefs()["liquid_glass"] is False
 
 
+def test_set_ui_prefs_pet_hint_seen_round_trips(tmp_storage):
+    prefs = storage.set_ui_prefs({"pet": "wizard", "pet_hint_seen": True})
+    assert prefs["pet_hint_seen"] is True and prefs["pet"] == "wizard"
+    assert storage.get_ui_prefs()["pet_hint_seen"] is True
+    # turning the pet off again doesn't bring the offer back
+    assert storage.set_ui_prefs({"pet": "off"})["pet_hint_seen"] is True
+
+
 @pytest.mark.parametrize("changes", [{"target_hours": 0.5}, {"target_hours": float("nan")},
                                      {"lulz": 1}, {"lulz_sound": "yes"}, {"lulz_sound": None},
                                      {"liquid_glass": "yes"}, {"liquid_glass": None},
+                                     {"pet_hint_seen": "yes"}, {"pet_hint_seen": 0},
                                      {"nope": True}, "x"])
 def test_set_ui_prefs_invalid(tmp_storage, changes):
     with pytest.raises(ValueError):

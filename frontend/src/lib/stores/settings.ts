@@ -12,6 +12,7 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   target_hours: 8,
   pet: 'off',
   pet_name: '',
+  pet_hint_seen: false,
 };
 
 export const DEFAULT_SETTINGS: Settings = {

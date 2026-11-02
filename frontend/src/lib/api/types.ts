@@ -252,6 +252,8 @@ export interface UiPrefs {
   pet: PetKind;
   /** Trimmed, at most 24 characters; '' = the default name. */
   pet_name: string;
+  /** The Timer card's one-time pet offer was answered (or the pet set in Settings). */
+  pet_hint_seen: boolean;
 }
 
 export type PetKind = 'off' | 'familiar' | 'wizard';

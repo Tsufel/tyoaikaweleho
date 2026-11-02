@@ -243,6 +243,16 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
 - **Pet sheet** (`openSheet`): the current pose large, name (editable), rank
   and level with a progress bar to the next level, the energy bar with
   *"18.5 h of 30 h in the last 7 days"*, and lifetime hours.
+- **One-time offer** (`PetHint.svelte`, added in 2.1.1 because people updating
+  didn't find the setting): while the pet is off, a slim strip at the bottom of
+  the Timer card offers the familiar or the wizard, or *No thanks*. Any answer
+  sets `pet_hint_seen` and the strip never comes back; changing the pet in
+  Settings sets it too. A toast then says where the setting lives. It waits
+  while an unfinished shift needs a decision, drops to one row on windows
+  700 px tall or less so the ring keeps its room, and, when answered from the
+  keyboard, hands focus to the new pet (or START) as it goes. If the card has
+  no room to place the pet (mid-size two-column windows), the toast says so
+  instead of greeting a pet that isn't there.
 
 ### Cosmetics (later)
 
@@ -258,6 +268,7 @@ In `ui_prefs`, like `lulz` (`storage.UI_PREF_DEFAULTS`, `_check_setting`,
 
 - `pet`: `"off" | "familiar" | "wizard"` (default `"off"`)
 - `pet_name`: string, trimmed, max 24 chars, `""` = default name
+- `pet_hint_seen`: bool (default false), the one-time offer was answered
 - `pet_aura`: `"none" | "bronze" | "silver" | "gold" | "legendary"` (later)
 
 `ui_prefs` only knows booleans and `target_hours` today, so this adds a small

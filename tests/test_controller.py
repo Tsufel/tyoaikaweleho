@@ -745,7 +745,7 @@ def test_get_settings_defaults(env):
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                              "liquid_glass": False, "target_hours": 8.0, "pet": "off",
-                             "pet_name": ""}
+                             "pet_name": "", "pet_hint_seen": False}
 
 
 def test_save_settings(env):

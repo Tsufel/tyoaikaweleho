@@ -199,7 +199,7 @@
     { value: 'wizard', label: 'Wizard' },
   ];
   async function setPet(v: PetKind) {
-    await saveUiPrefs({ pet: v });
+    await saveUiPrefs({ pet: v, pet_hint_seen: true });
   }
   let petNameDraft = $state(get(settings).ui_prefs.pet_name);
   let petNameInput = $state<HTMLInputElement>();

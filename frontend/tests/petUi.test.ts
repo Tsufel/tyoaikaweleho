@@ -22,6 +22,10 @@ const { burst, savedEntry } = await import('../src/views/timer/timerActions');
 const PetCompanion = (await import('../src/views/pet/PetCompanion.svelte')).default;
 const PetFlyby = (await import('../src/views/pet/PetFlyby.svelte')).default;
 const PetSheet = (await import('../src/views/pet/PetSheet.svelte')).default;
+const PetHint = (await import('../src/views/pet/PetHint.svelte')).default;
+const PetHintHost = (await import('./fixtures/PetHintHost.svelte')).default;
+const { route } = await import('../src/lib/stores/app');
+const { clearToasts, toasts } = await import('../src/lib/stores/toasts');
 
 // Reduced motion: no loops or transitions, so jsdom needs no Web Animations.
 function useSettings(prefs: Partial<Settings['ui_prefs']>) {
@@ -290,5 +294,73 @@ describe('commitPetName', () => {
     useSettings({ pet: 'familiar', pet_name: 'Old' });
     fakeApi.save_ui_prefs.mockResolvedValue({ ok: false, status: 'error', error: { message: 'nope' } });
     expect(await commitPetName('New')).toBe('Old');
+  });
+});
+
+describe('PetHint', () => {
+  beforeEach(() => {
+    useSettings({ pet: 'off' });
+    clearToasts();
+    route.set('main');
+  });
+
+  it('turns the picked pet on, marks the offer answered and says where the setting lives', async () => {
+    render(PetHint, {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Wizard' }));
+    expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet: 'wizard', pet_hint_seen: true });
+    expect(get(settings).ui_prefs).toMatchObject({ pet: 'wizard', pet_hint_seen: true });
+    const [t] = get(toasts);
+    expect(t.message).toMatch(/^Say hi to Weleho!.*Settings ▸ Effects ▸ Pet$/);
+  });
+
+  it('No thanks only marks it answered, and the toast opens Settings', async () => {
+    render(PetHint, {});
+    await fireEvent.click(screen.getByRole('button', { name: 'No thanks' }));
+    expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet_hint_seen: true });
+    expect(get(settings).ui_prefs).toMatchObject({ pet: 'off', pet_hint_seen: true });
+    const [t] = get(toasts);
+    expect(t.message).toMatch(/Settings ▸ Effects ▸ Pet$/);
+    expect(t.label).toBe('Open Settings');
+    await t.action!();
+    expect(get(route)).toBe('settings');
+  });
+
+  it('keeps keyboard focus in the card once the strip is gone', async () => {
+    render(PetHintHost, {});
+    const no = screen.getByRole('button', { name: 'No thanks' });
+    no.focus();
+    await fireEvent.click(no);
+    await tick();
+    await tick();
+    expect(screen.queryByRole('group', { name: 'Want a work pet?' })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'START NOW' }));
+  });
+
+  it('leaves focus alone after a mouse click', async () => {
+    render(PetHintHost, {});
+    const no = screen.getByRole('button', { name: 'No thanks' });
+    no.focus();
+    await fireEvent.click(no, { detail: 1 });
+    await tick();
+    await tick();
+    expect(screen.queryByRole('group', { name: 'Want a work pet?' })).toBeNull();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("says when the card has no room to show the pet it just turned on", async () => {
+    // the host has no PetCompanion, so the pet never gets a spot
+    render(PetHintHost, {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Familiar' }), { detail: 1 });
+    await vi.waitFor(() => expect(get(toasts)).toHaveLength(1));
+    expect(get(toasts)[0].message).toMatch(/^Tähti is ready but needs more room/);
+  });
+
+  it('stays unanswered when the save fails', async () => {
+    fakeApi.save_ui_prefs.mockResolvedValue({ ok: false, status: 'error', error: { message: 'nope' } });
+    render(PetHint, {});
+    await fireEvent.click(screen.getByRole('button', { name: 'Familiar' }));
+    await tick();
+    expect(get(settings).ui_prefs).toMatchObject({ pet: 'off', pet_hint_seen: false });
+    expect(get(toasts).map((t) => t.tone)).toEqual(['error']);
   });
 });

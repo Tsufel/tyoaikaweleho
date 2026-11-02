@@ -369,10 +369,13 @@ Bootstrap = {
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
-  liquid_glass:false, target_hours:8, pet:'off', pet_name:''}}`.
+  liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false}}`.
   `pet` is `'off'|'familiar'|'wizard'`; `pet_name` is stored trimmed with inner
   whitespace collapsed, at most 24 printable characters (`''` = the default name
   "Tähti" / "Weleho"); a bad name is `invalid(field:'pet_name')`.
+  `pet_hint_seen` (default off) is set once the Timer card's one-time pet offer
+  is answered, or the pet is changed in Settings; the offer shows only while
+  `pet` is `'off'` and this is false.
   `lulz_sound` (default off) enables the synthesized fire sound; it only plays
   while Lulz is effective. `liquid_glass` (default off) turns on the iOS-style
   Liquid glass appearance (see `stores/glass.ts`). Frontend and backend ship

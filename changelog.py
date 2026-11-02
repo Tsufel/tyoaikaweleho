@@ -1,15 +1,24 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.1": [
+        "Looking for the work pet? The Timer card now offers you one: pick "
+        "a familiar or a wizard, or wave it off. You can switch, rename or "
+        "turn it off any time in Settings ▸ Effects ▸ Pet",
+        "Your achievements live on the Stats page: the trophy tile counts "
+        "your medals, and the link under it shows every one and what's left "
+        "to unlock",
+    ],
     "2.1.0": [
         "Achievements: earn medals for your hours, streaks, early starts, "
         "late finishes and more. See them all from the new tile in Stats; "
         "anything you'd already earned is unlocked for you right away",
         "New achievements pop up with an animated card once you end your "
         "shift, so they never interrupt you mid-shift",
-        "Work pet (Settings, off by default): a familiar or a wizard keeps "
-        "you company on the Timer card. Give it a name, pet it with a click "
-        "and open its sheet (right-click) to see its energy and level",
+        "Work pet (Settings ▸ Effects ▸ Pet, off by default): a familiar or "
+        "a wizard keeps you company on the Timer card. Give it a name, pet it "
+        "with a click and open its sheet (right-click) to see its energy and "
+        "level",
         "Your pet charges up as you log hours and levels up over time. It "
         "flies along while you work, gets tired towards the end of a shift "
         "and naps on your days off; it never goes hungry or sad",

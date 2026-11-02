@@ -6,7 +6,8 @@
 // &sound turns Lulz sound on; &glass turns Liquid glass on; &glassdebug (DEV only)
 // replaces every liquid-glass lens map with a hard left/right split.
 // &achnew skips the achievements first-run summary so each unlock animates.
-// &pet=familiar|wizard turns the Timer card pet on.
+// &pet=familiar|wizard turns the Timer card pet on; &nopethint hides the
+// one-time pet offer shown while it is off.
 // &certfail makes update checks and installs fail as on a PC missing GitHub's root.
 // window.__welehoMock exposes the same switches at runtime.
 
@@ -203,6 +204,7 @@ export function createMockApi(): Api {
       target_hours: 8,
       pet: q.get('pet') === 'wizard' ? 'wizard' : q.get('pet') === 'familiar' ? 'familiar' : 'off',
       pet_name: '',
+      pet_hint_seen: q.has('nopethint'),
     },
   };
   let dlc: DlcStatus = q.has('dlc')

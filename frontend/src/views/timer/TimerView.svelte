@@ -14,6 +14,7 @@
   import Popover from '../../lib/ui/Popover.svelte';
   import TimePicker from '../../lib/ui/TimePicker.svelte';
   import PetCompanion from '../pet/PetCompanion.svelte';
+  import PetHint from '../pet/PetHint.svelte';
   import HeroRing from './HeroRing.svelte';
   import RollingText from './RollingText.svelte';
   import StartDial from './StartDial.svelte';
@@ -290,6 +291,8 @@
   </div>
   {#if $settings.ui_prefs.pet === 'familiar' || $settings.ui_prefs.pet === 'wizard'}
     <PetCompanion card={cardEl} ring={stage} controls={controlsEl} />
+  {:else if !$settings.ui_prefs.pet_hint_seen && !blocked}
+    <PetHint card={cardEl} />
   {/if}
 </section>
 
