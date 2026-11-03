@@ -240,9 +240,11 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
   under 64 px wide it hides. It never covers the ring, the dial or the buttons.
 - `aria-hidden` for the sprite itself; the button around it is labelled e.g.
   *"Tähti, flying, energy 80%. Open pet"*.
-- **Pet sheet** (`openSheet`): the current pose large, name (editable), rank
+- **Pet sheet** (`openSheet`): the current pose large with its name, rank
   and level with a progress bar to the next level, the energy bar with
-  *"18.5 h of 30 h in the last 7 days"*, and lifetime hours.
+  *"18.5 h of 30 h in the last 7 days"*, and lifetime hours. Naming and
+  switching live only in Settings (since 2.1.2); the sheet points there with
+  a *Pet settings* button.
 - **One-time offer** (`PetHint.svelte`, added in 2.1.1 because people updating
   didn't find the setting): while the pet is off, a slim strip at the bottom of
   the Timer card offers the familiar or the wizard, or *No thanks*. Any answer
@@ -252,7 +254,13 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
   700 px tall or less so the ring keeps its room, and, when answered from the
   keyboard, hands focus to the new pet (or START) as it goes. If the card has
   no room to place the pet (mid-size two-column windows), the toast says so
-  instead of greeting a pet that isn't there.
+  instead of greeting a pet that isn't there. Its picture is only a preview:
+  a click or right-click on it says once to pick a pet first (a 2.1.2 fix
+  for "right-click does nothing").
+- **Opening the sheet:** right-click, a long press or Enter. Since 2.1.2 a
+  right-button release opens it too, for mouse and touchpad tools that
+  swallow the `contextmenu` event (the guard keeps it to one sheet), and a
+  sheet that fails to load says so in a toast instead of failing silently.
 
 ### Cosmetics (later)
 
@@ -306,7 +314,7 @@ of ids, earliest date wins.
   level curve and rank titles, pose selection (target crossing, the 22:00 and
   06:00 edges, the holiday rule).
 - `frontend/tests/petUi.test.ts` — companion placement (`petSpot`), label,
-  petting vs opening the sheet, the sheet's name save, tired sighs (timing,
+  petting vs opening the sheet, the sheet's way to Settings, tired sighs (timing,
   petting, hushing at the end of the shift, stepping out for the fly-by) and
   the Friday fly-by (Friday, past midnight, other days, pet off).
 - `frontend/tests/petLogic.test.ts` also covers the line helpers

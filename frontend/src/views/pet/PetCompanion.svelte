@@ -13,6 +13,7 @@
   import { unlockQueue } from '../../lib/stores/achievements';
   import { animationsActive, motion } from '../../lib/stores/app';
   import { watchPetStats } from '../../lib/stores/pet';
+  import { toast } from '../../lib/stores/toasts';
   import { tooltip } from '../../lib/ui/actions';
   import { burst } from '../timer/timerActions';
   import { POSE_LABEL, pickLine, tiredLines, type PetPose } from './petLogic';
@@ -194,6 +195,8 @@
     sheetOpen = true;
     try {
       await openPetSheet();
+    } catch {
+      toast("Couldn't open the pet's details. Restart Weleho and try again.", { tone: 'error', undo: false });
     } finally {
       sheetOpen = false;
     }
@@ -220,6 +223,13 @@
   function cancel() {
     clearTimeout(press);
     pressAt = null;
+  }
+  // A right-click opens on the button's release too, for mouse and touchpad
+  // tools that swallow the context menu event; the contextmenu that normally
+  // follows finds the sheet already opening.
+  function up(e: PointerEvent) {
+    cancel();
+    if (e.button === 2) void open();
   }
   function click(e: MouseEvent) {
     // only the pointer click that ends a long press is swallowed; a later
@@ -257,7 +267,7 @@
     oncontextmenu={menu}
     onpointerdown={down}
     onpointermove={move}
-    onpointerup={cancel}
+    onpointerup={up}
     onpointercancel={cancel}
     onpointerleave={cancel}
   >

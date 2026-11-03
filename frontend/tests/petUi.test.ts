@@ -105,6 +105,17 @@ describe('PetCompanion', () => {
     await vi.waitFor(() => expect(sheets()).toHaveLength(1));
   });
 
+  it('a right-button release opens the sheet once, even without a contextmenu', async () => {
+    render(PetCompanion, {});
+    await fireEvent.pointerUp(body(), { button: 2 });
+    await vi.waitFor(() => expect(sheets()).toHaveLength(1));
+    // the contextmenu that usually follows doesn't open a second one
+    await fireEvent.contextMenu(body());
+    await new Promise((r) => setTimeout(r));
+    expect(sheets()).toHaveLength(1);
+    expect(document.querySelectorAll('.heart')).toHaveLength(0);
+  });
+
   it('after a long press, Enter still opens the sheet', async () => {
     vi.useFakeTimers();
     try {
@@ -248,16 +259,16 @@ describe('PetFlyby', () => {
 });
 
 describe('PetSheet', () => {
-  it('shows level and energy and saves a tidied name on Enter', async () => {
-    render(PetSheet, { onclose: () => {} });
+  it('shows level and energy, and leaves naming to Settings', async () => {
+    route.set('main');
+    const onclose = vi.fn();
+    render(PetSheet, { onclose });
     await vi.waitFor(() => expect(document.body.textContent).toContain('Level 2'));
-    const input = screen.getByLabelText('Name') as HTMLInputElement;
-    input.focus();
-    await fireEvent.input(input, { target: { value: '  Sir   Purrs ' } });
-    await fireEvent.keyDown(input, { key: 'Enter' });
-    await vi.waitFor(() => expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet_name: 'Sir Purrs' }));
-    expect(input.value).toBe('Sir Purrs');
-    expect(get(settings).ui_prefs.pet_name).toBe('Sir Purrs');
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(document.body.textContent).toContain('Settings ▸ Effects ▸ Pet');
+    await fireEvent.click(screen.getByRole('button', { name: 'Pet settings' }));
+    expect(onclose).toHaveBeenCalled();
+    await vi.waitFor(() => expect(get(route)).toBe('settings'));
   });
 });
 
@@ -353,6 +364,17 @@ describe('PetHint', () => {
     await fireEvent.click(screen.getByRole('button', { name: 'Familiar' }), { detail: 1 });
     await vi.waitFor(() => expect(get(toasts)).toHaveLength(1));
     expect(get(toasts)[0].message).toMatch(/^Tähti is ready but needs more room/);
+  });
+
+  it('a click or right-click on the preview picture says, once, how to get the pet', async () => {
+    render(PetHint, {});
+    const art = document.querySelector('.pet-hint .art')!;
+    await fireEvent.contextMenu(art);
+    await fireEvent.click(art);
+    expect(get(toasts).map((t) => t.message)).toEqual([
+      'Pick Familiar or Wizard to get your pet. Then click it to pet it, or right-click it for its details',
+    ]);
+    expect(fakeApi.save_ui_prefs).not.toHaveBeenCalled();
   });
 
   it('stays unanswered when the save fails', async () => {

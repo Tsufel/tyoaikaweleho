@@ -1,17 +1,14 @@
 <script lang="ts">
-  // The pet up close: its name (editable), level and rank, energy and lifetime
-  // hours. Opened from the Timer companion (openPetSheet).
+  // The pet up close: level and rank, energy and lifetime hours. Opened from
+  // the Timer companion (openPetSheet); naming and switching live in Settings.
   import { onMount } from 'svelte';
   import { refreshPetStats, watchPetStats } from '../../lib/stores/pet';
-  import { settings } from '../../lib/stores/settings';
   import Button from '../../lib/ui/Button.svelte';
-  import Field from '../../lib/ui/Field.svelte';
   import Modal from '../../lib/ui/Modal.svelte';
   import Spinner from '../../lib/ui/Spinner.svelte';
-  import TextInput from '../../lib/ui/TextInput.svelte';
-  import { motion } from '../../lib/stores/app';
-  import { DEFAULT_PET_NAME, PET_NAME_MAX, type PetPose } from './petLogic';
-  import { commitPetName, fmtHours, petView } from './petState';
+  import { motion, navigate } from '../../lib/stores/app';
+  import type { PetPose } from './petLogic';
+  import { fmtHours, petView } from './petState';
   import PetSprite from './PetSprite.svelte';
 
   let { onclose }: { onclose: (r: void) => void } = $props();
@@ -31,18 +28,9 @@
     sleep: 'is asleep. Starting a shift wakes it up.',
   };
 
-  let draft = $state($settings.ui_prefs.pet_name);
-  let input = $state<HTMLInputElement>();
-  // follow a rename made elsewhere (Settings), unless the user is typing here
-  $effect(() => {
-    const saved = $settings.ui_prefs.pet_name;
-    if (document.activeElement !== input) draft = saved;
-  });
-  async function save() {
-    const sent = draft;
-    const saved = await commitPetName(sent);
-    // keep anything typed while the save was in flight
-    if (draft === sent) draft = saved;
+  function openSettings() {
+    onclose();
+    void navigate('settings');
   }
 </script>
 
@@ -53,21 +41,6 @@
     </div>
     <p class="mood"><strong>{v.name}</strong> {MOOD[v.pose]}</p>
   </div>
-
-  <Field label="Name" forId="pet-name" hint="Up to {PET_NAME_MAX} characters. Leave empty for {DEFAULT_PET_NAME[v.kind]}.">
-    <TextInput
-      id="pet-name"
-      bind:value={draft}
-      bind:el={input}
-      maxlength={PET_NAME_MAX}
-      placeholder={DEFAULT_PET_NAME[v.kind]}
-      autocomplete="off"
-      spellcheck="false"
-      aria-describedby="pet-name-note"
-      onblur={save}
-      onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && (e.preventDefault(), void save())}
-    />
-  </Field>
 
   {#if v.level && v.energy}
     <div class="meters">
@@ -106,7 +79,10 @@
     <div class="center"><Spinner size={22} label="Loading" /></div>
   {/if}
 
+  <p class="where">Rename or switch your pet in Settings ▸ Effects ▸ Pet.</p>
+
   {#snippet footer()}
+    <Button onclick={openSettings}>Pet settings</Button>
     <Button variant="primary" onclick={() => onclose()} data-autofocus>Close</Button>
   {/snippet}
 </Modal>
@@ -181,6 +157,11 @@
   }
   .energy > span {
     background: linear-gradient(90deg, var(--amber), #3fb950);
+  }
+  .where {
+    margin: 16px 0 0;
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
   }
   .center {
     display: grid;

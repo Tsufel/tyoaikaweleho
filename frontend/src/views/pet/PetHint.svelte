@@ -69,10 +69,25 @@
       });
     }
   }
+
+  // The picture is only a preview, but What's new says the pet opens with a
+  // right-click: say once what to do instead of doing nothing.
+  let explained = false;
+  function preview(e: MouseEvent) {
+    e.preventDefault();
+    if (explained) return;
+    explained = true;
+    toast('Pick Familiar or Wizard to get your pet. Then click it to pet it, or right-click it for its details', {
+      undo: false,
+    });
+  }
 </script>
 
 <div class="pet-hint" role="group" bind:this={el} aria-labelledby="pet-hint-title" in:fly={{ y: 10 }}>
-  <span class="art" aria-hidden="true"><PetSprite kind="familiar" pose="idle" animate={false} scale={0.3} smooth /></span>
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+  <span class="art" aria-hidden="true" onclick={preview} oncontextmenu={preview}
+    ><PetSprite kind="familiar" pose="idle" animate={false} scale={0.3} smooth /></span
+  >
   <p class="text">
     <strong id="pet-hint-title">Want a work pet?</strong>
     <span class="sub">It keeps you company and charges up as you log hours.</span>
