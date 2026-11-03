@@ -33,6 +33,20 @@ def _key_label(d: date, granularity: str) -> tuple[str, str]:
     return d.isoformat(), f"{d:%a} {d.day}"
 
 
+def span(entries) -> tuple[str | None, str | None]:
+    """(first, last) ISO date of the stored entries, open ones included, for
+    the All time range; (None, None) when there are none."""
+    dates = []
+    for e in entries:
+        try:
+            dates.append(date.fromisoformat(e.date))
+        except ValueError:
+            continue
+    if not dates:
+        return None, None
+    return min(dates).isoformat(), max(dates).isoformat()
+
+
 def summarize(entries, start: date, end: date, granularity: str,
               pay_rate: float) -> dict:
     """StatsData for entries dated start..end (inclusive). An entry counts

@@ -172,6 +172,7 @@ The current shift must never be lost:
 | method | params | returns |
 |---|---|---|
 | `get_stats(start_iso, end_iso, granularity)` | dates inclusive, `'day'\|'week'\|'month'` | `R<{data: StatsData}>` (§10) / `invalid(field:'range')` when end < start or > 3700 days |
+| `get_stats_span()` | — | `R<{first: IsoDate\|null, last: IsoDate\|null}>`: earliest and latest stored entry date, open ones included; both null with no entries. Read-only; feeds the Stats "All time" range |
 
 ### Achievements
 | method | params | returns |

@@ -224,6 +224,10 @@ class Api:
         return self._c.get_stats(start_iso, end_iso, granularity or "day")
 
     @_guarded
+    def get_stats_span(self):
+        return self._c.get_stats_span()
+
+    @_guarded
     def get_achievements(self):
         return self._c.get_achievements()
 

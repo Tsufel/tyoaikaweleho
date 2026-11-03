@@ -15,7 +15,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { api, onEvent } from '../../lib/api';
-  import type { StatsBucket, StatsData } from '../../lib/api/types';
+  import type { StatsBucket, StatsData, StatsSpan } from '../../lib/api/types';
   import { navigate, section, settings, shifts } from '../../lib/stores/app';
   import { setViewMonth, showEntry } from '../../lib/stores/entries';
   import { achievements, medalUrl, openAchievements, unlockedCount } from '../../lib/stores/achievements';
@@ -31,6 +31,7 @@
   import {
     GRANULARITIES,
     PRESETS,
+    allTimeRange,
     defaultGranularity,
     fitGranularity,
     formatRange,
@@ -44,13 +45,21 @@
   let preset = $state<Preset>(memory.preset);
   let offset = $state(memory.offset);
   let custom = $state<DateRange>(memory.custom ?? presetRange('month', new Date()));
+  /** First and last stored shift, for All time; null until fetched. */
+  let span = $state<StatsSpan | null>(null);
 
-  const range = $derived<DateRange>(preset === 'custom' ? custom : presetRange(preset, new Date(), offset));
+  function rangeFor(p: Preset, off = 0): DateRange {
+    if (p === 'custom') return custom;
+    if (p === 'all') return allTimeRange(span ?? { first: null, last: null }, new Date());
+    return presetRange(p, new Date(), off);
+  }
+
+  const range = $derived<DateRange>(rangeFor(preset, offset));
   const rangeError = $derived(preset === 'custom' ? validateRange(custom) : null);
 
-  const initialRange = (): DateRange =>
-    memory.preset === 'custom' ? custom : presetRange(memory.preset, new Date(), memory.offset);
-  let granularity = $state<Granularity>(memory.granularity ?? defaultGranularity(memory.preset, initialRange()));
+  let granularity = $state<Granularity>(
+    memory.granularity ?? defaultGranularity(memory.preset, rangeFor(memory.preset, memory.offset)),
+  );
 
   const granOptions = $derived(GRANULARITIES.filter((g) => granularityAllowed(g.value, range)));
 
@@ -70,12 +79,12 @@
     if (p === 'custom') custom = { ...range };
     preset = p;
     offset = 0;
-    granularity = defaultGranularity(p, p === 'custom' ? custom : presetRange(p, new Date()));
+    granularity = defaultGranularity(p, rangeFor(p));
   }
 
   function stepPeriod(dir: -1 | 1) {
     if (preset === 'custom') custom = shiftRange(custom, dir);
-    else offset += dir;
+    else if (preset !== 'all') offset += dir;
   }
 
   // ── data ───────────────────────────────────────────────────────
@@ -85,7 +94,7 @@
   let seq = 0;
 
   async function load() {
-    if (rangeError) return;
+    if (rangeError || (preset === 'all' && !span)) return;
     const mySeq = ++seq;
     loading = true;
     const r = await api.get_stats(range.start, range.end, granularity);
@@ -99,6 +108,29 @@
     }
   }
 
+  let spanSeq = 0;
+  async function loadSpan() {
+    const mySeq = ++spanSeq;
+    const r = await api.get_stats_span();
+    if (mySeq !== spanSeq) return;
+    if (!r.ok) {
+      if (preset === 'all') {
+        loading = false;
+        error = r.status === 'error' ? r.error.message : (r.message ?? 'Could not load stats.');
+      }
+      return;
+    }
+    const first = r.first ?? null;
+    const last = r.last ?? null;
+    // a new object re-derives the range and refetches, so only on a change
+    if (span?.first !== first || span?.last !== last) span = { first, last };
+  }
+
+  function refresh() {
+    void loadSpan();
+    void load();
+  }
+
   $effect(() => {
     void range.start;
     void range.end;
@@ -109,12 +141,13 @@
 
   const offs: (() => void)[] = [];
   onMount(() => {
-    offs.push(onEvent('data:changed', () => void load()));
-    offs.push(onEvent('timer:changed', () => void load()));
+    void loadSpan();
+    offs.push(onEvent('data:changed', refresh));
+    offs.push(onEvent('timer:changed', refresh));
     let wasRunning = get(timer).running;
     offs.push(
       timer.subscribe((t) => {
-        if (wasRunning && !t.running) void load();
+        if (wasRunning && !t.running) refresh();
         wasRunning = t.running;
       }),
     );
@@ -187,7 +220,7 @@
         class="chev lg-gel"
         aria-label="Previous period"
         use:tooltip={'Previous period'}
-        disabled={!!rangeError}
+        disabled={!!rangeError || preset === 'all'}
         onclick={() => stepPeriod(-1)}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" /></svg>
@@ -206,7 +239,7 @@
         class="chev lg-gel"
         aria-label="Next period"
         use:tooltip={'Next period'}
-        disabled={!!rangeError}
+        disabled={!!rangeError || preset === 'all'}
         onclick={() => stepPeriod(1)}
       >
         <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
@@ -253,7 +286,7 @@
     <GlassCard class="state" tag="section">
       <Icon name="error" size={28} />
       <p>{error}</p>
-      <Button variant="primary" icon="refresh" onclick={() => void load()}>Try again</Button>
+      <Button variant="primary" icon="refresh" onclick={refresh}>Try again</Button>
     </GlassCard>
   {:else if !data}
     <div class="kpis" aria-hidden="true">
@@ -358,8 +391,16 @@
         <GlassCard class="state empty" tag="section" aria-labelledby="stats-empty">
           <span class="empty-orb" aria-hidden="true"><Icon name="chart" size={30} /></span>
           <h3 id="stats-empty">No shifts in this period</h3>
-          <p>Hours you clock in this range will show up here. Try another range or press START on the timer.</p>
-          <Button variant="secondary" icon="timer" onclick={() => void navigate('main')}>Go to timer</Button>
+          <p>
+            Shifts you clock with the timer or add by hand show up here.
+            {preset === 'all' ? 'Press START on the timer or add a shift.' : 'Try another range, or All time for every shift.'}
+          </p>
+          <div class="empty-actions">
+            {#if preset !== 'all'}
+              <Button variant="primary" icon="chart" onclick={() => pickPreset('all')}>Show all time</Button>
+            {/if}
+            <Button variant="secondary" icon="timer" onclick={() => void navigate('main')}>Go to timer</Button>
+          </div>
         </GlassCard>
       </div>
     {:else}
@@ -819,6 +860,12 @@
     margin: 0;
     max-width: 44ch;
     color: var(--text-muted);
+  }
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
   }
   .empty-orb {
     display: grid;

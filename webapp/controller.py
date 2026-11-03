@@ -760,6 +760,14 @@ class ShiftController:
             rate = storage.get_pay_rate()
         return R.ok(data=stats.summarize(entries, start, end, granularity, rate))
 
+    def get_stats_span(self) -> dict:
+        """First and last entry date, for the All time range. Read-only."""
+        import stats
+        with self._lock:
+            entries = storage.load_all_entries()
+        first, last = stats.span(entries)
+        return R.ok(first=first, last=last)
+
     # ── achievements ─────────────────────────────────────────────
 
     def _evaluate_achievements(self) -> tuple[list[dict], dict | None]:

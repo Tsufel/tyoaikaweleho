@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_RANGE_DAYS,
   addDays,
+  allTimeRange,
   defaultGranularity,
   fitGranularity,
   formatRange,
@@ -82,6 +83,28 @@ describe('granularity', () => {
   });
 });
 
+describe('allTimeRange', () => {
+  it('runs from the first stored shift to today', () => {
+    expect(allTimeRange({ first: '2025-02-03', last: '2026-10-05' }, today)).toEqual({ start: '2025-02-03', end: '2026-10-29' });
+  });
+  it('reaches a shift dated after today', () => {
+    expect(allTimeRange({ first: '2025-02-03', last: '2026-12-24' }, today)).toEqual({ start: '2025-02-03', end: '2026-12-24' });
+  });
+  it('is just today with no shifts', () => {
+    expect(allTimeRange({ first: null, last: null }, today)).toEqual({ start: '2026-10-29', end: '2026-10-29' });
+  });
+  it('is clamped to what get_stats accepts', () => {
+    const r = allTimeRange({ first: '2001-01-01', last: '2026-10-05' }, today);
+    expect(r.end).toBe('2026-10-29');
+    expect(spanDays(r)).toBe(MAX_RANGE_DAYS);
+    expect(validateRange(r)).toBeNull();
+  });
+  it('picks a granularity that fits its length', () => {
+    expect(defaultGranularity('all', { start: '2026-10-01', end: '2026-10-29' })).toBe('day');
+    expect(defaultGranularity('all', allTimeRange({ first: '2025-02-03', last: null }, today))).toBe('month');
+  });
+});
+
 describe('validateRange', () => {
   it('accepts a normal range', () => expect(validateRange({ start: '2026-10-01', end: '2026-10-01' })).toBeNull());
   it('rejects reversed ranges', () => expect(validateRange({ start: '2026-10-02', end: '2026-10-01' })).toMatch(/on or after/));
@@ -107,5 +130,6 @@ describe('labels', () => {
     expect(periodTitle('year', -3, presetRange('year', today, -3))).toBe('2023');
     expect(periodTitle('week', -1, presetRange('week', today, -1))).toBe('Last week');
     expect(periodTitle('custom', 0, m(0))).toBe('Custom range');
+    expect(periodTitle('all', 0, m(0))).toBe('All time');
   });
 });

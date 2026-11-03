@@ -868,6 +868,28 @@ def test_get_stats(env):
     assert r["data"]["totals"]["minutes"] == 480 and len(r["data"]["buckets"]) == 7
 
 
+def test_stats_span_reaches_every_manual_entry(env):
+    """Shifts added by hand are often back-filled into earlier periods, which
+    no fixed Stats period (week/month/3 months/year) shows. The span covers
+    them all, so the All time range counts every saved shift."""
+    ctrl, _ = env  # today is 2026-09-23
+    assert ctrl.get_stats_span() == {**ctrl.get_stats_span(), "ok": True,
+                                     "first": None, "last": None}
+    drafts = [
+        {"date": "3.2.2025", "time_in": "9", "time_out": "1730", "job_shift": "Sales"},
+        {"date": "2025-08-14", "time_in": "22:00", "time_out": "06:00", "job_shift": ""},
+        {"date": "23.9.", "time_in": "08:00", "time_out": "16:00", "job_shift": "Mine"},
+        {"date": "2026-10-05", "time_in": "09:00", "time_out": "12:00", "job_shift": "Sales"},
+    ]
+    for d in drafts:
+        assert ctrl.save_entry(d)["status"] == "saved"
+    r = ctrl.get_stats_span()
+    assert r["ok"] and (r["first"], r["last"]) == ("2025-02-03", "2026-10-05")
+    data = ctrl.get_stats(r["first"], r["last"], "month")["data"]
+    assert data["totals"]["shifts"] == 4
+    assert data["totals"]["minutes"] == 510 + 480 + 480 + 180
+
+
 @pytest.mark.parametrize("args, field", [
     (("2026-09-27", "2026-09-21", "day"), "range"),
     (("bad", "2026-09-21", "day"), "range"),

@@ -1,7 +1,7 @@
 import type { Granularity } from '../../lib/api/types';
 import { MONTHS, MONTHS_SHORT, fromIsoDate, toIsoDate } from '../../lib/time';
 
-export type Preset = 'week' | 'month' | 'quarter' | 'year' | 'custom';
+export type Preset = 'week' | 'month' | 'quarter' | 'year' | 'all' | 'custom';
 
 export interface DateRange {
   start: string;
@@ -13,6 +13,7 @@ export const PRESETS: { value: Preset; label: string }[] = [
   { value: 'month', label: 'This month' },
   { value: 'quarter', label: 'Last 3 months' },
   { value: 'year', label: 'This year' },
+  { value: 'all', label: 'All time' },
   { value: 'custom', label: 'Custom' },
 ];
 
@@ -53,7 +54,7 @@ export function addDays(iso: string, n: number): string {
  * (−1 = previous). Periods are whole: the current week/month/year includes
  * days still ahead, which stay zero.
  */
-export function presetRange(preset: Exclude<Preset, 'custom'>, today: Date, offset = 0): DateRange {
+export function presetRange(preset: Exclude<Preset, 'all' | 'custom'>, today: Date, offset = 0): DateRange {
   const y = today.getFullYear();
   const m = today.getMonth();
   const d = today.getDate();
@@ -69,6 +70,18 @@ export function presetRange(preset: Exclude<Preset, 'custom'>, today: Date, offs
     case 'year':
       return { start: ymd(y + offset, 0, 1), end: ymd(y + offset, 11, 31) };
   }
+}
+
+/**
+ * Every stored shift: from the first one to today (or a later-dated shift),
+ * clamped to what get_stats accepts. Just today when there are none.
+ */
+export function allTimeRange(span: { first: string | null; last: string | null }, today: Date): DateRange {
+  const now = toIsoDate(today);
+  const end = span.last && span.last > now ? span.last : now;
+  const start = span.first && span.first < end ? span.first : end;
+  const earliest = addDays(end, 1 - MAX_RANGE_DAYS);
+  return { start: start < earliest ? earliest : start, end };
 }
 
 /** Custom ranges step by their own length. */
@@ -121,6 +134,7 @@ export function formatRange(r: DateRange): string {
 /** Heading for the period: "This week", "Last month", "October 2026", … */
 export function periodTitle(preset: Preset, offset: number, r: DateRange): string {
   const a = fromIsoDate(r.start);
+  if (preset === 'all') return 'All time';
   if (preset === 'custom' || !a) return 'Custom range';
   if (offset === 0) return PRESETS.find((p) => p.value === preset)!.label;
   if (offset === -1) {

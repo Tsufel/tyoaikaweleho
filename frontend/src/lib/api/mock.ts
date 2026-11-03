@@ -882,6 +882,12 @@ export function createMockApi(): Api {
       });
     },
 
+    async get_stats_span() {
+      await latency();
+      const dates = entries.map((e) => e.date).sort();
+      return okR('ok', { first: dates[0] ?? null, last: dates[dates.length - 1] ?? null });
+    },
+
     // ── achievements ──
     async get_achievements() {
       await latency();

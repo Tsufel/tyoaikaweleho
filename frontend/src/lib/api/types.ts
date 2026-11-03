@@ -328,6 +328,12 @@ export interface StatsData {
   open_entries: number;
 }
 
+/** Dates of the first and last stored entry (open ones included), null when there are none. */
+export interface StatsSpan {
+  first: IsoDate | null;
+  last: IsoDate | null;
+}
+
 // ── Achievements ─────────────────────────────────────────────────
 
 export type AchievementTier = 'bronze' | 'silver' | 'gold' | 'legendary';
@@ -496,6 +502,7 @@ export interface Api {
     end_iso: IsoDate,
     granularity: Granularity,
   ): Promise<Result<{ data: StatsData }>>;
+  get_stats_span(): Promise<Result<StatsSpan>>;
 
   // achievements
   get_achievements(): Promise<Result<AchievementsData>>;

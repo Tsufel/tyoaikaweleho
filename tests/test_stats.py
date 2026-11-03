@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 
-from stats import summarize
+from stats import span, summarize
 from storage import WorkEntry
 
 
@@ -66,3 +66,11 @@ def test_empty_range():
 def test_bad_granularity():
     with pytest.raises(ValueError):
         summarize([], date(2026, 9, 1), date(2026, 9, 2), "year", 20.0)
+
+
+def test_span_covers_every_stored_entry():
+    # open and unreadable entries still mark the span; only dates matter
+    assert span(ENTRIES) == ("2026-09-21", "2026-10-02")
+    assert span([_e("2026-09-24", "09:00", "")]) == ("2026-09-24", "2026-09-24")
+    assert span([]) == (None, None)
+    assert span([_e("bad-date", "09:00", "11:00")]) == (None, None)
