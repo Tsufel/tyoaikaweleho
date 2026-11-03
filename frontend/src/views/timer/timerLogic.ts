@@ -136,15 +136,23 @@ export function pointerFraction(x: number, y: number, cx: number, cy: number): n
   return a < 0 ? a + 1 : a;
 }
 
+/** A press this many laps past either end of the dial counts as that end, so
+ *  grabbing the knob at "now" a hair clockwise of 12 doesn't wind a lap back. */
+const STOP_GRAB_LAPS = 0.1;
+
 /** Turn a raw 0…1 angle into laps continuing from `prev`, so dragging past
  *  12 o'clock keeps counting instead of jumping back to zero. At either end
  *  the dial is a stop: it stays put until the pointer comes back near it.
  *  `fresh` (a new press) jumps to the nearest in-range lap instead. */
 export function unwrapLaps(prev: number, raw: number, maxLaps: number, fresh = false): number {
   if (fresh) {
-    let best = Math.min(raw, maxLaps);
-    for (let v = raw; v <= maxLaps; v += 1) if (Math.abs(v - prev) < Math.abs(best - prev)) best = v;
-    return best;
+    let best = NaN;
+    for (let v = raw - 1; v <= maxLaps + STOP_GRAB_LAPS; v += 1) {
+      if (v < -STOP_GRAB_LAPS) continue;
+      const c = Math.min(maxLaps, Math.max(0, v));
+      if (Number.isNaN(best) || Math.abs(c - prev) < Math.abs(best - prev)) best = c;
+    }
+    return Number.isNaN(best) ? Math.min(raw, maxLaps) : best;
   }
   const v = Math.round(prev - raw) + raw;
   if ((prev <= 0 || prev >= maxLaps) && Math.abs(v - prev) > 0.25) return prev;

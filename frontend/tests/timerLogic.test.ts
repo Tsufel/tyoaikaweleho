@@ -172,7 +172,20 @@ describe('start dial', () => {
   it('a fresh press jumps to the nearest in-range lap', () => {
     expect(unwrapLaps(0, 0.75, 3, true)).toBeCloseTo(0.75);
     expect(unwrapLaps(1.3, 0.1, 3, true)).toBeCloseTo(1.1);
-    expect(unwrapLaps(0, 0.9, 0.5, true)).toBe(0.5);
+    expect(unwrapLaps(0, 0.7, 0.5, true)).toBe(0.5);
+  });
+
+  it('a fresh press just past either end grabs that end, not a lap away', () => {
+    // knob at "now", pressed a hair clockwise of 12: stays at now (was ≈ 1 lap = 8 h)
+    expect(unwrapLaps(0, 0.995, 3)).toBe(0);
+    expect(unwrapLaps(0, 0.995, 3, true)).toBe(0);
+    expect(unwrapLaps(0, 0.95, 3, true)).toBe(0);
+    expect(unwrapLaps(0, 0.9, 0.5, true)).toBe(0);
+    // knob at the far stop, pressed a hair past it
+    expect(unwrapLaps(2.99, 0.02, 2.99, true)).toBe(2.99);
+    // a set knob on the top keeps its lap
+    expect(unwrapLaps(2, 0.97, 3, true)).toBeCloseTo(1.97);
+    expect(unwrapLaps(2, 0.03, 3, true)).toBeCloseTo(2.03);
   });
 
   it('snaps to 5 minutes; at or after now means live "now"', () => {
