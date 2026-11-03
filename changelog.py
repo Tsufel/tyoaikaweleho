@@ -1,6 +1,17 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.2": [
+        "Setting a past start time by clicking the dial no longer jumps "
+        "about 8 hours back: clicking now steps back in small steps, just "
+        "like the mouse wheel",
+        "Stats has a new All time range, so shifts you entered by hand "
+        "for earlier months show up too",
+        "Rename or switch your pet in Settings ▸ Effects ▸ Pet; its "
+        "sheet now has a Pet settings button that takes you there",
+        "Right-clicking the pet opens its sheet more reliably, and the "
+        "pet picture in the Timer card offer tells you how to get one",
+    ],
     "2.1.1": [
         "Looking for the work pet? The Timer card now offers you one: pick "
         "a familiar or a wizard, or wave it off. You can switch, rename or "
