@@ -6,6 +6,7 @@ non-callable ones, so everything that is not an API method is _-prefixed."""
 
 import functools
 import os
+import subprocess
 import sys
 import threading
 import traceback
@@ -251,6 +252,26 @@ class Api:
         if not path.lower().endswith(".xlsx"):
             path += ".xlsx"
         return self._c.export_month(year, month, path)
+
+    @_guarded
+    def reveal_export(self):
+        """Explorer with the last exported file selected (its folder when
+        the file has since been moved or deleted)."""
+        path = self._c.last_export()
+        if not path:
+            return R.error("not_found", "Nothing has been exported yet.")
+        path = os.path.normpath(path)
+        try:
+            if os.path.isfile(path):
+                # one string: explorer wants /select,"path" exactly
+                subprocess.Popen(f'explorer /select,"{path}"')
+            elif os.path.isdir(os.path.dirname(path)):
+                os.startfile(os.path.dirname(path))
+            else:
+                return R.error("not_found", f"The folder is gone:\n{os.path.dirname(path)}")
+        except OSError as exc:
+            return R.error("internal", f"Could not open the folder:\n\n{exc}")
+        return R.ok()
 
     @_guarded
     def import_excel(self):

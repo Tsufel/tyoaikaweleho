@@ -41,6 +41,23 @@
     width: 40%;
     animation: slide 1.2s var(--ease-out) infinite;
   }
+  /* Reduce effects cuts the slide to one instant run, which left a still
+     40% bar that read as a hung update. Instead: full width, fading in
+     place — still alive, nothing moves across the screen. */
+  :global(:root[data-motion='reduced']) .indeterminate .bar {
+    width: 100%;
+    animation: breathe 1.6s ease-in-out infinite alternate !important;
+    animation-duration: 1.6s !important;
+    animation-iteration-count: infinite !important;
+  }
+  @keyframes breathe {
+    from {
+      opacity: 0.35;
+    }
+    to {
+      opacity: 1;
+    }
+  }
   @keyframes slide {
     from {
       transform: translateX(-100%);

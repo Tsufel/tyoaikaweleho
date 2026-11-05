@@ -2,6 +2,7 @@
 settings view) as plain methods returning result envelopes. No pywebview,
 no dialogs: the api layer passes file paths in and shows the confirms.
 See docs/V2_UI_API.md."""
+import copy
 import json
 import os
 import sys
@@ -13,9 +14,9 @@ import timer as timer_module
 from services import dlc, net
 from timer import WorkTimer
 from utils import (MIN_SHIFT_SECONDS, entry_minutes, format_duration, format_rate,
-                   is_long_shift, is_overnight, parse_date_input, parse_pay_rate,
-                   parse_time_input, resolve_start_time, start_time_needs_confirm,
-                   week_key)
+                   is_long_shift, is_overnight, overlapping, parse_date_input,
+                   parse_pay_rate, parse_time_input, resolve_start_time,
+                   start_far_behind, start_time_needs_confirm, week_key)
 from webapp import results as R
 from webapp.results import Stale, answer, describe, entry_row, money, opt, stored_entry_dict
 
@@ -66,6 +67,7 @@ class ShiftController:
         self._clock = clock
         self._update: tuple[str, str, str | None] | None = None
         self.dlc_update_version: str | None = None
+        self._last_export: str | None = None
 
     # ── helpers ──────────────────────────────────────────────────
 
@@ -196,6 +198,63 @@ class ShiftController:
             details={"time_in": t_in, "time_out": t_out, "overnight": overnight,
                      "elapsed_minutes": minutes})
 
+    def _backdate_confirm(self, t: str, earlier: datetime, now: datetime) -> dict:
+        minutes = int((now - earlier).total_seconds() // 60)
+        day = "today" if earlier.date() == now.date() else "yesterday"
+        return R.needs_confirm(
+            "start_backdate", "Start that far back?",
+            f"It's {now:%H:%M} now. Starting from {t} {day} puts "
+            f"{format_duration(minutes)} on the timer straight away.\n\n"
+            f"Start the shift now, or from {t} {day} ({earlier:%a %d %b})?",
+            [opt("now", f"Start now ({now:%H:%M})", "primary"),
+             opt("earlier", f"From {day} {t}", "neutral"),
+             opt("cancel", "Cancel", "neutral")],
+            default="now", cancel="cancel", icon="warning",
+            details={"start_iso": _iso(earlier), "elapsed_minutes": minutes},
+            timer=self.timer_state())
+
+    @staticmethod
+    def _overlaps(entry, before=None) -> list:
+        """Saved entries that *entry* overlaps. When editing (*before* is the
+        stored version), overlaps it already had aren't reported again."""
+        others = storage.load_all_entries()
+        hits = overlapping(entry, others)
+        if before is not None and hits:
+            known = {o.id for o in overlapping(before, others)}
+            if all(o.id in known for o in hits):
+                return []
+        return hits
+
+    @staticmethod
+    def _overlap_lines(hits) -> str:
+        lines = [f"• {o.job_shift or '—'} {describe(o)}" for o in hits[:3]]
+        if len(hits) > 3:
+            lines.append(f"• and {len(hits) - 3} more")
+        return "\n".join(lines)
+
+    def _overlap_confirm(self, hits) -> dict:
+        return R.needs_confirm(
+            "overlap", "Overlapping shift",
+            f"This shift overlaps {_plural(len(hits), 'another entry', f'{len(hits)} other entries')}:"
+            f"\n\n{self._overlap_lines(hits)}\n\n"
+            "Both would count on the timesheet. Save it anyway?",
+            [opt("save", "Save anyway", "neutral"), opt("cancel", "Go back", "primary")],
+            default="cancel", cancel="cancel", icon="warning",
+            details={"overlaps": len(hits)})
+
+    def _overlap_warning(self, entry) -> dict:
+        """Extra payload for a shift saved without asking (timer stop,
+        recovery): the UI shows it as a warning toast."""
+        try:
+            hits = self._overlaps(entry)
+        except (OSError, ValueError):
+            return {}
+        if not hits:
+            return {}
+        return {"overlap_warning":
+                f"This shift overlaps {_plural(len(hits), 'another entry', f'{len(hits)} other entries')}:"
+                f"\n{self._overlap_lines(hits)}"}
+
     # ── app / lifecycle ──────────────────────────────────────────
 
     def changelog(self, current_version: str) -> list[dict] | None:
@@ -308,6 +367,14 @@ class ShiftController:
                 earlier = resolve_start_time(h, m, now)
                 if not start_time_needs_confirm(h, m, now):
                     start = earlier
+                    if start_far_behind(earlier, now):
+                        choice = answer(confirm, "start_backdate")
+                        if choice is None:
+                            return self._backdate_confirm(t, earlier, now)
+                        if choice == "now":
+                            start = now
+                        elif choice != "earlier":
+                            return R.cancelled(timer=self.timer_state())
                 else:
                     choice = answer(confirm, "start_ahead")
                     if choice is None:
@@ -432,7 +499,8 @@ class ShiftController:
                            f"{exc}\n\n{_LOCKED_HINT} and press STOP again.",
                            timer=self.timer_state())
         self._clear_session()
-        return R.saved(entry=entry_row(entry), timer=self.timer_state())
+        return R.saved(entry=entry_row(entry), timer=self.timer_state(),
+                       **self._overlap_warning(entry))
 
     @staticmethod
     def _discard_confirm(token: str, details: dict | None = None, **payload) -> dict:
@@ -529,7 +597,7 @@ class ShiftController:
                                    recovery={**rec, "suggested_end": t_out})
                 self._clear_session()
                 return R.saved(entry=entry_row(entry), timer=self.timer_state(),
-                               recovery=None)
+                               recovery=None, **self._overlap_warning(entry))
 
             if action == "discard":
                 try:
@@ -560,7 +628,16 @@ class ShiftController:
             entries = sorted(storage.load_month(first.year, first.month),
                              key=lambda e: (e.date, e.time_in))
             rate = storage.get_pay_rate()
-        rows = [entry_row(e) for e in entries]
+            # an overnight shift on the last day of the previous month can
+            # overlap the 1st, so the neighbouring days are compared too
+            lo = (first - timedelta(days=1)).isoformat()
+            hi = (date(first.year + first.month // 12, first.month % 12 + 1, 1)).isoformat()
+            nearby = [e for e in storage.load_all_entries() if lo <= e.date <= hi]
+        rows = []
+        for e in entries:
+            row = entry_row(e)
+            row["overlap"] = bool(overlapping(e, nearby))
+            rows.append(row)
         weeks: dict[tuple[int, int], dict] = {}
         for row in rows:
             try:
@@ -613,11 +690,20 @@ class ShiftController:
             job_shift=str(draft.get("job_shift") or "").strip(),
             time_in=t_in, time_out=t_out)
         with self._lock:
-            # editing keeps what a newer version stored on the entry
-            stored = self._find(entry.id) if draft.get("id") else None
-            if stored is not None:
-                entry.extra = dict(stored.extra)
+            choice = answer(confirm, "overlap")
+            if choice is not None and choice != "save":
+                return R.cancelled()
             try:
+                # the reads hit data.json too: a locked file gets the same
+                # save_failed message as the write
+                # editing keeps what a newer version stored on the entry
+                stored = self._find(entry.id) if draft.get("id") else None
+                if stored is not None:
+                    entry.extra = dict(stored.extra)
+                if choice is None:
+                    hits = self._overlaps(entry, stored)
+                    if hits:
+                        return self._overlap_confirm(hits)
                 storage.save_entry(entry)
             except OSError as exc:
                 return R.error("save_failed",
@@ -630,7 +716,10 @@ class ShiftController:
         if field not in ("time_in", "time_out"):
             return R.invalid("field", "Only Time In and Time Out can be edited here.")
         with self._lock:
-            entry = self._find(entry_id)
+            try:
+                entry = self._find(entry_id)
+            except OSError as exc:
+                return self._field_save_failed(exc)
             if entry is None:
                 return self._not_found()
             original = getattr(entry, field)
@@ -643,6 +732,7 @@ class ShiftController:
                 return R.invalid(field, "Invalid time, not saved")
             if parsed == original:
                 return R.ok(unchanged=True)
+            before = copy.copy(entry)
             setattr(entry, field, parsed)
             if entry.time_in and entry.time_out:
                 minutes = entry_minutes(entry.time_in, entry.time_out)
@@ -653,13 +743,24 @@ class ShiftController:
                                                         minutes)
                     if choice != "save":
                         return R.cancelled()
+            choice = answer(confirm, "overlap")
+            if choice is not None and choice != "save":
+                return R.cancelled()
             try:
+                if choice is None:
+                    hits = self._overlaps(entry, before)
+                    if hits:
+                        return self._overlap_confirm(hits)
                 storage.update_entry(entry)
             except OSError as exc:
-                return R.error("save_failed",
-                               f"The change could not be saved:\n\n{exc}\n\n"
-                               "Close any program using data.json and try again.")
+                return self._field_save_failed(exc)
             return R.saved(entry=entry_row(entry))
+
+    @staticmethod
+    def _field_save_failed(exc) -> dict:
+        return R.error("save_failed",
+                       f"The change could not be saved:\n\n{exc}\n\n"
+                       "Close any program using data.json and try again.")
 
     def delete_entry(self, entry_id: str, confirm=None) -> dict:
         with self._lock:
@@ -902,7 +1003,13 @@ class ShiftController:
                            "The file is probably open in Excel — close it and try again.")
         except Exception as exc:
             return R.error("internal", f"Could not export:\n\n{exc}")
+        self._last_export = path
         return R.saved(f"Timesheet saved to:\n{path}", path=path)
+
+    def last_export(self) -> str | None:
+        """The file the last successful export wrote (for "Show in folder";
+        the UI never passes a path of its own)."""
+        return self._last_export
 
     def import_excel(self, paths) -> dict:
         paths = [p for p in (paths or []) if p]

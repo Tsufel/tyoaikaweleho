@@ -1,3 +1,9 @@
+<script lang="ts" module>
+  // Show in folder reveals the latest export, so only its toast may offer it.
+  // Module scope: the toast outlives a remount of this view (Timer ↔ Shifts).
+  let exportToast: number | null = null;
+</script>
+
 <script lang="ts">
   import { onMount, tick } from 'svelte';
   import wizard from '../../assets/wizard.webp';
@@ -5,7 +11,7 @@
   import type { EntryRow, WorkEntry } from '../../lib/api/types';
   import { fade, flip, fly, stagger } from '../../lib/motion';
   import { registerCommand, SHORTCUT_LABELS } from '../../lib/shortcuts';
-  import { alert, askYesNo, openSheet, reportError } from '../../lib/stores/confirm';
+  import { alert, askYesNo, choose, openSheet, reportError } from '../../lib/stores/confirm';
   import { registerEditGuard } from '../../lib/stores/editGuard';
   import {
     goToCurrentMonth,
@@ -20,7 +26,7 @@
     viewMonth,
   } from '../../lib/stores/entries';
   import { dlc } from '../../lib/stores/settings';
-  import { toast } from '../../lib/stores/toasts';
+  import { dismiss, toast } from '../../lib/stores/toasts';
   import { defaultEntryDate, formatHM, formatMoney, monthLabel } from '../../lib/time';
   import Button from '../../lib/ui/Button.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
@@ -31,6 +37,7 @@
   import {
     buildRows,
     decideClose,
+    earlyExportMonth,
     EMPTY_HINT,
     emptyText,
     importSummary,
@@ -305,10 +312,20 @@
     if (!(await closeEditor(true))) return;
     exporting = true;
     try {
-      const { year, month: m } = $viewMonth;
-      const r = await api.export_month(year, m);
+      const target = await pickExportMonth();
+      if (!target) return;
+      const r = await api.export_month(target.year, target.month);
       if (r.ok) {
-        if (r.status === 'saved' && r.path) toast(`Timesheet saved to:\n${r.path}`, { tone: 'success', ms: 6000 });
+        if (r.status === 'saved' && r.path) {
+          if (exportToast !== null) dismiss(exportToast);
+          exportToast = toast(`Timesheet saved to:\n${r.path}`, {
+            tone: 'success',
+            ms: 10000,
+            action: revealExport,
+            label: 'Show in folder',
+            undo: false,
+          });
+        }
       } else if (r.status === 'error' && r.error.code === 'file_locked') {
         toast(r.error.message, { tone: 'error', ms: 12000 });
       } else {
@@ -317,6 +334,52 @@
     } finally {
       exporting = false;
     }
+  }
+
+  /** The month to export, or null when the user backed out. Early in a
+   * month (1st–5th) on the current month, last month is offered first —
+   * that's the timesheet usually due then. An empty month asks first. */
+  async function pickExportMonth(): Promise<{ year: number; month: number } | null> {
+    const view = { year: $viewMonth.year, month: $viewMonth.month };
+    const prev = earlyExportMonth(view, new Date());
+    if (prev) {
+      const pr = await api.list_month(prev.year, prev.month);
+      const prevCount = pr.ok && pr.status === 'ok' ? pr.data.entries.length : 0;
+      if (prevCount > 0) {
+        const prevLabel = monthLabel(prev.year, prev.month);
+        const c = await choose({
+          title: 'Export which month?',
+          message:
+            `It's the start of ${label}, so the timesheet due is probably ${prevLabel}'s ` +
+            `(${prevCount} ${prevCount === 1 ? 'shift' : 'shifts'}).`,
+          options: [
+            { id: 'prev', label: `Export ${prevLabel}`, variant: 'primary' },
+            { id: 'current', label: `${label} so far`, variant: 'neutral' },
+            { id: 'cancel', label: 'Cancel', variant: 'neutral' },
+          ],
+          default: 'prev',
+          cancel: 'cancel',
+          icon: 'question',
+        });
+        if (c === 'prev') return prev;
+        if (c !== 'current') return null;
+      }
+    }
+    const shown = $month && $month.year === view.year && $month.month === view.month ? $month : null;
+    if (shown && shown.entries.length === 0) {
+      const ok = await askYesNo('Nothing to export', `No shifts in ${label}. Export an empty timesheet anyway?`, {
+        yes: 'Export empty',
+        no: 'Cancel',
+        default: 'no',
+      });
+      if (!ok) return null;
+    }
+    return view;
+  }
+
+  async function revealExport() {
+    const r = await api.reveal_export();
+    if (!r.ok) await reportError(r, 'Could not open the folder');
   }
 
   async function importExcel() {
@@ -476,7 +539,9 @@
               out:fade={{ duration: 140 }}
             >
               {#if e}
-                <td class="c-date num">{e.display_date}</td>
+                <td class="c-date num">
+                  {e.display_date}{#if e.overlap}<span class="overlap" title="Overlaps another entry — both count on the timesheet"><Icon name="warning" size={13} label="Overlaps another entry" /></span>{/if}
+                </td>
                 <td class="c-job"><span class="job">{e.job_shift || '—'}</span></td>
                 {#each TIME_FIELDS as f (f)}
                   <td class="c-time editable" class:editing={editor?.id === e.id && editor.field === f}>
@@ -777,6 +842,12 @@
     to {
       opacity: 0.55;
     }
+  }
+  .overlap {
+    display: inline-flex;
+    vertical-align: -2px;
+    margin-left: 6px;
+    color: var(--warning-text);
   }
   .plus1 {
     font-size: 0.72em;

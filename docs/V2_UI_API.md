@@ -97,14 +97,21 @@ current state (e.g. a different shift is now running) it returns
 | `over_24h` | `timer_stop` any source, elapsed ≥24 h | `save` "Save until HH:MM", `discard` (danger), `keep` "Keep running" | `keep` / `keep` |
 | `discard_shift` | after `over_24h=discard`; `recovery_resolve('discard')`; `timer_discard` | `discard` (danger), `cancel` | `cancel` / `cancel` |
 | `start_ahead` | `timer_start` mode `at`, picked time 0–6 h ahead of now | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel` |
+| `start_backdate` | `timer_start` mode `at`, resolved start ≥6 h behind now (not asked after `start_ahead`) | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel`; icon warning |
 | `long_entry` | `save_entry`, `update_entry_field` when result >14 h | `save` "Save anyway", `cancel` | `save` / `cancel` |
+| `overlap` | `save_entry`, `update_entry_field` when the result overlaps a saved entry it didn't overlap before (after `long_entry`) | `save` "Save anyway", `cancel` "Go back" | `cancel` / `cancel`; icon warning; `details.overlaps` = count |
 | `delete_entry` | `delete_entry` | `delete` (danger), `cancel` | `cancel` / `cancel` |
 | `close_running` | `close_app` while a shift runs | `stop_close` "Stop, save & close", `close` "Close anyway", `cancel` "Stay open" | `stop_close` / `cancel` |
 | `remove_dlc` | `dlc_remove` | `remove` (danger), `cancel` | `cancel` / `cancel` |
 
 Messages are the v1.3 texts (see `ui/timer_panel.py`, `ui/dialogs.py`,
 `ui/main_window.py`). `details` carries machine values for custom renderers:
-`{start_iso, elapsed_minutes, capped_end?, time_in?, time_out?, overnight?}`.
+`{start_iso, elapsed_minutes, capped_end?, time_in?, time_out?, overnight?, overlaps?}`.
+
+Two shifts overlap when their spans share more than an instant (touching
+end-to-start doesn't count; overnight shifts run into the next day; open
+entries never overlap). The `overlap` message lists at most 3 of them
+("• Support on Wed 23 Sep, 09:00–17:00", then "• and N more").
 
 ## 4. Running-shift data safety (invariants)
 
@@ -145,7 +152,7 @@ The current shift must never be lost:
 | method | params | returns |
 |---|---|---|
 | `get_timer()` | — | `R<{timer: T}>` |
-| `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
+| `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
 | `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
 | `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded` |
 | `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
@@ -185,6 +192,7 @@ The current shift must never be lost:
 | method | params | returns |
 |---|---|---|
 | `export_month(year, month)` | ints | Native save dialog (initial `Hours {Month YYYY}.xlsx`, `.xlsx`). `cancelled` / `saved{path}` / `error(file_locked\|internal)` with v1.3 messages. Uses stored format / include-pay / pay rate. |
+| `reveal_export()` | — | Opens Explorer with the last file `export_month` saved this session selected (its folder if the file is gone). `ok` / `error(not_found)` (nothing exported yet, or the folder is gone) / `error(internal)`. The export toast's **Show in folder** calls it. |
 | `import_excel()` | — | Native multi-open dialog (`*.xlsx *.xls`). `cancelled` / `ok{imported, skipped, files, errors: string[]}` |
 | `ocr_pick_and_extract()` | — | Native multi-open dialog (images). `cancelled` / `error(dlc_unavailable)` / `error(ocr_failed, errors)` when nothing extracted and errors / `ok{candidates: OcrCandidate[], errors}` (empty `candidates` → "No entries found") |
 | `ocr_save(rows)` | `OcrRow[]` (checked rows only, trimmed) | `R<{imported, skipped, invalid_skipped}>` status `saved` / `error(save_failed)`. Rows missing date or time_in are skipped and counted in `invalid_skipped` (v1.3 "Rows skipped" warning). |
@@ -223,8 +231,10 @@ Order of checks (port of `TimerPanel.stop` / `toggle`):
      `error(save_failed)` with message "The shift could not be saved and is
      still running. … Close any program that may be locking data.json and
      press STOP again." `timer.running === true`.
-   - OK → clear session → `saved{entry, timer}`. Frontend switches to the
-     entry's month and selects it.
+   - OK → clear session → `saved{entry, timer, overlap_warning?}`. Frontend
+     switches to the entry's month and selects it. `overlap_warning` (set when
+     the saved shift overlaps another entry; never asked, the shift is already
+     over) turns the "Shift saved" toast into a 12 s warning that appends it.
 
 `token` for 1–5 = running `start_iso`.
 
@@ -238,6 +248,10 @@ Order of checks (port of `TimerPanel.stop` / `toggle`):
   still ahead. Start the shift now, or from T yesterday/today (Ddd DD Mon)?").
   `now` → start now; `earlier` → start at resolved time; `cancel` → `cancelled`.
   `now` is evaluated at re-call time.
+  When no `start_ahead` was needed but the resolved start is ≥6 h behind now
+  → `needs_confirm(start_backdate)` ("It's HH:MM now. Starting from T today
+  puts Xh YYm on the timer straight away. …"), same answers. The start dial
+  pre-answers both kinds with `earlier`: the user already picked the time.
 
 The start buttons: "START NOW" (`now`), "⏰ {default_start_time}" (`at` default),
 "▾" / right-click opens the time picker then `at` with the picked time.
@@ -254,7 +268,8 @@ session (an invalid one is cleared silently). It carries `start_iso`,
 - `save` with `end` → invalid end → `invalid(field:'end')` ("End time must be a
   valid time (e.g. 17:00)."). OSError → `error(save_failed)` and
   `recovery` returned again with `suggested_end = end` (modal stays). OK →
-  clear session → `saved{entry, recovery:null}`; frontend shows the entry.
+  clear session → `saved{entry, recovery:null, overlap_warning?}`; frontend
+  shows the entry (and the warning as a toast).
 - `discard` → `needs_confirm(discard_shift)` → `discarded{recovery:null}`.
 
 ### 6.4 Inline edit — `update_entry_field(id, field, value, confirm)`
@@ -269,6 +284,7 @@ Alt+Tab keeps the editor open). Python:
 - Both times set and > 14 h → `needs_confirm(long_entry)`
   ("09:00–23:30 is 14h 30m (ending the next day). Save it anyway?");
   `cancel` → `cancelled` and JS **reopens the editor with the typed text**.
+- Then a new overlap → `needs_confirm(overlap)`; `cancel` behaves the same.
 - OSError → `error(save_failed)`; JS shows the error and reopens the editor
   with the typed text (original kept for the unchanged check).
 - OK → `saved{entry}`; JS refreshes the month, keeping selection/scroll.
@@ -282,7 +298,9 @@ Draft fields are raw text. Validation order and messages as `EditEntryDialog._sa
 `invalid(date)` "Enter the date as YYYY-MM-DD or D.M.YYYY (e.g. 2026-09-23 or
 23.9.2026).", `invalid(time_in)` "Time In must be a valid time (e.g. 09:30).",
 `invalid(time_out)` "Time Out must be a valid time (e.g. 17:00)." (empty
-time_out allowed). >14 h → `needs_confirm(long_entry)`. OSError →
+time_out allowed). >14 h → `needs_confirm(long_entry)`, then a new overlap →
+`needs_confirm(overlap)` (an edit that keeps an overlap it already had isn't
+asked again). OSError →
 `error(save_failed)` — modal stays open with everything typed. OK →
 `saved{entry}`; modal closes, view jumps to the entry's month and selects it.
 New-entry defaults (date = today if viewing the current month, else the 1st of
@@ -364,6 +382,8 @@ Bootstrap = {
 - `WorkEntry {id, date, job_shift, time_in, time_out}` (time_out `""` = open).
 - `EntryRow = WorkEntry + {minutes: number|null, overnight, display_date
   ("Tue 23 Sep 2026"), time_out_display ("06:00 +1"), week_key ("2026-W39")}`.
+  `list_month` rows also carry `overlap: boolean` (overlaps another saved
+  entry, including one from the day before) — the list shows a ⚠ by the date.
 - `TimerState {running, start_iso, start_epoch_ms, job_shift, default_job_shift,
   default_start_time, pay_rate, recovery_pending}` — idle: start fields null.
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
@@ -399,7 +419,11 @@ MonthData = { year, month, label: "October 2026", pay_rate,
 WeekGroup = { key:"2026-W39", iso_year, week, entry_ids: string[],
   minutes, earnings }
 ```
-Entries without a time_out count 0 minutes. Empty month → JS shows
+Entries without a time_out count 0 minutes. Export: on the 1st–5th, viewing
+the current month, Export first asks "Export which month?" with last month as
+the default when last month has shifts; exporting a month with no shifts asks
+first. After a save the toast offers **Show in folder** (`reveal_export`).
+Empty month → JS shows
 "No shifts in {label}. Press START or + Add entry." Totals line:
 "Total: H:MM (€x.xx)"; week row "Week N total H:MM (€x.xx)".
 

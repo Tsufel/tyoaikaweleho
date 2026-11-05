@@ -112,3 +112,17 @@ export function moveSelection(ids: string[], current: string | null, delta: numb
   if (i < 0) return delta > 0 ? ids[0] : ids[ids.length - 1];
   return ids[Math.max(0, Math.min(ids.length - 1, i + delta))];
 }
+
+/** Through the 5th the timesheet due is usually last month's. */
+export const EARLY_EXPORT_DAYS = 5;
+
+/** Last month, when Export is pressed on the current month early in it
+ * (the 1st–5th) — the month to offer first. Null otherwise. */
+export function earlyExportMonth(
+  view: { year: number; month: number },
+  today: Date,
+): { year: number; month: number } | null {
+  if (today.getDate() > EARLY_EXPORT_DAYS) return null;
+  if (view.year !== today.getFullYear() || view.month !== today.getMonth() + 1) return null;
+  return addMonths(view.year, view.month, -1);
+}

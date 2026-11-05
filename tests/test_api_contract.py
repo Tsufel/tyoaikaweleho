@@ -163,7 +163,7 @@ def test_every_method_returns_json(rig):
         ("get_stats", ("2026-09-01", "2026-09-30", "day")), ("get_stats_span", ()),
         ("get_achievements", ()), ("ack_achievements", (["first_shift"],)),
         ("ack_achievements", (["nope"],)), ("get_pet_stats", ()),
-        ("export_month", (2026, 9)), ("import_excel", ()), ("ocr_pick_and_extract", ()),
+        ("export_month", (2026, 9)), ("reveal_export", ()), ("import_excel", ()), ("ocr_pick_and_extract", ()),
         ("ocr_save", ([],)), ("check_updates", ()), ("open_download_page", ()),
         ("install_update", ()),
         ("get_dlc_status", ()), ("dlc_install", ()), ("dlc_remove", (None,)),
@@ -232,6 +232,44 @@ def test_export_appends_xlsx_and_saves(rig):
     kind, _dir, multiple, name, types = window.dialog_calls[0]
     assert kind == 30 and not multiple
     assert name == "Hours September 2026.xlsx"
+
+
+def test_reveal_export_before_any_export(rig):
+    res = _check(rig[0].reveal_export())
+    assert res["error"]["code"] == "not_found"
+
+
+def test_reveal_export_selects_the_file(rig, monkeypatch):
+    import subprocess
+    api, window, _s, _b, tmp = rig
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: launched.append(cmd))
+    window.dialogs.append((str(tmp / "out"),))
+    path = _check(api.export_month(2026, 9))["path"]
+    assert _check(api.reveal_export())["ok"]
+    assert launched == [f'explorer /select,"{os.path.normpath(path)}"']
+
+
+def test_reveal_export_opens_the_folder_when_the_file_is_gone(rig, monkeypatch):
+    api, window, _s, _b, tmp = rig
+    opened = []
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+    window.dialogs.append((str(tmp / "out"),))
+    path = _check(api.export_month(2026, 9))["path"]
+    os.remove(path)
+    assert _check(api.reveal_export())["ok"]
+    assert opened == [os.path.dirname(os.path.normpath(path))]
+
+
+def test_reveal_export_folder_gone(rig, monkeypatch):
+    api, window, _s, _b, tmp = rig
+    sub = tmp / "sub"
+    sub.mkdir()
+    window.dialogs.append((str(sub / "out"),))
+    path = _check(api.export_month(2026, 9))["path"]
+    os.remove(path)
+    sub.rmdir()
+    assert _check(api.reveal_export())["error"]["code"] == "not_found"
 
 
 def test_dialog_cancel_is_cancelled(rig):

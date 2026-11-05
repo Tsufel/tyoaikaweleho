@@ -89,7 +89,9 @@ export type ConfirmKind =
   | 'over_24h'
   | 'discard_shift'
   | 'start_ahead'
+  | 'start_backdate'
   | 'long_entry'
+  | 'overlap'
   | 'delete_entry'
   | 'close_running'
   | 'remove_dlc';
@@ -101,7 +103,9 @@ export interface ConfirmChoices {
   over_24h: 'save' | 'discard' | 'keep';
   discard_shift: 'discard' | 'cancel';
   start_ahead: 'now' | 'earlier' | 'cancel';
+  start_backdate: 'now' | 'earlier' | 'cancel';
   long_entry: 'save' | 'cancel';
+  overlap: 'save' | 'cancel';
   delete_entry: 'delete' | 'cancel';
   close_running: 'stop_close' | 'close' | 'cancel';
   remove_dlc: 'remove' | 'cancel';
@@ -121,6 +125,8 @@ export interface ConfirmDetails {
   time_out?: HHMM;
   overnight?: boolean;
   description?: string;
+  /** overlap: how many saved entries the shift overlaps. */
+  overlaps?: number;
 }
 
 export interface ConfirmRequest<K extends ConfirmKind = ConfirmKind> {
@@ -171,6 +177,8 @@ export interface EntryRow extends WorkEntry {
   time_out_display: string;
   /** "2026-W39" (ISO year + week). */
   week_key: string;
+  /** list_month only: overlaps another saved entry by a minute or more. */
+  overlap?: boolean;
 }
 
 /** Raw text from the add/edit modal; id absent = new entry. */
@@ -234,10 +242,12 @@ export interface Recovery {
 }
 
 export type TimerResult = Result<{ timer: TimerState }>;
-export type StopResult = Result<{ timer: TimerState; entry?: EntryRow }>;
+/** overlap_warning: the saved shift overlaps other entries (show as a warning). */
+export type StopResult = Result<{ timer: TimerState; entry?: EntryRow; overlap_warning?: string }>;
 export type RecoveryResult = Result<{
   timer: TimerState;
   entry?: EntryRow;
+  overlap_warning?: string;
   recovery: Recovery | null;
 }>;
 
@@ -527,6 +537,8 @@ export interface Api {
 
   // import / export / OCR
   export_month(year: number, month: number): Promise<ExportResult>;
+  /** Explorer at the last exported file. */
+  reveal_export(): Promise<Result>;
   import_excel(): Promise<ImportResult>;
   ocr_pick_and_extract(): Promise<OcrExtractResult>;
   ocr_save(rows: OcrRow[]): Promise<OcrSaveResult>;

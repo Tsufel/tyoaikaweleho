@@ -634,8 +634,14 @@
       0 12px 32px -10px var(--danger-glow),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
   }
+  .stop {
+    color: var(--on-danger);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
+  }
+  /* The light rose stop only tints the corner: from 30% on, where the
+     label sits, white text keeps 4.5:1 (it was ~3:1 on #fb7185). */
   .stop .cta-bg {
-    background: linear-gradient(135deg, #fb7185, var(--danger-strong) 55%, var(--danger-strong-2));
+    background: linear-gradient(135deg, #f43f5e, var(--danger-strong) 30%, var(--danger-strong-2));
   }
   .cta:hover:not(:disabled) {
     transform: translateY(-2px);
@@ -650,6 +656,8 @@
     box-shadow:
       0 16px 40px -10px var(--danger-glow),
       inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    /* no brightening: it would pull the label under 4.5:1 */
+    filter: saturate(1.1);
   }
   .cta:active:not(:disabled) {
     transform: translateY(0) scale(0.97);

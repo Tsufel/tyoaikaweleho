@@ -3,6 +3,7 @@ import type { EntryRow, MonthData } from '../src/lib/api/types';
 import {
   buildRows,
   decideClose,
+  earlyExportMonth,
   editorValue,
   EMPTY_HINT,
   emptyText,
@@ -139,5 +140,23 @@ describe('moveSelection', () => {
     expect(moveSelection(ids, null, 1)).toBe('a');
     expect(moveSelection(ids, null, -1)).toBe('c');
     expect(moveSelection([], null, 1)).toBeNull();
+  });
+});
+
+describe('earlyExportMonth', () => {
+  const oct = { year: 2026, month: 10 };
+  it('offers last month on the current month, 1st–5th', () => {
+    expect(earlyExportMonth(oct, new Date(2026, 9, 1, 8))).toEqual({ year: 2026, month: 9 });
+    expect(earlyExportMonth(oct, new Date(2026, 9, 5, 23, 59))).toEqual({ year: 2026, month: 9 });
+  });
+  it('not from the 6th on', () => {
+    expect(earlyExportMonth(oct, new Date(2026, 9, 6))).toBeNull();
+  });
+  it('not when another month is viewed', () => {
+    expect(earlyExportMonth({ year: 2026, month: 9 }, new Date(2026, 9, 2))).toBeNull();
+    expect(earlyExportMonth({ year: 2025, month: 10 }, new Date(2026, 9, 2))).toBeNull();
+  });
+  it('January offers December of the year before', () => {
+    expect(earlyExportMonth({ year: 2027, month: 1 }, new Date(2027, 0, 3))).toEqual({ year: 2026, month: 12 });
   });
 });

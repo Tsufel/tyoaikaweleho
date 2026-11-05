@@ -136,6 +136,28 @@ const invalid = (field: string, message: string, payload: object = {}): any => (
   ...payload,
 });
 
+/** [start, end) in epoch minutes for a closed entry, else null. */
+function spanOf(e: WorkEntry): [number, number] | null {
+  if (!e.date || !e.time_in || !e.time_out) return null;
+  const d = fromIsoDate(e.date);
+  if (!d) return null;
+  const [h, m] = e.time_in.split(':').map(Number);
+  // UTC day base: every day is 1440 min, as in Python's naive datetimes (no DST)
+  const start = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 60000 + h * 60 + m;
+  return [start, start + entryMinutes(e.time_in, e.time_out)];
+}
+
+/** Entries in `others` (not `e` itself) overlapping `e` by a minute or more. */
+function overlapsOf(e: WorkEntry, others: WorkEntry[]): WorkEntry[] {
+  const a = spanOf(e);
+  if (!a || a[0] === a[1]) return [];
+  return others.filter((o) => {
+    if (o === e || (e.id ? o.id === e.id : JSON.stringify(o) === JSON.stringify(e))) return false;
+    const b = spanOf(o);
+    return !!b && b[0] !== b[1] && b[0] < a[1] && a[0] < b[1];
+  });
+}
+
 function toRow(e: WorkEntry): EntryRow {
   const d = fromIsoDate(e.date) ?? new Date();
   const has = !!e.time_out;
@@ -190,6 +212,7 @@ export function createMockApi(): Api {
   const q = new URLSearchParams(typeof location !== 'undefined' ? location.search : '');
   const today = new Date();
   let entries: WorkEntry[] = q.has('empty') ? [] : seedEntries(today);
+  let lastExport: string | null = null;
   let nextId = entries.length + 1;
   let shifts = [...DEFAULT_SHIFTS];
   let settings: Settings = {
@@ -295,7 +318,10 @@ export function createMockApi(): Api {
 
   function month(year: number, m: number): MonthData {
     const prefix = `${year}-${pad2(m)}-`;
-    const rows = entries.filter((e) => e.date.startsWith(prefix)).sort(sortEntries).map(toRow);
+    const rows = entries
+      .filter((e) => e.date.startsWith(prefix))
+      .sort(sortEntries)
+      .map((e) => ({ ...toRow(e), overlap: overlapsOf(e, entries).length > 0 }));
     const weeks = new Map<string, { iso_year: number; week: number; ids: string[]; minutes: number }>();
     for (const r of rows) {
       const [iy, w] = isoWeek(fromIsoDate(r.date)!);
@@ -453,7 +479,46 @@ export function createMockApi(): Api {
         { timer: timerState() },
       );
     }
-    return okR('saved', { timer: timerState(), entry: row });
+    return okR('saved', { timer: timerState(), entry: row, ...overlapWarning(entry) });
+  }
+
+  /** New overlaps only: ones the stored version already had aren't asked again. */
+  function newOverlaps(next: WorkEntry, before: WorkEntry | undefined): WorkEntry[] {
+    const hits = overlapsOf(next, entries);
+    if (!before || !hits.length) return hits;
+    const known = new Set(overlapsOf(before, entries).map((o) => o.id));
+    return hits.every((o) => known.has(o.id)) ? [] : hits;
+  }
+
+  function overlapLines(hits: WorkEntry[]): string {
+    const lines = hits.slice(0, 3).map((o) => `• ${o.job_shift || '—'} on ${strftime(fromIsoDate(o.date)!, '%a %d %b')}, ${o.time_in}–${o.time_out}`);
+    if (hits.length > 3) lines.push(`• and ${hits.length - 3} more`);
+    return lines.join('\n');
+  }
+
+  function overlapText(hits: WorkEntry[]): string {
+    return `This shift overlaps ${hits.length === 1 ? 'another entry' : `${hits.length} other entries`}:`;
+  }
+
+  function overlapConfirm(hits: WorkEntry[]): ConfirmRequest<'overlap'> {
+    return {
+      kind: 'overlap',
+      title: 'Overlapping shift',
+      message: `${overlapText(hits)}\n\n${overlapLines(hits)}\n\nBoth would count on the timesheet. Save it anyway?`,
+      options: [
+        { id: 'save', label: 'Save anyway', variant: 'neutral' },
+        { id: 'cancel', label: 'Go back', variant: 'primary' },
+      ],
+      default: 'cancel',
+      cancel: 'cancel',
+      icon: 'warning',
+      details: { overlaps: hits.length },
+    };
+  }
+
+  function overlapWarning(e: WorkEntry): { overlap_warning?: string } {
+    const hits = overlapsOf(e, entries);
+    return hits.length ? { overlap_warning: `${overlapText(hits)}\n${overlapLines(hits)}` } : {};
   }
 
   function longEntryConfirm(tIn: string, tOut: string): ConfirmRequest<'long_entry'> {
@@ -630,6 +695,36 @@ export function createMockApi(): Api {
           session = { start: new Date(), job };
           return okR('ok', { timer: timerState() });
         }
+      } else {
+        const resolved = resolveStartTime(h, m, now);
+        const behind = Math.floor((now.getTime() - resolved.getTime()) / 60000);
+        if (behind >= 6 * 60) {
+          const a = answerFor(confirm, 'start_backdate');
+          if (!a) {
+            const which = toIsoDate(resolved) === toIsoDate(now) ? 'today' : 'yesterday';
+            return needs<'start_backdate'>({
+              kind: 'start_backdate',
+              title: 'Start that far back?',
+              message:
+                `It's ${hhmm(now)} now. Starting from ${t} ${which} puts ${formatDuration(behind)} on the timer straight away.\n\n` +
+                `Start the shift now, or from ${t} ${which} (${strftime(resolved, '%a %d %b')})?`,
+              options: [
+                { id: 'now', label: `Start now (${hhmm(now)})`, variant: 'primary' },
+                { id: 'earlier', label: `From ${which} ${t}`, variant: 'neutral' },
+                { id: 'cancel', label: 'Cancel', variant: 'neutral' },
+              ],
+              default: 'now',
+              cancel: 'cancel',
+              icon: 'warning',
+              details: { start_iso: toIsoDateTime(resolved), elapsed_minutes: behind },
+            });
+          }
+          if (a.choice === 'cancel') return okR('cancelled', { timer: timerState() });
+          if (a.choice === 'now') {
+            session = { start: new Date(), job };
+            return okR('ok', { timer: timerState() });
+          }
+        }
       }
       session = { start: resolveStartTime(h, m, new Date()), job };
       return okR('ok', { timer: timerState() });
@@ -677,7 +772,7 @@ export function createMockApi(): Api {
         });
       }
       recoverySession = null;
-      return okR('saved', { timer: timerState(), entry: row, recovery: null });
+      return okR('saved', { timer: timerState(), entry: row, recovery: null, ...overlapWarning(row) });
     },
 
     // ── entries ──
@@ -711,6 +806,11 @@ export function createMockApi(): Api {
         time_in: tIn,
         time_out: tOut,
       };
+      const ov = answerFor(confirm, 'overlap');
+      if (!ov) {
+        const hits = newOverlaps(e, entries.find((x) => x.id === draft.id));
+        if (hits.length) return needs(overlapConfirm(hits));
+      } else if (ov.choice !== 'save') return okR('cancelled');
       const row = persist(e);
       if (!row) return err('save_failed', `The shift could not be saved.\n\n${saveFailMsg()}`);
       return okR('saved', { entry: row });
@@ -732,6 +832,11 @@ export function createMockApi(): Api {
         if (!a) return needs(longEntryConfirm(next.time_in, next.time_out));
         if (a.choice !== 'save') return okR('cancelled');
       }
+      const ov = answerFor(confirm, 'overlap');
+      if (!ov) {
+        const hits = newOverlaps(next, e);
+        if (hits.length) return needs(overlapConfirm(hits));
+      } else if (ov.choice !== 'save') return okR('cancelled');
       const row = persist(next);
       if (!row) return err('save_failed', `The change could not be saved.\n\n${saveFailMsg()}`);
       return okR('saved', { entry: row });
@@ -934,7 +1039,13 @@ export function createMockApi(): Api {
     // ── import / export / OCR ──
     async export_month(year, m) {
       await wait(400);
-      return okR('saved', { path: `C:\\Users\\you\\Documents\\Hours ${monthLabel(year, m)}.xlsx` }, 'Exported (mock)');
+      lastExport = `C:\\Users\\you\\Documents\\Hours ${monthLabel(year, m)}.xlsx`;
+      return okR('saved', { path: lastExport }, 'Exported (mock)');
+    },
+    async reveal_export() {
+      if (!lastExport) return err('not_found', 'Nothing has been exported yet.');
+      console.info('[mock] would show in folder:', lastExport);
+      return okR('ok');
     },
     async import_excel() {
       await wait(500);

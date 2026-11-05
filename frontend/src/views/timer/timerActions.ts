@@ -87,7 +87,9 @@ export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopRes
       emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
       if (r.entry) {
         const mins = r.entry.minutes;
-        toast(`Shift saved${mins != null ? ` — ${formatDuration(mins)}` : ''}`, { tone: 'success', ms: 4000 });
+        const saved = `Shift saved${mins != null ? ` — ${formatDuration(mins)}` : ''}`;
+        if (r.overlap_warning) toast(`${saved}. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
+        else toast(saved, { tone: 'success', ms: 4000 });
         await showEntry(r.entry);
       }
     } else if (r.status === 'discarded') {
@@ -107,10 +109,14 @@ export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopRes
 
 /** Start dial: `at` is an exact past start (epoch ms) or null for now. Only
  *  HH:MM goes to Python, which asks "now or yesterday?" when that HH:MM is
- *  just ahead of the clock — the dial already knows it meant the past one. */
+ *  just ahead of the clock, and "that far back?" when it's hours ago — the
+ *  dial already knows it meant the past one. */
 export function startDialShift(at: number | null): Promise<TimerResult | undefined> {
   if (at == null) return startShift('now');
-  return startShift('at', hhmm(new Date(at)), null, [{ kind: 'start_ahead', choice: 'earlier' }]);
+  return startShift('at', hhmm(new Date(at)), null, [
+    { kind: 'start_ahead', choice: 'earlier' },
+    { kind: 'start_backdate', choice: 'earlier' },
+  ]);
 }
 
 /** F5: stop (with confirm) when running, else start now with the picked job. */

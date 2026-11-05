@@ -172,6 +172,24 @@ describe('stop (§6.1)', () => {
     expect(atBlast).toEqual({ burst: burst0 + 1, toasts: 0 });
   });
 
+  it('saved with an overlap → warning toast that stays longer', async () => {
+    setTimer(running);
+    const entry = { id: 'e1', date: '2026-10-29', job_shift: 'Support', time_in: '09:00', time_out: '17:00', minutes: 480 };
+    fakeApi.timer_stop.mockResolvedValueOnce({
+      ok: true,
+      status: 'saved',
+      timer: idle,
+      entry,
+      overlap_warning: 'This shift overlaps another entry:\n• Sales on Thu 29 Oct, 08:00–10:00',
+    });
+    await actions.stopShift('button');
+    const t = get(toasts).at(-1)!;
+    expect(t.tone).toBe('warning');
+    expect(t.ms).toBe(12000);
+    expect(t.message).toBe('Shift saved — 8h 00m. This shift overlaps another entry:\n• Sales on Thu 29 Oct, 08:00–10:00');
+    expect(spies.showEntry).toHaveBeenCalledWith(entry);
+  });
+
   it('not_running → re-reads the timer, no fx', async () => {
     setTimer(running);
     fakeApi.timer_stop.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'not_running', message: '' } });
@@ -279,13 +297,16 @@ describe('start (§6.2)', () => {
     expect(fx).toEqual([]);
   });
 
-  it('start dial pre-answers start_ahead with the past (yesterday) start', async () => {
+  it('start dial pre-answers start_ahead and start_backdate with the dialled start', async () => {
     setTimer(idle);
     fakeApi.timer_start.mockResolvedValueOnce({ ok: true, status: 'ok', timer: running });
     await actions.startDialShift(new Date(2026, 9, 29, 1, 30).getTime());
     expect(fakeApi.timer_start).toHaveBeenCalledTimes(1);
     expect(fakeApi.timer_start.mock.calls[0].slice(0, 2)).toEqual(['at', '01:30']);
-    expect(fakeApi.timer_start.mock.calls[0][3]).toEqual([{ kind: 'start_ahead', choice: 'earlier' }]);
+    expect(fakeApi.timer_start.mock.calls[0][3]).toEqual([
+      { kind: 'start_ahead', choice: 'earlier' },
+      { kind: 'start_backdate', choice: 'earlier' },
+    ]);
     expect(shown).toHaveLength(0);
     expect(fx).toEqual([{ kind: 'ignite' }]);
   });

@@ -4,6 +4,7 @@ import type { Recovery, RecoveryResult } from '../api/types';
 import { reportError } from './confirm';
 import { showEntry, refreshMonth, setViewMonth } from './entries';
 import { setTimer } from './timer';
+import { toast } from './toasts';
 
 /** Unsaved shift from a crash / "Close anyway" (§4.5, §6.3). App.svelte shows
  *  RecoverShiftModal while this is non-null (after intro + changelog); it is
@@ -32,6 +33,7 @@ export async function applyRecoveryResult(r: RecoveryResult): Promise<void> {
     return;
   }
   if (get(pendingRecovery)) return;
+  if (r.status === 'saved' && r.overlap_warning) toast(`Shift saved. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
   if (r.status === 'saved' && r.entry) await showEntry(r.entry);
   else if (r.timer?.running && r.timer.start_iso) {
     const [y, m] = r.timer.start_iso.split('-').map(Number);

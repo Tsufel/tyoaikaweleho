@@ -17,6 +17,9 @@ MIN_SHIFT_SECONDS = 60
 # A picked start time up to this far in the future is ambiguous: a typo for
 # "now", or an overnight shift started yesterday
 _CONFIRM_AHEAD = timedelta(hours=6)
+# A start time this far back (⏰ pressed late in the day) is asked about
+# before the timer starts with that many hours already on it
+_CONFIRM_BEHIND = timedelta(hours=6)
 
 _DOTTED_DATE = re.compile(r"(\d{1,2})\.(\d{1,2})(?:\.(\d{4})?)?")
 _DASHED_DATE = re.compile(r"(\d{4})-(\d{1,2})-(\d{1,2})")
@@ -132,6 +135,48 @@ def start_time_needs_confirm(hour: int, minute: int, now: datetime) -> bool:
     target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
     ahead = (target - now) % timedelta(days=1)
     return timedelta(0) < ahead < _CONFIRM_AHEAD
+
+
+def start_far_behind(start: datetime, now: datetime) -> bool:
+    """True when a resolved start lies so far back that the shift would
+    begin with most of a working day already counted (⏰ at 22:00 for a
+    09:30 default)."""
+    return now - start >= _CONFIRM_BEHIND
+
+
+def entry_span(date_iso: str, time_in: str, time_out: str) -> tuple[datetime, datetime] | None:
+    """(start, end) of a closed entry; an overnight end is on the next day.
+    None for open or unreadable entries (a hand-edited data.json can hold
+    numbers or nulls in these fields)."""
+    if not (date_iso and time_in and time_out):
+        return None
+    if not all(isinstance(v, str) for v in (date_iso, time_in, time_out)):
+        return None
+    try:
+        start = datetime.strptime(f"{date_iso} {time_in}", "%Y-%m-%d %H:%M")
+        datetime.strptime(time_out, "%H:%M")
+    except ValueError:
+        return None
+    return start, start + timedelta(minutes=entry_minutes(time_in, time_out))
+
+
+def overlapping(entry, others) -> list:
+    """Entries in *others* (not *entry* itself, matched by id) whose time
+    overlaps *entry*'s by at least a minute. Shifts that only touch
+    (one ends at 12:00, the next starts at 12:00) don't count, and neither
+    do zero-length entries on either side."""
+    span = entry_span(entry.date, entry.time_in, entry.time_out)
+    if span is None or span[0] == span[1]:
+        return []
+    found = []
+    for o in others:
+        # an id-less (hand-edited) row is only matched to its own copy
+        if o is entry or (o.id == entry.id if entry.id else o == entry):
+            continue
+        s = entry_span(o.date, o.time_in, o.time_out)
+        if s is not None and s[0] != s[1] and s[0] < span[1] and span[0] < s[1]:
+            found.append(o)
+    return found
 
 
 def is_long_shift(minutes: int) -> bool:

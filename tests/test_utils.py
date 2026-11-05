@@ -1,6 +1,7 @@
 """Tests for utils.parse_time_input, is_valid_time, entry_minutes, is_overnight,
 resolve_start_time, week_key, parse_date_input, parse_pay_rate,
-start_time_needs_confirm, is_long_shift, add_hours, format_duration, get_app_dir."""
+start_time_needs_confirm, is_long_shift, add_hours, format_duration, get_app_dir,
+start_far_behind, entry_span, overlapping."""
 import os
 import sys
 from datetime import date, datetime
@@ -9,7 +10,9 @@ import pytest
 from utils import (parse_time_input, is_valid_time, entry_minutes, is_overnight,
                    resolve_start_time, week_key, parse_date_input, parse_pay_rate,
                    start_time_needs_confirm, is_long_shift, add_hours,
-                   format_duration, get_app_dir)
+                   format_duration, get_app_dir, start_far_behind, entry_span,
+                   overlapping)
+import storage
 
 
 @pytest.mark.parametrize("inp, expected", [
@@ -267,3 +270,91 @@ def test_nearest_slot(t, expected):
 def test_nearest_slot_invalid(t):
     from utils import nearest_slot
     assert nearest_slot(t) is None
+
+
+# ── start_far_behind ────────────────────────────────────────────────────────
+
+@pytest.mark.parametrize("start, expected", [
+    (datetime(2026, 9, 23, 16, 1), False),     # 5 h 59 m back
+    (datetime(2026, 9, 23, 16, 0), True),      # exactly 6 h
+    (datetime(2026, 9, 23, 8, 0), True),       # ⏰ 08:00 pressed at 22:00
+    (datetime(2026, 9, 22, 23, 0), True),      # yesterday
+    (datetime(2026, 9, 23, 22, 0), False),     # now
+])
+def test_start_far_behind(start, expected):
+    assert start_far_behind(start, datetime(2026, 9, 23, 22, 0)) is expected
+
+
+# ── entry_span / overlapping ────────────────────────────────────────────────
+
+def test_entry_span_day_and_overnight():
+    assert entry_span("2026-09-23", "09:00", "17:00") ==         (datetime(2026, 9, 23, 9), datetime(2026, 9, 23, 17))
+    assert entry_span("2026-09-30", "22:00", "06:00") ==         (datetime(2026, 9, 30, 22), datetime(2026, 10, 1, 6))
+
+
+@pytest.mark.parametrize("d, t_in, t_out", [
+    ("2026-09-23", "09:00", ""),              # open
+    ("", "09:00", "17:00"),
+    ("nope", "09:00", "17:00"),
+    ("2026-09-23", "9", "17:00"),             # not HH:MM
+    ("2026-09-23", "09:00", "25:00"),
+    ("2026-09-23", "09:00", 1700),            # hand-edited data.json
+    ("2026-09-23", 900, "17:00"),
+    (20260923, "09:00", "17:00"),
+])
+def test_entry_span_none(d, t_in, t_out):
+    assert entry_span(d, t_in, t_out) is None
+
+
+def _e(d="2026-09-23", t_in="09:00", t_out="17:00", id_=None):
+    return storage.WorkEntry(id=id_ or storage.new_entry_id(), date=d, job_shift="Sales",
+                             time_in=t_in, time_out=t_out)
+
+
+def test_overlapping_finds_partial_and_contained():
+    a = _e()
+    b = _e(t_in="16:00", t_out="18:00")
+    c = _e(t_in="10:00", t_out="11:00")
+    d = _e(d="2026-09-24")
+    assert overlapping(a, [a, b, c, d]) == [b, c]
+
+
+def test_overlapping_touching_is_not_overlap():
+    a = _e()
+    assert overlapping(a, [_e(t_in="17:00", t_out="20:00"), _e(t_in="06:00", t_out="09:00")]) == []
+
+
+def test_overlapping_overnight_into_next_day():
+    night = _e(d="2026-09-30", t_in="22:00", t_out="06:00")
+    morning = _e(d="2026-10-01", t_in="05:30", t_out="12:00")
+    assert overlapping(night, [morning]) == [morning]
+    assert overlapping(morning, [night]) == [night]
+    assert overlapping(night, [_e(d="2026-10-01", t_in="06:00", t_out="12:00")]) == []
+
+
+def test_overlapping_skips_same_id_open_and_zero_length():
+    a = _e(id_="x")
+    stored = _e(id_="x", t_in="08:00")
+    assert overlapping(a, [stored]) == []                       # its own saved copy
+    assert overlapping(a, [_e(t_in="10:00", t_out="")]) == []   # open entry
+    assert overlapping(_e(t_in="10:00", t_out="10:00"), [a]) == []
+    assert overlapping(a, [_e(t_in="12:00", t_out="12:00")]) == []   # zero-length other
+
+
+def test_overlapping_id_less_rows():
+    # hand-edited rows without an id: only an equal copy counts as itself
+    a = _e(id_="x")
+    a.id = ""
+    copy = _e(id_="y")
+    copy.id = ""
+    other = _e(t_in="10:00", t_out="12:00")
+    other.id = ""
+    assert overlapping(a, [copy]) == []
+    assert overlapping(a, [other]) == [other]
+
+
+def test_overlapping_ignores_unreadable_others():
+    a = _e()
+    bad = _e(t_in="10:00")
+    bad.time_out = 1100
+    assert overlapping(a, [bad]) == []

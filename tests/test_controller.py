@@ -113,7 +113,7 @@ def test_start_at_earlier_today(env):
 
 def test_start_at_far_ahead_means_yesterday(env):
     ctrl, _ = env
-    r = ctrl.timer_start("at", time="22:00")
+    r = ctrl.timer_start("at", time="22:00", confirm=_answer("start_backdate", "earlier"))
     assert r["timer"]["start_iso"] == "2026-09-22T22:00:00"
 
 
@@ -143,6 +143,52 @@ def test_start_ahead_cancel(env):
     ctrl, _ = env
     r = ctrl.timer_start("at", time="11:00", confirm=_answer("start_ahead", "cancel"))
     assert r["status"] == "cancelled" and not r["timer"]["running"]
+
+
+def test_start_backdate_asks(env):
+    ctrl, clock = env
+    clock.now = datetime(2026, 9, 23, 22, 0)
+    r = ctrl.timer_start("at", time="08:00")
+    assert r["status"] == "needs_confirm" and not r["timer"]["running"]
+    c = r["confirm"]
+    assert c["kind"] == "start_backdate" and c["icon"] == "warning"
+    assert c["default"] == "now" and c["cancel"] == "cancel"
+    assert [o["label"] for o in c["options"]] == ["Start now (22:00)", "From today 08:00", "Cancel"]
+    assert c["details"] == {"start_iso": "2026-09-23T08:00:00", "elapsed_minutes": 840}
+    assert "14h 00m" in c["message"]
+
+
+@pytest.mark.parametrize("choice, expected", [
+    ("now", "2026-09-23T22:00:00"),
+    ("earlier", "2026-09-23T08:00:00"),
+])
+def test_start_backdate_answers(env, choice, expected):
+    ctrl, clock = env
+    clock.now = datetime(2026, 9, 23, 22, 0)
+    r = ctrl.timer_start("at", time="08:00", confirm=_answer("start_backdate", choice))
+    assert r["status"] == "ok" and r["timer"]["start_iso"] == expected
+
+
+def test_start_backdate_cancel(env):
+    ctrl, clock = env
+    clock.now = datetime(2026, 9, 23, 22, 0)
+    r = ctrl.timer_start("at", time="08:00", confirm=_answer("start_backdate", "cancel"))
+    assert r["status"] == "cancelled" and not r["timer"]["running"]
+    assert not os.path.exists(tm._SESSION_FILE)
+
+
+def test_start_backdate_not_under_six_hours(env):
+    ctrl, clock = env
+    clock.now = datetime(2026, 9, 23, 13, 59)
+    r = ctrl.timer_start("at", time="08:00")
+    assert r["status"] == "ok" and r["timer"]["start_iso"] == "2026-09-23T08:00:00"
+
+
+def test_start_ahead_earlier_does_not_ask_backdate_too(env):
+    ctrl, _ = env
+    # 11:00 at 10:00 is yesterday 11:00, 23 h back, but start_ahead already asked
+    r = ctrl.timer_start("at", time="11:00", confirm=_answer("start_ahead", "earlier"))
+    assert r["status"] == "ok" and r["timer"]["start_iso"] == "2026-09-22T11:00:00"
 
 
 def test_start_session_write_fails(env, monkeypatch):
@@ -682,6 +728,25 @@ def test_save_entry_long_confirm(env):
     assert ctrl.save_entry(draft, _answer("long_entry", "save"))["status"] == "saved"
 
 
+def test_save_entry_overlap_read_fails(env, monkeypatch):
+    # the overlap check reads data.json before the write: a locked file
+    # must still give the save_failed message, not an internal error
+    ctrl, _ = env
+    monkeypatch.setattr(storage, "load_all_entries", _fail)
+    r = ctrl.save_entry({"date": "2026-09-23", "time_in": "09:00", "time_out": "17:00"})
+    assert r["error"]["code"] == "save_failed" and "locked" in r["message"]
+
+
+def test_save_entry_edit_read_fails(env, monkeypatch):
+    # editing reads the stored entry first: a locked file is save_failed too
+    ctrl, _ = env
+    e = _add()
+    monkeypatch.setattr(storage, "load_all_entries", _fail)
+    r = ctrl.save_entry({"id": e.id, "date": "2026-09-23", "time_in": "09:00",
+                         "time_out": "18:00"})
+    assert r["error"]["code"] == "save_failed" and "locked" in r["message"]
+
+
 def test_save_entry_fails(env, monkeypatch):
     ctrl, _ = env
     monkeypatch.setattr(storage, "save_entry", _fail)
@@ -743,6 +808,15 @@ def test_inline_edit_fails(env, monkeypatch):
     ctrl, _ = env
     e = _add()
     monkeypatch.setattr(storage, "update_entry", _fail)
+    r = ctrl.update_entry_field(e.id, "time_out", "18:00")
+    assert r["error"]["code"] == "save_failed" and "change could not be saved" in r["message"]
+
+
+def test_inline_edit_read_fails(env, monkeypatch):
+    # both the lookup and the overlap check read data.json
+    ctrl, _ = env
+    e = _add()
+    monkeypatch.setattr(storage, "load_all_entries", _fail)
     r = ctrl.update_entry_field(e.id, "time_out", "18:00")
     assert r["error"]["code"] == "save_failed" and "change could not be saved" in r["message"]
 
@@ -1401,3 +1475,139 @@ def test_restore_rejects_unstorable_extras(env):
     assert ctrl.restore_entry({**base, "note": object()})["status"] == "invalid"
     assert ctrl.restore_entry({**base, "note": {1, 2}})["status"] == "invalid"
     assert storage._load_raw()["entries"] == []
+
+
+# ── overlapping shifts ───────────────────────────────────────────────────────
+
+def test_save_entry_overlap_asks(env):
+    ctrl, _ = env
+    _add(t_in="09:00", t_out="17:00", job="Support")
+    draft = {"date": "2026-09-23", "job_shift": "Sales", "time_in": "16:00", "time_out": "20:00"}
+    r = ctrl.save_entry(draft)
+    c = r["confirm"]
+    assert c["kind"] == "overlap" and c["icon"] == "warning"
+    assert c["default"] == "cancel" and c["cancel"] == "cancel"
+    assert [o["id"] for o in c["options"]] == ["save", "cancel"]
+    assert c["details"] == {"overlaps": 1}
+    assert c["message"].startswith("This shift overlaps another entry:")
+    assert "• Support on Wed 23 Sep, 09:00–17:00" in c["message"]
+    assert len(storage.load_all_entries()) == 1
+    assert ctrl.save_entry(draft, _answer("overlap", "cancel"))["status"] == "cancelled"
+    assert len(storage.load_all_entries()) == 1
+    assert ctrl.save_entry(draft, _answer("overlap", "save"))["status"] == "saved"
+    assert len(storage.load_all_entries()) == 2
+
+
+def test_save_entry_overlap_lists_at_most_three(env):
+    ctrl, _ = env
+    for h in (8, 10, 12, 14, 16):
+        _add(t_in=f"{h:02d}:00", t_out=f"{h + 1:02d}:00")
+    r = ctrl.save_entry({"date": "2026-09-23", "time_in": "07:00", "time_out": "18:00"})
+    c = r["confirm"]
+    assert c["details"] == {"overlaps": 5}
+    assert c["message"].startswith("This shift overlaps 5 other entries:")
+    assert c["message"].count("\n• ") == 4 and "• and 2 more" in c["message"]
+
+
+def test_save_entry_touching_and_own_copy_do_not_ask(env):
+    ctrl, _ = env
+    e = _add()
+    _add(t_in="17:00", t_out="20:00")
+    r = ctrl.save_entry({"id": e.id, "date": e.date, "time_in": "08:00", "time_out": "17:00"})
+    assert r["status"] == "saved"
+
+
+def test_save_entry_known_overlap_not_asked_again(env):
+    ctrl, _ = env
+    _add(t_in="09:00", t_out="17:00")
+    e = _add(t_in="16:00", t_out="20:00")
+    # already overlapping: changing its job or end doesn't ask again
+    r = ctrl.save_entry({"id": e.id, "date": e.date, "job_shift": "Training",
+                         "time_in": "16:00", "time_out": "21:00"})
+    assert r["status"] == "saved"
+
+
+def test_save_entry_new_overlap_on_edit_asks(env):
+    ctrl, _ = env
+    _add(t_in="09:00", t_out="12:00")
+    e = _add(t_in="13:00", t_out="17:00")
+    r = ctrl.save_entry({"id": e.id, "date": e.date, "time_in": "11:00", "time_out": "17:00"})
+    assert r["confirm"]["kind"] == "overlap"
+
+
+def test_inline_edit_overlap(env):
+    ctrl, _ = env
+    _add(t_in="09:00", t_out="12:00")
+    e = _add(t_in="13:00", t_out="17:00")
+    r = ctrl.update_entry_field(e.id, "time_in", "11:00")
+    assert r["confirm"]["kind"] == "overlap"
+    assert ctrl.update_entry_field(e.id, "time_in", "11:00",
+                                   _answer("overlap", "cancel"))["status"] == "cancelled"
+    assert ctrl.get_entry(e.id)["entry"]["time_in"] == "13:00"
+    r = ctrl.update_entry_field(e.id, "time_in", "11:00", _answer("overlap", "save"))
+    assert r["status"] == "saved"
+    # now a known overlap: a further edit that keeps it doesn't ask
+    assert ctrl.update_entry_field(e.id, "time_out", "18:00")["status"] == "saved"
+
+
+def test_stop_overlap_warning(env):
+    ctrl, clock = env
+    _add(t_in="11:00", t_out="12:00", job="Training")
+    _started(ctrl, clock)
+    clock.now = T0 + timedelta(hours=4)
+    r = ctrl.timer_stop()
+    assert r["status"] == "saved"
+    assert r["overlap_warning"] == ("This shift overlaps another entry:\n"
+                                    "• Training on Wed 23 Sep, 11:00–12:00")
+    assert len(storage.load_all_entries()) == 2
+    json.dumps(r, allow_nan=False)
+
+
+def test_stop_without_overlap_has_no_warning(env):
+    ctrl, clock = env
+    _add(t_in="06:00", t_out="10:00")
+    _started(ctrl, clock)
+    clock.now = T0 + timedelta(hours=1)
+    assert "overlap_warning" not in ctrl.timer_stop()
+
+
+def test_recovery_save_overlap_warning(env, tmp_timer):
+    ctrl, _ = env
+    _add(t_in="08:00", t_out="09:00")
+    _crash(T0 - timedelta(hours=3))
+    r = ctrl.recovery_resolve("save", end="9.45")
+    assert r["status"] == "saved" and "overlaps another entry" in r["overlap_warning"]
+
+
+def test_overlap_warning_swallows_read_errors(env, monkeypatch):
+    ctrl, clock = env
+    _started(ctrl, clock)
+    clock.now = T0 + timedelta(hours=1)
+    monkeypatch.setattr(ctrl, "_overlaps", _fail)
+    r = ctrl.timer_stop()
+    assert r["status"] == "saved" and "overlap_warning" not in r
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_list_month_overlap_flag(env):
+    ctrl, _ = env
+    _add("2026-08-31", "22:00", "06:00")          # previous month, overnight
+    _add("2026-09-01", "05:00", "09:00")          # overlaps it on the 1st
+    _add("2026-09-10", "09:00", "17:00")
+    _add("2026-09-10", "17:00", "19:00")          # touching only
+    _add("2026-09-12", "09:00", "")               # open
+    rows = ctrl.list_month(2026, 9)["data"]["entries"]
+    assert [(r["date"], r["overlap"]) for r in rows] == [
+        ("2026-09-01", True), ("2026-09-10", False), ("2026-09-10", False),
+        ("2026-09-12", False)]
+
+
+def test_export_remembers_last_path(env, monkeypatch):
+    import excel_export
+    ctrl, _ = env
+    monkeypatch.setattr(excel_export, "export_month", lambda **k: None)
+    assert ctrl.last_export() is None
+    ctrl.export_month(2026, 9, "")
+    assert ctrl.last_export() is None
+    ctrl.export_month(2026, 9, "C:/x/out.xlsx")
+    assert ctrl.last_export() == "C:/x/out.xlsx"
