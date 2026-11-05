@@ -369,11 +369,14 @@ def set_window_placement(placement: dict):
 
 UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                     "liquid_glass": False, "target_hours": 8.0, "pet": "off", "pet_name": "",
-                    "pet_hint_seen": False}
+                    "pet_hint_seen": False, "pet_skin": "classic"}
 _BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound", "liquid_glass", "pet_hint_seen")
 TARGET_HOURS_RANGE = (1.0, 24.0)
 PETS = ("off", "familiar", "wizard")
 PET_NAME_MAX = 24
+# Pet looks (frontend/src/views/pet/petSkins.ts). Each unlocks at a pet level;
+# the app shows a locked choice as classic, so only the id is checked here.
+PET_SKINS = ("classic", "cosmic", "neon", "gilded", "legend")
 
 
 # Control, surrogate, private-use and line/paragraph separator characters, and
@@ -420,6 +423,8 @@ def _clean_ui_prefs(raw) -> dict:
         name = _clean_pet_name(raw.get("pet_name"))
         if name is not None:
             prefs["pet_name"] = name
+        if raw.get("pet_skin") in PET_SKINS:
+            prefs["pet_skin"] = raw["pet_skin"]
     return prefs
 
 
@@ -447,6 +452,10 @@ def merge_ui_prefs(base, changes: dict) -> dict:
             if problem:
                 raise ValueError(problem)
             prefs[key] = " ".join(value.split())
+        elif key == "pet_skin":
+            if value not in PET_SKINS:
+                raise ValueError(f"pet_skin must be one of {', '.join(PET_SKINS)}")
+            prefs[key] = value
         else:
             raise ValueError(f"unknown ui pref: {key}")
     return prefs
@@ -454,7 +463,7 @@ def merge_ui_prefs(base, changes: dict) -> dict:
 
 def get_ui_prefs() -> dict:
     """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours, pet, pet_name,
-    pet_hint_seen}, defaults for anything unset."""
+    pet_hint_seen, pet_skin}, defaults for anything unset."""
     return _clean_ui_prefs(_load_raw().get("ui_prefs"))
 
 

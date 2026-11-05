@@ -2,7 +2,8 @@
   // The Timer card's pet (docs/V2_GAMIFICATION_PLAN.md). Click to pet it;
   // right-click, a long press or the keyboard opens the pet sheet. It hops at
   // a saved shift, a Lulz milestone or an unlock, and puffs when it changes
-  // pose. Tired near the end of a shift, it sighs a line now and then (and
+  // pose or look; now and then a saved shift brings out its bazooka for a
+  // minute, and a level that unlocks a look says so. Tired near the end of a shift, it sighs a line now and then (and
   // when petted); it steps out while it does the Friday fly-by. It sits in
   // whichever free spot of the card is bigger, under the controls or beside
   // the ring, and hides when neither fits, so it never covers the ring, the
@@ -12,12 +13,23 @@
   import { onFx } from '../../fx/fire/fxBus';
   import { unlockQueue } from '../../lib/stores/achievements';
   import { animationsActive, motion } from '../../lib/stores/app';
-  import { watchPetStats } from '../../lib/stores/pet';
+  import { petStats, watchPetStats } from '../../lib/stores/pet';
+  import { saveUiPrefs } from '../../lib/stores/settings';
   import { toast } from '../../lib/stores/toasts';
   import { tooltip } from '../../lib/ui/actions';
   import { burst } from '../timer/timerActions';
-  import { POSE_LABEL, pickLine, tiredLines, type PetPose } from './petLogic';
-  import { SPRITE_SIZE, openPetSheet, petFlyby, petSpot, petView, type PetSpot } from './petState';
+  import { POSE_LABEL, level, pickLine, tiredLines } from './petLogic';
+  import {
+    SPRITE_SIZE,
+    newlyUnlockedSkins,
+    openPetSheet,
+    petFlyby,
+    petSpot,
+    petView,
+    putAwayBazooka,
+    rollBazooka,
+    type PetSpot,
+  } from './petState';
   import PetBubble from './PetBubble.svelte';
   import PetSprite from './PetSprite.svelte';
 
@@ -64,7 +76,7 @@
   });
   const full = $derived($motion === 'full');
   const label = $derived(
-    `${v.name}, ${POSE_LABEL[v.pose]}${v.energy ? `, energy ${v.energy.pct}%` : ''}. Open pet`,
+    `${v.name}, ${POSE_LABEL[v.pose]}${v.bazooka ? ', holding a bazooka' : ''}${v.energy ? `, energy ${v.energy.pct}%` : ''}. Open pet`,
   );
   const fxOn = () => get(motion) === 'full' && get(animationsActive);
 
@@ -102,17 +114,35 @@
     sparks++;
   }
 
-  // A new pose puffs and squashes in, but not the first one drawn after the
-  // stats arrive (that's the pet appearing, not changing).
-  let lastPose: PetPose | null = null;
+  // A new pose or look (a skin, the bazooka) puffs and squashes in, but not
+  // the first one drawn after the stats arrive (that's the pet appearing, not
+  // changing). Falling asleep or starting a shift puts the bazooka away.
+  let lastLook: string | null = null;
   $effect(() => {
-    const { pose, level } = v;
+    const { pose, level, skin, bazooka } = v;
     if (!level) return;
-    if (lastPose && pose !== lastPose && fxOn()) {
+    if (pose !== 'idle') putAwayBazooka();
+    const look = `${pose} ${skin} ${bazooka}`;
+    if (lastLook && look !== lastLook && fxOn()) {
       puff++;
       replay((on) => (squash = on), 450);
     }
-    lastPose = pose;
+    lastLook = look;
+  });
+  onDestroy(putAwayBazooka);
+
+  // A level that unlocks a look: say so once, with a button to wear it. Only
+  // saved hours count here, not the running shift's, so a shift that ends up
+  // discarded never announces a look it didn't unlock.
+  $effect(() => {
+    for (const s of newlyUnlockedSkins($petStats ? level($petStats.lifetime_minutes).level : null)) {
+      toast(`${v.name} unlocked the ${s.label} look at level ${s.level}`, {
+        tone: 'success',
+        label: 'Wear it',
+        action: () => void saveUiPrefs({ pet_skin: s.id }),
+        undo: false,
+      });
+    }
   });
 
   $effect(() => onFx((e) => e.kind === 'milestone' && cheer()));
@@ -121,6 +151,8 @@
     if ($burst === seenBurst) return;
     seenBurst = $burst;
     cheer();
+    // the pose is already the after-shift one: an awake pet may grab it
+    if (get(petView).pose === 'idle') rollBazooka();
   });
   let queued = get(unlockQueue).length;
   $effect(() => {
@@ -273,7 +305,12 @@
   >
     <span class="hop" class:on={hop}>
       <span class="squash" class:on={squash}>
-        <PetSprite kind={v.kind} pose={v.pose} animate={full} smooth={!!spot && spot.w < SPRITE_SIZE[v.kind].w} />
+        <PetSprite
+          kind={v.kind}
+          pose={v.pose}
+          skin={v.skin}
+          bazooka={v.bazooka}
+          animate={full} smooth={!!spot && spot.w < SPRITE_SIZE[v.kind].w} />
       </span>
     </span>
     {#if v.energy}

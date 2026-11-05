@@ -32,6 +32,7 @@ import type {
   SettingsDraft,
   StatsBucket,
   TimerState,
+  PetSkinId,
   UiPrefs,
   WorkEntry,
 } from './types';
@@ -58,6 +59,9 @@ import {
   weekKey,
 } from '../time';
 import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
+
+/** storage.PET_SKINS */
+const PET_SKIN_IDS: readonly PetSkinId[] = ['classic', 'cosmic', 'neon', 'gilded', 'legend'];
 
 const VERSION = '2.0.1';
 const CERT_FAIL =
@@ -205,6 +209,8 @@ export function createMockApi(): Api {
       pet: q.get('pet') === 'wizard' ? 'wizard' : q.get('pet') === 'familiar' ? 'familiar' : 'off',
       pet_name: '',
       pet_hint_seen: q.has('nopethint'),
+      // &skin=neon: start in that look (still drawn classic below its level)
+      pet_skin: (PET_SKIN_IDS as readonly string[]).includes(q.get('skin') ?? '') ? (q.get('skin') as PetSkinId) : 'classic',
     },
   };
   let dlc: DlcStatus = q.has('dlc')
@@ -805,6 +811,9 @@ export function createMockApi(): Api {
         if (name === null || [...name].length > 24) return invalid('pet_name', 'Give your pet a name of at most 24 characters.');
         prefs = { ...prefs, pet_name: name };
       }
+      if (prefs.pet_skin !== undefined && !(PET_SKIN_IDS as readonly unknown[]).includes(prefs.pet_skin)) {
+        return invalid('ui_prefs', `pet_skin must be one of ${PET_SKIN_IDS.join(', ')}`);
+      }
       settings = { ...settings, ui_prefs: { ...settings.ui_prefs, ...prefs } };
       return okR('saved', { settings: structuredClone(settings) });
     },
@@ -915,7 +924,10 @@ export function createMockApi(): Api {
     },
     async get_pet_stats() {
       await latency();
-      return okR('ok', petStats(entries, new Date()));
+      const stats = petStats(entries, new Date());
+      // &petxp=900: that many extra lifetime hours, to see the high levels
+      const extra = Math.max(0, Number(q.get('petxp')) || 0) * 60;
+      return okR('ok', { ...stats, lifetime_minutes: stats.lifetime_minutes + extra });
     },
 
     // ── import / export / OCR ──

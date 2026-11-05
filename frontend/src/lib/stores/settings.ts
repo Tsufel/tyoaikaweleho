@@ -13,6 +13,7 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   pet: 'off',
   pet_name: '',
   pet_hint_seen: false,
+  pet_skin: 'classic',
 };
 
 export const DEFAULT_SETTINGS: Settings = {

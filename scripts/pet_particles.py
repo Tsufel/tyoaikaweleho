@@ -20,7 +20,8 @@ OUT = os.path.join(ROOT, "frontend", "src", "views", "pet", "petParticles.ts")
 ALPHA = 40          # at or above: part of the art
 MAX_AREA = 100      # bigger islands (the body, a dropped staff) stay put
 GAP = 1             # islands this close move as one (the strokes of a z)
-DARK = 90           # mean luminance below: a z, else a sparkle
+DARK = 100          # mean luminance below: a z, else a sparkle
+VIVID = 100         # mean colourfulness (max - min channel) above: a sparkle
 
 
 def islands(im):
@@ -62,7 +63,9 @@ def near(a, b):
 def kind_of(im, pts):
     px = im.load()
     lum = sum(0.299 * px[p][0] + 0.587 * px[p][1] + 0.114 * px[p][2] for p in pts) / len(pts)
-    return "z" if lum < DARK else "spark"
+    # z's are drawn dark and grey-blue; deep red sparkles are dark too, but vivid
+    vivid = sum(max(px[p][:3]) - min(px[p][:3]) for p in pts) / len(pts)
+    return "z" if lum < DARK and vivid <= VIVID else "spark"
 
 
 def particles(im):

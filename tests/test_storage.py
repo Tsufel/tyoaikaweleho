@@ -407,3 +407,17 @@ def test_set_ui_prefs_pet_keeps_other_prefs(tmp_storage):
     with pytest.raises(ValueError):
         storage.set_ui_prefs({"pet_name": "x" * 25})
     assert storage.get_ui_prefs()["pet"] == "wizard"
+
+
+def test_ui_prefs_pet_skin(tmp_storage):
+    assert storage.get_ui_prefs()["pet_skin"] == "classic"
+    assert storage.set_ui_prefs({"pet_skin": "gilded"})["pet_skin"] == "gilded"
+    assert storage.get_ui_prefs()["pet_skin"] == "gilded"
+    for bad in ("plaid", "", None, 3, "Gilded"):
+        with pytest.raises(ValueError):
+            storage.set_ui_prefs({"pet_skin": bad})
+    assert storage.get_ui_prefs()["pet_skin"] == "gilded"
+    data = storage._load_raw()
+    data["ui_prefs"]["pet_skin"] = "plaid"
+    storage._save_raw(data)
+    assert storage.get_ui_prefs()["pet_skin"] == "classic"

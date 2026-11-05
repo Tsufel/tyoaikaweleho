@@ -254,9 +254,12 @@ export interface UiPrefs {
   pet_name: string;
   /** The Timer card's one-time pet offer was answered (or the pet set in Settings). */
   pet_hint_seen: boolean;
+  /** The chosen look (views/pet/petSkins.ts); drawn once the pet's level unlocks it. */
+  pet_skin: PetSkinId;
 }
 
 export type PetKind = 'off' | 'familiar' | 'wizard';
+export type PetSkinId = 'classic' | 'cosmic' | 'neon' | 'gilded' | 'legend';
 
 export interface PetStats {
   /** Every closed shift ever, by start date (open and future ones excluded). */

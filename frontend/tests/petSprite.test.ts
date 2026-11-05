@@ -15,7 +15,7 @@ describe('spriteLayers', () => {
   it('splits standing poses at a seam and keeps flying ones whole', () => {
     for (const kind of KINDS)
       for (const pose of POSES) {
-        const { layers } = spriteLayers(kind, pose, SPRITE_SIZE[kind]);
+        const { layers } = spriteLayers(`${kind}_${pose}`, SPRITE_SIZE[kind]);
         const parts = pose === 'fly' ? ['whole'] : pose === 'idle' ? ['lower', 'upper', 'still'] : ['lower', 'upper'];
         expect(layers.map((l) => l.part)).toEqual(parts);
         for (const l of layers) expect(l.clip).toMatch(/^polygon\(evenodd, [\d.]+% [\d.]+%(, [\d.]+% [\d.]+%)+\)$/);
@@ -25,7 +25,7 @@ describe('spriteLayers', () => {
   it('gives every particle its own clip and a phase in [0, 1)', () => {
     for (const kind of KINDS)
       for (const pose of POSES) {
-        const { bits } = spriteLayers(kind, pose, SPRITE_SIZE[kind]);
+        const { bits } = spriteLayers(`${kind}_${pose}`, SPRITE_SIZE[kind]);
         expect(bits).toHaveLength(PET_PARTICLES[`${kind}_${pose}`].length);
         for (const b of bits) {
           expect(b.clip).toMatch(/^inset\([\d.]+% [\d.]+% [\d.]+% [\d.]+%\)$/);
@@ -36,7 +36,7 @@ describe('spriteLayers', () => {
   });
 
   it("floats the z's up in turn, lowest first", () => {
-    const { bits } = spriteLayers('wizard', 'drowsy', SPRITE_SIZE.wizard);
+    const { bits } = spriteLayers('wizard_drowsy', SPRITE_SIZE.wizard);
     const zs = PET_PARTICLES.wizard_drowsy.map((p, i) => ({ ...p, phase: bits[i].phase })).filter((p) => p.kind === 'z');
     const byBottom = [...zs].sort((a, b) => b.y + b.h - (a.y + a.h));
     expect(byBottom.map((z) => z.phase)).toEqual([0, 1 / 3, 2 / 3].map((p) => +p.toFixed(3)));
@@ -45,7 +45,7 @@ describe('spriteLayers', () => {
   it('keeps the staffs, a star and a hand still: boxes above the seam, on the art grid, clear of everything else', () => {
     const overlap = (a: (typeof STILL)[string][number], b: typeof a) =>
       a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
-    expect(Object.keys(STILL).sort()).toEqual(['familiar_idle', 'wizard_idle']);
+    expect(Object.keys(STILL).sort()).toEqual(['familiar_idle', 'wizard_idle', 'wizard_idle_gilded']);
     for (const [name, boxes] of Object.entries(STILL)) {
       const { w } = SPRITE_SIZE[name.split('_')[0] as 'familiar' | 'wizard'];
       for (const [i, b] of boxes.entries()) {
@@ -62,7 +62,7 @@ describe('spriteLayers', () => {
     const points = (clip: string) => clip.match(/%,|%\)/g)!.length;
     for (const kind of KINDS) {
       const name = `${kind}_idle`;
-      const { layers } = spriteLayers(kind, 'idle', SPRITE_SIZE[kind]);
+      const { layers } = spriteLayers(`${kind}_idle`, SPRITE_SIZE[kind]);
       const [lower, upper, still] = layers;
       expect(points(upper.clip)).toBe(5 + 6 * (PET_PARTICLES[name].length + STILL[name].length));
       expect(points(still.clip)).toBe(5 + 6 * STILL[name].length);
@@ -94,7 +94,7 @@ describe('spriteLayers', () => {
   });
 
   it('cuts the particles out of the body layers they overlap', () => {
-    const { layers } = spriteLayers('familiar', 'sleep', SPRITE_SIZE.familiar);
+    const { layers } = spriteLayers('familiar_sleep', SPRITE_SIZE.familiar);
     // the band's corners (5 points) plus 6 per hole: the lower band (from one
     // art pixel above the seam) holds only the sparkle that straddles it
     const points = (clip: string) => clip.match(/%,|%\)/g)!.length;

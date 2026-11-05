@@ -1,4 +1,3 @@
-import type { PetPose } from './petLogic';
 import { PET_PARTICLES, type PetParticle } from './petParticles';
 
 // PetSprite draws one sprite several times, each copy clipped to one part, so
@@ -18,6 +17,19 @@ export const SEAM: Record<string, number> = {
   wizard_idle: 93,
   wizard_drowsy: 67,
   wizard_sleep: 99,
+  // looks: recolours keep the classic pose's seam; the bazookas breathe
+  // from the hips, bazooka and all
+  familiar_idle_bazooka: 97,
+  familiar_idle_neon: 97,
+  familiar_sleep_gilded: 97,
+  familiar_sleep_legend: 91,
+  wizard_idle_bazooka: 87,
+  wizard_idle_neon: 87,
+  wizard_idle_legend: 87,
+  wizard_idle_gilded: 93,
+  wizard_drowsy_cosmic: 67,
+  wizard_drowsy_gilded: 67,
+  wizard_sleep_gilded: 99,
 };
 
 type Box = Pick<PetParticle, 'x' | 'y' | 'w' | 'h'>;
@@ -27,6 +39,23 @@ type Box = Pick<PetParticle, 'x' | 'y' | 'w' | 'h'>;
  *  the wizard keeps his grip on his), nor should the stars hanging in the air
  *  or the wizard's raised hand. Sprite pixels, on the art's odd grid,
  *  clear of each other and of the particles. */
+// The wizard's staff and hands: the orb, its prongs and the shaft down to his
+// hand, the hand on it, then the shaft below; and his raised pointing hand,
+// down to the wrist: the fingers, then the palm out to its outline (the cuff
+// above it moves with the sleeve).
+const WIZARD_STAFF_AND_HANDS: Box[] = [
+  { x: 129, y: 25, w: 16, h: 6 },
+  { x: 127, y: 31, w: 18, h: 8 },
+  { x: 129, y: 39, w: 12, h: 4 },
+  { x: 129, y: 43, w: 10, h: 4 },
+  { x: 129, y: 47, w: 8, h: 8 },
+  { x: 127, y: 55, w: 8, h: 8 },
+  { x: 121, y: 63, w: 16, h: 16 },
+  { x: 119, y: 79, w: 8, h: 14 },
+  { x: 47, y: 51, w: 20, h: 14 },
+  { x: 47, y: 65, w: 22, h: 6 },
+];
+
 export const STILL: Record<string, Box[]> = {
   familiar_idle: [
     // orb, then the shaft stepping down to the right
@@ -38,24 +67,13 @@ export const STILL: Record<string, Box[]> = {
     { x: 25, y: 45, w: 6, h: 6 },
   ],
   wizard_idle: [
-    // orb, its prongs and the shaft down to his hand
-    { x: 129, y: 25, w: 16, h: 6 },
-    { x: 127, y: 31, w: 18, h: 8 },
-    { x: 129, y: 39, w: 12, h: 4 },
-    { x: 129, y: 43, w: 10, h: 4 },
-    { x: 129, y: 47, w: 8, h: 8 },
-    { x: 127, y: 55, w: 8, h: 8 },
-    // the hand on it, then the shaft below
-    { x: 121, y: 63, w: 16, h: 16 },
-    { x: 119, y: 79, w: 8, h: 14 },
+    ...WIZARD_STAFF_AND_HANDS,
     // the two faint sparkles beside the orb, which hang in the air with it
     { x: 145, y: 23, w: 6, h: 8 },
     { x: 137, y: 47, w: 6, h: 6 },
-    // his raised pointing hand, down to the wrist: the fingers, then the
-    // palm out to its outline (the cuff above it moves with the sleeve)
-    { x: 47, y: 51, w: 20, h: 14 },
-    { x: 47, y: 65, w: 22, h: 6 },
   ],
+  // the classic pose in gold, whose sparkles by the orb float on their own
+  wizard_idle_gilded: WIZARD_STAFF_AND_HANDS,
 };
 
 export interface SpriteLayer {
@@ -108,14 +126,10 @@ function band(top: number, bottom: number, holes: Box[], w: number, h: number, i
   return `polygon(evenodd, ${pts.map(([x, y]) => `${pct(x, w)} ${pct(y, h)}`).join(', ')})`;
 }
 
-/** The copies PetSprite stacks for one pose, bottom first. */
-export function spriteLayers(
-  kind: string,
-  pose: PetPose,
-  size: { w: number; h: number },
-): { layers: SpriteLayer[]; bits: SpriteBit[] } {
+/** The copies PetSprite stacks for one sprite (petSkins.spriteName, e.g.
+ *  "wizard_idle"), bottom first; size is the sprite's own. */
+export function spriteLayers(name: string, size: { w: number; h: number }): { layers: SpriteLayer[]; bits: SpriteBit[] } {
   const { w, h } = size;
-  const name = `${kind}_${pose}`;
   const bits = PET_PARTICLES[name] ?? [];
   const seam = SEAM[name];
   const still = STILL[name] ?? [];

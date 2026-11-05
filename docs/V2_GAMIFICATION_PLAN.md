@@ -152,6 +152,16 @@ shared box so swapping poses never shifts the sprite. Output:
 `frontend/src/assets/pets/<character>_<pose>.webp`, lossless, ~10 KB each,
 familiar 142×122, wizard 162×140, drawn with `image-rendering: pixelated`.
 
+**Looks (2.1.3):** more pictures of the same characters, recoloured or
+holding a bazooka, are cut the same way by `scripts/pet_sprites.py` into
+`<character>_<pose>_<look>.webp` (its `SOURCES` maps each sprite to its
+source picture; re-run `scripts/pet_particles.py` after it, which treats
+small dark islands as sleep z's only when they aren't vivid, so the looks'
+coloured sparkles stay sparkles). The box stays the
+character's; art that reaches past it (the classic and neon familiar
+bazookas, the neon wizard's) grows the sprite by whole art pixels, and `SKIN_ART` in `petSkins.ts` tells `PetSprite` to draw those
+overhanging the box so the pet never shifts.
+
 ### Character and name
 
 Settings → **Pet**: *Off* (default) · *Familiar* · *Wizard*, plus an editable
@@ -227,6 +237,12 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
   (6 s; clicks pass through). Meanwhile the Timer companion steps out (it
   puffs back in when the flight lands) and achievement cards wait their turn.
   Reduced motion shows it still, mid-screen, for 4.5 s. Off when the pet is.
+- **After-shift bazooka (easter egg):** now and then (1 in 4,
+  `BAZOOKA_CHANCE`) a saved shift makes an awake pet bring out a bazooka for a
+  minute (`rollBazooka` in `petState.ts`), in the colours of the look being
+  worn (`bazookaSprite`: neon for Neon, gold for the Gilded and Legend
+  wizard). It is put away when the minute is up or the pose changes, e.g. a
+  new shift starts, and never shows while the pet sleeps.
 - **Guards:** loops run only when `motion === 'full'`; they pause with
   `animationsActive` (`animation-play-state: paused`); reduced motion shows the
   static pose and swaps it instantly.
@@ -262,6 +278,31 @@ the art (a test fails when the file is stale). Moves are whole art pixels in
   swallow the `contextmenu` event (the guard keeps it to one sheet), and a
   sheet that fails to load says so in a toast instead of failing silently.
 
+### Looks (done, 2.1.3)
+
+Unlocked by pet level, picked on the pet sheet (*Looks*), stored as
+`ui_prefs.pet_skin` (`petSkins.ts`, `storage.PET_SKINS`):
+
+| Look | Level | Familiar | Wizard |
+|---|---|---|---|
+| Classic | 1 | the original | the original |
+| Cosmic | 5 (80 h) | sunset wings in flight | sunset robe, tired |
+| Neon | 10 (270 h) | highlighter bazooka, awake | highlighter bazooka, awake |
+| Gilded | 20 (≈ 828 h) | sleeps in gold | gold awake, tired and asleep |
+| Legend | 25 (≈ 1176 h) | sleeps as a golden dragon | gold with a gold bazooka, awake; gilded tired and asleep |
+
+Each look redraws only some poses; the rest stay classic. Derive, don't
+count: only the choice is stored, and the look drawn is the choice once its
+level is reached, else classic (`activeSkin`), so deleting entries below a
+level shows classic again until it is reached again. The last level drawn
+is remembered (localStorage `weleho.petLevel`), so while the stats are still
+loading on start a locked look never flashes. Reaching a look's level shows a
+toast with *Wear it* (`newlyUnlockedSkins`; the first level seen after a start
+is never news). It counts saved hours only, so the toast comes once the shift
+is saved, never from a running or discarded one. Locked looks stay focusable
+in the picker (`aria-disabled`), greyed out with the level that unlocks them;
+Classic can always be picked, even while a locked choice is stored.
+
 ### Cosmetics (later)
 
 Aura colours as a `drop-shadow` glow around the sprite, unlocked by
@@ -277,6 +318,8 @@ In `ui_prefs`, like `lulz` (`storage.UI_PREF_DEFAULTS`, `_check_setting`,
 - `pet`: `"off" | "familiar" | "wizard"` (default `"off"`)
 - `pet_name`: string, trimmed, max 24 chars, `""` = default name
 - `pet_hint_seen`: bool (default false), the one-time offer was answered
+- `pet_skin`: `"classic" | "cosmic" | "neon" | "gilded" | "legend"` (default
+  `"classic"`), the chosen look
 - `pet_aura`: `"none" | "bronze" | "silver" | "gold" | "legendary"` (later)
 
 `ui_prefs` only knows booleans and `target_hours` today, so this adds a small
@@ -285,7 +328,7 @@ validated-string branch.
 ## Data model changes
 
 - One new optional top-level key in `data.json`: `achievements_seen`.
-- New `ui_prefs` keys: `pet`, `pet_name` (later `pet_aura`).
+- New `ui_prefs` keys: `pet`, `pet_name`, `pet_hint_seen`, `pet_skin` (later `pet_aura`).
 - No change to entries.
 
 ## Migration
@@ -326,7 +369,16 @@ of ids, earliest date wins.
   the idle sprites change.
 - `tests/test_pet_particles.py` — `petParticles.ts` matches the art, and the
   sleepy poses keep their z's.
-- `tests/test_storage.py` — `pet` / `pet_name` validation and defaults.
+- `frontend/tests/petSkins.test.ts` — the looks match `storage.PET_SKINS`,
+  unlock levels, which sprite each look and the bazooka draw, and every look
+  sprite's size, seam and particles against the art (the WebP header is read
+  directly), overhangs on whole art pixels.
+- `frontend/tests/petUi.test.ts` also covers the looks picker (locked, wear),
+  the unlock toast, a locked choice drawn classic, and the bazooka (chance,
+  one minute, awake only, put away when a shift starts).
+- `tests/test_storage.py` — `pet` / `pet_name` / `pet_skin` validation and defaults.
+- In the browser mock, `?pet=wizard&petxp=1200&skin=neon` starts with that
+  pet, 1200 extra lifetime hours and that look.
 
 ## Implementation order
 
@@ -337,4 +389,5 @@ of ids, earliest date wins.
 5. ~~Pet logic as a pure module (`petLogic.ts`: energy, level, rank, pose) with tests.~~ — done
 6. ~~`pet` / `pet_name` prefs, Settings control.~~ — done
 7. ~~Pet companion on the Timer card (poses, loops, reactions, petting) and the pet sheet.~~ — done
-8. Cosmetics (auras) unlocked by achievements.
+8. ~~Looks unlocked by pet level, and the after-shift bazooka.~~ — done (2.1.3)
+9. Cosmetics (auras) unlocked by achievements.

@@ -745,7 +745,7 @@ def test_get_settings_defaults(env):
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                              "liquid_glass": False, "target_hours": 8.0, "pet": "off",
-                             "pet_name": "", "pet_hint_seen": False}
+                             "pet_name": "", "pet_hint_seen": False, "pet_skin": "classic"}
 
 
 def test_save_settings(env):
@@ -842,6 +842,15 @@ def test_save_ui_prefs_pet(env):
         assert r["status"] == "saved" and r["settings"]["ui_prefs"]["pet_name"] == good
     assert ctrl.save_ui_prefs({"pet_name": "x" * 24})["status"] == "saved"
     assert storage.get_ui_prefs()["pet"] == "wizard"
+
+
+def test_save_ui_prefs_pet_skin(env):
+    ctrl, _ = env
+    r = ctrl.save_ui_prefs({"pet_skin": "neon"})
+    assert r["status"] == "saved" and r["settings"]["ui_prefs"]["pet_skin"] == "neon"
+    r = ctrl.save_ui_prefs({"pet_skin": "plaid"})
+    assert r["status"] == "invalid" and r["field"] == "ui_prefs" and "pet_skin" in r["message"]
+    assert storage.get_ui_prefs()["pet_skin"] == "neon"
 
 
 def test_add_job_shift(env):

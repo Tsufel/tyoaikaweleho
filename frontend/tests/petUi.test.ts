@@ -16,7 +16,18 @@ const { DEFAULT_SETTINGS, applySettings, settings } = await import('../src/lib/s
 const { petStats } = await import('../src/lib/stores/pet');
 const { dialogs } = await import('../src/lib/stores/confirm');
 const { IDLE_TIMER, setTimer } = await import('../src/lib/stores/timer');
-const { commitPetName, petFlyby, petSpot, petView, PET_MIN_W } = await import('../src/views/pet/petState');
+const {
+  BAZOOKA_MS,
+  commitPetName,
+  newlyUnlockedSkins,
+  petFlyby,
+  petSpot,
+  petView,
+  PET_MIN_W,
+  putAwayBazooka,
+  resetSkinUnlocks,
+  rollBazooka,
+} = await import('../src/views/pet/petState');
 const { FRIDAY_LINES, TIRED_LINES } = await import('../src/views/pet/petLogic');
 const { burst, savedEntry } = await import('../src/views/timer/timerActions');
 const PetCompanion = (await import('../src/views/pet/PetCompanion.svelte')).default;
@@ -43,6 +54,9 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  putAwayBazooka();
+  resetSkinUnlocks();
+  clearToasts();
   for (const d of get(dialogs)) if (d.type === 'sheet') d.resolve(undefined);
   document.body.innerHTML = '';
 });
@@ -270,6 +284,44 @@ describe('PetSheet', () => {
     expect(onclose).toHaveBeenCalled();
     await vi.waitFor(() => expect(get(route)).toBe('settings'));
   });
+
+  const look = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) });
+
+  it('shows the looks, locked ones with the level that unlocks them', async () => {
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() => expect(look('Classic')).toBeTruthy());
+    expect(look('Classic').getAttribute('aria-pressed')).toBe('true');
+    // locked looks stay focusable, so keyboard users can read what they are
+    expect(look('Cosmic').getAttribute('aria-disabled')).toBe('true');
+    expect(look('Cosmic').textContent!.replace(/\s+/g, ' ').trim()).toBe('Cosmic Unlocks at Level 5');
+    await fireEvent.click(look('Cosmic'));
+    expect(fakeApi.save_ui_prefs).not.toHaveBeenCalled();
+    // the after-shift bazooka is a surprise, not a look
+    expect(screen.queryByRole('button', { name: /Bazooka/ })).toBeNull();
+  });
+
+  it('wears an unlocked look', async () => {
+    // Lv 12: classic, cosmic and neon open
+    fakeApi.get_pet_stats.mockResolvedValue({ ok: true, lifetime_minutes: 300 * 60, days: {} });
+    petStats.set({ lifetime_minutes: 300 * 60, days: {} });
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() => expect(look('Neon').getAttribute('aria-disabled')).toBe('false'));
+    expect(look('Gilded').getAttribute('aria-disabled')).toBe('true');
+    await fireEvent.click(look('Neon'));
+    expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet_skin: 'neon' });
+    await vi.waitFor(() => expect(look('Neon').getAttribute('aria-pressed')).toBe('true'));
+    expect(look('Classic').getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelector('.hero img')!.getAttribute('src')).toMatch(/familiar_(idle|sleep)/);
+  });
+
+  it('picking Classic saves it even while a locked choice already draws classic', async () => {
+    // Neon chosen, then entries deleted: level 2, drawn classic
+    useSettings({ pet: 'familiar', pet_skin: 'neon' });
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() => expect(look('Classic').getAttribute('aria-pressed')).toBe('true'));
+    await fireEvent.click(look('Classic'));
+    expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet_skin: 'classic' });
+  });
 });
 
 describe('petView', () => {
@@ -291,6 +343,140 @@ describe('petView', () => {
     // discarded: a re-read with the old numbers drops it
     petStats.set({ ...before });
     expect(get(petView).level!.hours).toBe(10);
+  });
+});
+
+describe('looks', () => {
+  it('draws a chosen look as classic until its level is reached', () => {
+    useSettings({ pet: 'wizard', pet_skin: 'gilded' });
+    petStats.set({ lifetime_minutes: 600, days: {} });
+    expect(get(petView).skin).toBe('classic');
+    petStats.set({ lifetime_minutes: 900 * 60, days: {} });
+    expect(get(petView).skin).toBe('gilded');
+    // still loading: the last level known decides
+    petStats.set(null);
+    expect(get(petView).skin).toBe('gilded');
+    petStats.set({ lifetime_minutes: 600, days: {} });
+    expect(get(petView).skin).toBe('classic');
+    petStats.set(null);
+    expect(get(petView).skin).toBe('classic');
+  });
+
+  it('remembers the level for the next start, so a locked look never flashes', () => {
+    useSettings({ pet: 'wizard', pet_skin: 'gilded' });
+    petStats.set({ lifetime_minutes: 600, days: {} });
+    expect(get(petView).skin).toBe('classic');
+    expect(localStorage.getItem('weleho.petLevel')).toBe('2');
+    // a first run (nothing remembered) keeps the choice while loading
+    resetSkinUnlocks();
+    petStats.set(null);
+    expect(get(petView).skin).toBe('gilded');
+  });
+
+  it('reports a looks unlock once, when the level climbs past one', () => {
+    expect(newlyUnlockedSkins(null)).toEqual([]);
+    // the first level seen (an app start) is never news
+    expect(newlyUnlockedSkins(4)).toEqual([]);
+    expect(newlyUnlockedSkins(4)).toEqual([]);
+    expect(newlyUnlockedSkins(5).map((s) => s.id)).toEqual(['cosmic']);
+    expect(newlyUnlockedSkins(5)).toEqual([]);
+    // dropping (entries deleted) and climbing back isn't news again
+    expect(newlyUnlockedSkins(3)).toEqual([]);
+    expect(newlyUnlockedSkins(5)).toEqual([]);
+    expect(newlyUnlockedSkins(21).map((s) => s.id)).toEqual(['neon', 'gilded']);
+  });
+
+  it('the companion offers to wear a look its level just unlocked', async () => {
+    render(PetCompanion, {});
+    await tick();
+    petStats.set({ lifetime_minutes: 80 * 60, days: {} });
+    await tick();
+    const t = get(toasts).find((x) => x.message.includes('Cosmic'));
+    expect(t?.message).toBe('Tähti unlocked the Cosmic look at level 5');
+    expect(t?.label).toBe('Wear it');
+    await t!.action!();
+    expect(fakeApi.save_ui_prefs).toHaveBeenCalledWith({ pet_skin: 'cosmic' });
+  });
+
+  it('a running shift never announces a look, only saved hours do', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 14, 0), toFake: ['Date'] });
+    try {
+      petStats.set({ lifetime_minutes: 79 * 60, days: {} });
+      render(PetCompanion, {});
+      await tick();
+      // two hours into a shift: level 5 on the sheet, but the shift may be discarded
+      setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 2 * 3600_000 });
+      await tick();
+      expect(get(petView).level?.level).toBe(5);
+      expect(get(toasts).some((x) => x.message.includes('Cosmic'))).toBe(false);
+      // saved: now it counts
+      setTimer(IDLE_TIMER);
+      petStats.set({ lifetime_minutes: 81 * 60, days: {} });
+      await tick();
+      expect(get(toasts).some((x) => x.message.includes('Cosmic'))).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      setTimer(IDLE_TIMER);
+    }
+  });
+});
+
+describe('after-shift bazooka', () => {
+  // a Wednesday afternoon with a shift logged today: awake
+  const NOON = new Date(2026, 9, 28, 14, 0);
+  const awake = { lifetime_minutes: 600, days: { '2026-10-28': 480 } };
+  beforeEach(() => {
+    vi.useFakeTimers({ now: NOON, toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    petStats.set(awake);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    setTimer(IDLE_TIMER);
+  });
+
+  it('comes out now and then, for a minute', async () => {
+    expect(rollBazooka(0.9)).toBe(false);
+    expect(get(petView).bazooka).toBe(false);
+    expect(rollBazooka(0.1)).toBe(true);
+    expect(get(petView)).toMatchObject({ pose: 'idle', bazooka: true });
+    await vi.advanceTimersByTimeAsync(BAZOOKA_MS - 1000);
+    expect(get(petView).bazooka).toBe(true);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(get(petView).bazooka).toBe(false);
+  });
+
+  it('is only held while awake', () => {
+    rollBazooka(0);
+    setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 60_000 });
+    expect(get(petView)).toMatchObject({ pose: 'fly', bazooka: false });
+  });
+
+  it('a saved shift may bring it out on the companion, and starting one puts it away', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    render(PetCompanion, {});
+    await tick();
+    const body = screen.getByRole('button', { hidden: true });
+    expect(body.getAttribute('aria-label')).not.toContain('bazooka');
+    burst.update((n) => n + 1);
+    await tick();
+    expect(body.getAttribute('aria-label')).toMatch(/^Tähti, awake, holding a bazooka, energy/);
+    expect(body.querySelector('img')!.getAttribute('src')).toContain('familiar_idle_bazooka');
+
+    setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 60_000 });
+    await tick();
+    setTimer(IDLE_TIMER);
+    await tick();
+    expect(body.getAttribute('aria-label')).not.toContain('bazooka');
+  });
+
+  it('stays put away most of the time', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    render(PetCompanion, {});
+    await tick();
+    burst.update((n) => n + 1);
+    await tick();
+    expect(get(petView).bazooka).toBe(false);
   });
 });
 

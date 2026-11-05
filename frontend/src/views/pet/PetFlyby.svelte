@@ -12,7 +12,7 @@
   import { settings } from '../../lib/stores/settings';
   import { burst, savedEntry } from '../timer/timerActions';
   import { FRIDAY_LINES, fridayShift, pickLine } from './petLogic';
-  import { SPRITE_SIZE, petFlyby } from './petState';
+  import { SPRITE_SIZE, petFlyby, petView } from './petState';
   import PetBubble from './PetBubble.svelte';
   import PetSprite from './PetSprite.svelte';
 
@@ -51,7 +51,7 @@
     <div class="flyby" class:full aria-hidden="true">
       <div class="rider" style:width="{SPRITE_SIZE[kind].w}px">
         <span class="say"><PetBubble text={$petFlyby.line} pop={!full} /></span>
-        <PetSprite {kind} pose="fly" animate={full} />
+        <PetSprite {kind} pose="fly" skin={$petView.skin} animate={full} />
       </div>
     </div>
   {/key}

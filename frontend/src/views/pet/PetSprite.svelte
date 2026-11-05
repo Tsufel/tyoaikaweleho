@@ -4,20 +4,28 @@
   // hovers while flying; the sparkles twinkle and the z's float up. Moves go
   // in whole art pixels, in steps, like a frame-by-frame sprite. Shared by the
   // Timer companion and the pet sheet. Loops only run with full motion and
-  // pause with the app (.fx-anim); otherwise it's the plain picture.
+  // pause with the app (.fx-anim); otherwise it's the plain picture. A skin
+  // swaps in its own art for the poses it redraws (petSkins.ts), and the
+  // after-shift bazooka replaces the awake pose while it's out.
   import type { PetPose } from './petLogic';
-  import { SPRITE_SIZE, spriteUrl, type PetView } from './petState';
+  import { bazookaSprite, spriteName, type PetSkin } from './petSkins';
+  import { SPRITE_SIZE, spriteFrame, spriteUrl, type PetView } from './petState';
   import { spriteLayers } from './petSpriteLayers';
 
   let {
     kind,
     pose,
+    skin = 'classic',
+    bazooka = false,
     animate,
     scale = 1,
     smooth = false,
   }: {
     kind: PetView['kind'];
     pose: PetPose;
+    skin?: PetSkin;
+    /** Holding the after-shift bazooka (only drawn in the awake pose). */
+    bazooka?: boolean;
     animate: boolean;
     scale?: number;
     /** Drawn below 1×: blend pixels instead of dropping some. */
@@ -25,8 +33,11 @@
   } = $props();
 
   const size = $derived(SPRITE_SIZE[kind]);
-  const src = $derived(spriteUrl(kind, pose));
-  const parts = $derived(animate ? spriteLayers(kind, pose, size) : null);
+  const name = $derived(bazooka && pose === 'idle' ? bazookaSprite(kind, skin) : spriteName(kind, pose, skin));
+  const src = $derived(spriteUrl(name));
+  // a sprite wider than the box (a long bazooka) overhangs it
+  const frame = $derived(spriteFrame(kind, name));
+  const parts = $derived(animate ? spriteLayers(name, frame) : null);
 </script>
 
 <!-- --px / --pxx: one art pixel (2 sprite px) as a share of the sprite, which
@@ -35,20 +46,22 @@
   class="sprite fx-anim pose-{pose}"
   class:loop={!!parts}
   class:smooth
-  style="--w: {size.w * scale}px; --ar: {size.w} / {size.h}; --px: calc(200% / {size.h}); --pxx: calc(200% / {size.w})"
+  style="--w: {size.w * scale}px; --ar: {size.w} / {size.h}; --px: calc(200% / {size.h}); --pxx: calc(200% / {frame.w})"
   aria-hidden="true"
 >
   <span class="shadow"></span>
-  {#if parts}
-    {#each parts.layers as layer (layer.part)}
-      <img class={layer.part} {src} alt="" draggable="false" style:clip-path={layer.clip} />
-    {/each}
-    {#each parts.bits as bit, i (i)}
-      <img class={bit.kind} {src} alt="" draggable="false" style:clip-path={bit.clip} style:--phase={bit.phase} />
-    {/each}
-  {:else}
-    <img {src} alt="" draggable="false" />
-  {/if}
+  <span class="art" style:left="{(frame.dx / size.w) * 100}%" style:width="{(frame.w / size.w) * 100}%">
+    {#if parts}
+      {#each parts.layers as layer (layer.part)}
+        <img class={layer.part} {src} alt="" draggable="false" style:clip-path={layer.clip} />
+      {/each}
+      {#each parts.bits as bit, i (i)}
+        <img class={bit.kind} {src} alt="" draggable="false" style:clip-path={bit.clip} style:--phase={bit.phase} />
+      {/each}
+    {:else}
+      <img {src} alt="" draggable="false" />
+    {/if}
+  </span>
 </span>
 
 <style>
@@ -58,6 +71,11 @@
     width: 100%;
     max-width: var(--w);
     aspect-ratio: var(--ar);
+  }
+  .art {
+    position: absolute;
+    top: 0;
+    bottom: 0;
   }
   img {
     position: absolute;
