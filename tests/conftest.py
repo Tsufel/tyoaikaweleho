@@ -21,6 +21,7 @@ def tmp_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(storage, "SHIFTS_FILE",   str(tmp_path / "shifts.txt"))
     monkeypatch.setattr(storage, "_APPDATA_FILE", str(tmp_path / "appdata.json"))
     monkeypatch.setattr(storage, "ERROR_LOG",     str(tmp_path / "error.log"))
+    monkeypatch.setattr(storage, "last_recovery", None)
     return tmp_path
 
 

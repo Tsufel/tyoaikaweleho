@@ -81,12 +81,18 @@ class WorkTimer:
     # ── Session persistence ──────────────────────────────────────
 
     def _save_session(self):
+        # temp file + replace: a crash mid-write never leaves a half-written
+        # session.json (which would lose the running shift)
         os.makedirs(_DATA_DIR, exist_ok=True)
-        with open(_SESSION_FILE, "w", encoding="utf-8") as f:
+        tmp = _SESSION_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump({
                 "job_shift": self._job_shift,
                 "start": self._start_dt.isoformat(),
             }, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, _SESSION_FILE)
 
 
 def load_saved_session() -> dict | None:
@@ -100,6 +106,22 @@ def load_saved_session() -> dict | None:
         return data
     except Exception:
         return None
+
+
+def mark_session_saved(entry_id: str):
+    """Record in session.json the id of the entry the shift was saved as,
+    just before saving it. If session.json then can't be removed, the next
+    launch sees the entry exists and doesn't offer the shift again."""
+    data = load_saved_session()
+    if data is None:
+        return
+    data["saved_entry_id"] = entry_id
+    tmp = _SESSION_FILE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, _SESSION_FILE)
 
 
 def clear_saved_session():

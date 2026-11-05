@@ -69,21 +69,98 @@ def _migrate_from_appdata():
         shutil.copy2(_APPDATA_FILE, DATA_FILE)
 
 
+class DataFileCorrupt(ValueError):
+    """data.json can't be read and no backup could stand in for it."""
+
+
+# Set when _load_raw had to stand in a backup for a damaged data.json:
+# {"source": <file used>, "damaged_copy": <where the damaged file was kept>}.
+# Read once by the controller's bootstrap to tell the user.
+last_recovery: dict | None = None
+
+
+def _parse_data(raw: bytes) -> dict | None:
+    """data.json's content as a dict, or None if it isn't a JSON object."""
+    try:
+        data = json.loads(raw.decode("utf-8-sig"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _read_data_file(path: str) -> dict | None:
+    try:
+        with open(path, "rb") as f:
+            return _parse_data(f.read())
+    except OSError:
+        return None
+
+
+def _backup_candidates() -> list[str]:
+    """Where a damaged data.json can be restored from, best first: the copy
+    from one save ago, then the daily snapshots, newest first."""
+    out = [DATA_FILE + ".bak"]
+    backup_dir = os.path.join(os.path.dirname(DATA_FILE), "backups")
+    try:
+        snaps = sorted((f for f in os.listdir(backup_dir)
+                        if f.startswith("data-") and f.endswith(".json")), reverse=True)
+    except OSError:
+        snaps = []
+    out += [os.path.join(backup_dir, f) for f in snaps]
+    return out
+
+
+def _keep_damaged(raw: bytes) -> str:
+    """Keep the damaged bytes next to data.json (one copy per distinct
+    content, so repeated reads don't pile up copies). Returns its path, or
+    "" if it couldn't be written."""
+    import hashlib
+    path = os.path.join(os.path.dirname(DATA_FILE),
+                        f"data.damaged-{hashlib.sha1(raw).hexdigest()[:10]}.json")
+    try:
+        if not os.path.exists(path):
+            with open(path, "wb") as f:
+                f.write(raw)
+        return path
+    except OSError:
+        return ""
+
+
+def _recover(raw: bytes) -> dict:
+    """data.json is damaged (a crash mid-write, a disk error): keep a copy,
+    stand in the newest backup that reads, and write it back so the next
+    save doesn't back up the damaged file over a good one."""
+    global last_recovery
+    damaged = _keep_damaged(raw)
+    for path in _backup_candidates():
+        data = _read_data_file(path)
+        if data is None:
+            continue
+        append_error_log(f"data.json was damaged; restored from {path}"
+                         f" (damaged copy: {damaged or 'could not be kept'})")
+        try:
+            _save_raw(data)
+        except OSError as exc:
+            append_error_log(f"could not write the restored data.json: {exc}")
+        last_recovery = {"source": path, "damaged_copy": damaged}
+        return data
+    append_error_log(f"data.json is damaged and no backup could be read"
+                     f" (damaged copy: {damaged or 'could not be kept'})")
+    raise DataFileCorrupt(
+        "Your hours file (data.json) is damaged and no backup of it could be "
+        "read.\n\n"
+        f"The damaged file was kept as {damaged or DATA_FILE}. "
+        f"Backups are in {os.path.join(DATA_DIR, 'backups')}.")
+
+
 def _load_raw() -> dict:
     _migrate_from_appdata()
     if not os.path.exists(DATA_FILE):
         return {"entries": [], "pay_rate": 20.0}
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        # data.json is corrupt (e.g. crash mid-write) — fall back to the
-        # last known-good backup instead of crashing and losing everything
-        backup = DATA_FILE + ".bak"
-        if os.path.exists(backup):
-            with open(backup, "r", encoding="utf-8") as f:
-                return json.load(f)
-        raise
+    with open(DATA_FILE, "rb") as f:   # a locked file raises OSError: not damage
+        raw = f.read()
+    data = _parse_data(raw)
+    return data if data is not None else _recover(raw)
 
 
 def _save_raw(data: dict):
@@ -96,7 +173,9 @@ def _save_raw(data: dict):
         json.dump(data, f, indent=2, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
-    if os.path.exists(DATA_FILE):
+    # only a file that reads is worth backing up: copying a damaged one
+    # would replace the last good .bak / snapshot with it
+    if os.path.exists(DATA_FILE) and _read_data_file(DATA_FILE) is not None:
         try:
             shutil.copy2(DATA_FILE, DATA_FILE + ".bak")
         except OSError:

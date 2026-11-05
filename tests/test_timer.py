@@ -142,3 +142,10 @@ def test_clear_saved_session(tmp_timer):
     assert load_saved_session() is not None
     clear_saved_session()
     assert load_saved_session() is None
+
+
+def test_session_write_is_atomic(tmp_timer):
+    t = WorkTimer()
+    t.start("Sales")
+    assert not (tmp_timer / "session.json.tmp").exists()
+    assert load_saved_session()["job_shift"] == "Sales"

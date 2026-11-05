@@ -136,6 +136,41 @@ class ShiftController:
         return data if isinstance(data, dict) else {}
 
     @staticmethod
+    def _mark_saved(entry_id: str):
+        try:
+            timer_module.mark_session_saved(entry_id)
+        except OSError as exc:
+            storage.append_error_log(f"could not mark session.json as saved: {exc}")
+
+    @staticmethod
+    def _already_saved(session: dict) -> bool:
+        """True when session.json names the entry it was saved as and that
+        entry exists (a matching date/time alone proves nothing: a second
+        shift may start at the same minute)."""
+        sid = session.get("saved_entry_id")
+        if not isinstance(sid, str) or not sid:
+            return False
+        try:
+            entries = storage.load_all_entries()
+        except (OSError, ValueError):
+            return False
+        return any(e.id == sid for e in entries)
+
+    @staticmethod
+    def _set_aside_session():
+        """session.json can't be understood: keep it under another name (it
+        may still tell the user when a lost shift began) instead of
+        deleting it."""
+        path = timer_module._SESSION_FILE
+        kept = os.path.join(os.path.dirname(path),
+                            f"session.bad-{datetime.now():%Y%m%d-%H%M%S}.json")
+        try:
+            os.replace(path, kept)
+            storage.append_error_log(f"session.json could not be read; kept as {kept}")
+        except OSError as exc:
+            storage.append_error_log(f"session.json could not be read or set aside: {exc}")
+
+    @staticmethod
     def _clear_session():
         try:
             timer_module.clear_saved_session()
@@ -180,6 +215,13 @@ class ShiftController:
         newer.sort(key=_ver_tuple, reverse=True)
         return [{"version": v, "items": list(cl.CHANGELOG[v])} for v in newer]
 
+    @staticmethod
+    def _take_data_recovery() -> dict | None:
+        """The note left by storage when a damaged data.json was replaced
+        by a backup, shown to the user once."""
+        note, storage.last_recovery = storage.last_recovery, None
+        return note
+
     def bootstrap(self, version: str, frozen: bool = False, dev: bool = False) -> dict:
         with self._lock:
             changelog = self.changelog(version)
@@ -191,6 +233,7 @@ class ShiftController:
                 "settings": self._settings(), "shifts": storage.get_job_shift_list(),
                 "timer": self.timer_state(), "dlc": self.dlc_status(),
                 "changelog": changelog, "recovery": recovery,
+                "data_recovery": self._take_data_recovery(),
                 "month": {"year": now.year, "month": now.month},
                 "error_log": storage.ERROR_LOG, "data_dir": storage.DATA_DIR,
                 "shifts_file": storage.SHIFTS_FILE,
@@ -374,6 +417,7 @@ class ShiftController:
             job_shift=job_shift, time_in=start.strftime("%H:%M"),
             time_out=time_out or self._now().strftime("%H:%M"))
         t.stop()
+        self._mark_saved(entry.id)
         try:
             storage.save_entry(entry)
         except OSError as exc:
@@ -429,12 +473,19 @@ class ShiftController:
                 return None
             start = _session_start(session)
             if start is None:
+                self._set_aside_session()
+                return None
+            job_shift = session.get("job_shift")
+            if self._already_saved(session):
+                # saved by STOP or a recovery save whose session.json
+                # couldn't be removed: offering it again would duplicate it
+                storage.append_error_log(
+                    f"session.json from {_iso(start)} was already saved; removed it")
                 self._clear_session()
                 return None
             now = self._now()
             over_limit = now - start >= RECOVERY_LIMIT
             suggested = start + RECOVERY_LIMIT if over_limit else now
-            job_shift = session.get("job_shift")
             return {
                 "start_iso": _iso(start), "start_epoch_ms": _epoch_ms(start),
                 "job_shift": job_shift if isinstance(job_shift, str) else "?",
@@ -466,6 +517,7 @@ class ShiftController:
                     id=storage.new_entry_id(), date=start.strftime("%Y-%m-%d"),
                     job_shift=rec["job_shift"], time_in=start.strftime("%H:%M"),
                     time_out=t_out)
+                self._mark_saved(entry.id)
                 try:
                     storage.save_entry(entry)
                 except OSError as exc:

@@ -18,14 +18,29 @@ class UpdateError(Exception):
     """Raised when an update download fails validation."""
 
 
+_TEMP_PREFIX = "weleho-update-"
+
+
 def cleanup_old_exe():
-    """Remove the .old exe left behind by a previous update."""
+    """Remove the .old exe left behind by a previous update, and installers
+    downloaded by earlier updates (one still running is skipped)."""
     old = sys.executable + ".old"
     try:
         if os.path.exists(old):
             os.remove(old)
     except OSError:
         pass
+    try:
+        tmp_dir = tempfile.gettempdir()
+        names = os.listdir(tmp_dir)
+    except OSError:
+        return
+    for name in names:
+        if name.startswith(_TEMP_PREFIX) and name.endswith(".exe"):
+            try:
+                os.remove(os.path.join(tmp_dir, name))
+            except OSError:
+                pass
 
 
 def _parse_release(data: dict) -> tuple[str, str, str | None] | None:
@@ -193,20 +208,25 @@ def apply_update(download_url: str, sha256_url: str | None = None):
 
     if not _is_safe_download_url(download_url):
         raise UpdateError("Update download URL is not trusted — update aborted.")
+    # every release ships <installer>.exe.sha256; one without it can't be
+    # verified, so it is never run
+    if not sha256_url:
+        raise UpdateError(
+            "This release has no checksum file, so the installer can't be "
+            "verified — update aborted. Download it from the releases page instead.")
+    if not _is_safe_download_url(sha256_url):
+        raise UpdateError("Checksum URL is not trusted — update aborted.")
 
-    fd, tmp = tempfile.mkstemp(suffix=".exe")
+    fd, tmp = tempfile.mkstemp(prefix=_TEMP_PREFIX, suffix=".exe")
     os.close(fd)
     try:
         _download_to(download_url, tmp)
-        if sha256_url:
-            if not _is_safe_download_url(sha256_url):
-                raise UpdateError("Checksum URL is not trusted — update aborted.")
-            expected = _fetch_expected_sha256(sha256_url)
-            actual = _file_sha256(tmp)
-            if expected != actual:
-                raise UpdateError(
-                    "Installer checksum mismatch — the download may be "
-                    "corrupted or tampered with. Update aborted.")
+        expected = _fetch_expected_sha256(sha256_url)
+        actual = _file_sha256(tmp)
+        if expected != actual:
+            raise UpdateError(
+                "Installer checksum mismatch — the download may be "
+                "corrupted or tampered with. Update aborted.")
     except Exception:
         try:
             os.remove(tmp)

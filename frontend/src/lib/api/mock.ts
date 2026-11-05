@@ -520,6 +520,7 @@ export function createMockApi(): Api {
           dlc: { ...dlc },
           changelog,
           recovery: recovery(),
+          data_recovery: null,
           month: { year: new Date().getFullYear(), month: new Date().getMonth() + 1 },
           error_log: 'C:\\Users\\you\\AppData\\Roaming\\Tyoaikaweleho\\error.log (mock)',
           data_dir: 'C:\\Users\\you\\AppData\\Roaming\\Tyoaikaweleho (mock)',

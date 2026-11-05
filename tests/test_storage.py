@@ -201,10 +201,90 @@ def test_corrupt_data_file_recovers_from_backup(tmp_storage):
 
 
 def test_corrupt_data_file_without_backup_raises(tmp_storage):
-    import json
     (tmp_storage / "data.json").write_text("{ not valid json", encoding="utf-8")
-    with pytest.raises(json.JSONDecodeError):
+    with pytest.raises(storage.DataFileCorrupt) as err:
         storage.load_all_entries()
+    # the message names the kept copy so the user can find it
+    damaged = list(tmp_storage.glob("data.damaged-*.json"))
+    assert len(damaged) == 1
+    assert str(damaged[0]) in str(err.value)
+    assert damaged[0].read_text(encoding="utf-8") == "{ not valid json"
+
+
+def test_corrupt_data_file_keeps_damaged_copy_and_rewrites(tmp_storage):
+    e1 = _entry(date="2026-05-10")
+    storage.save_entry(e1)
+    storage.save_entry(_entry(date="2026-05-11"))   # .bak holds e1
+    (tmp_storage / "data.json").write_bytes(b"\x00\x00garbage")
+    assert [e.id for e in storage.load_all_entries()] == [e1.id]
+    # damaged bytes kept once, data.json rewritten from the backup
+    [damaged] = tmp_storage.glob("data.damaged-*.json")
+    assert damaged.read_bytes() == b"\x00\x00garbage"
+    import json
+    assert json.loads((tmp_storage / "data.json").read_text(encoding="utf-8"))["entries"][0]["id"] == e1.id
+    assert storage.last_recovery == {"source": str(tmp_storage / "data.json.bak"),
+                                     "damaged_copy": str(damaged)}
+    assert "restored from" in (tmp_storage / "error.log").read_text(encoding="utf-8")
+
+
+def test_corrupt_data_file_does_not_overwrite_good_backup(tmp_storage):
+    """The rewrite after recovery must not copy the damaged file over .bak."""
+    e1 = _entry(date="2026-05-10")
+    storage.save_entry(e1)
+    storage.save_entry(_entry(date="2026-05-11"))
+    (tmp_storage / "data.json").write_text("{ broken", encoding="utf-8")
+    storage.load_all_entries()
+    import json
+    bak = json.loads((tmp_storage / "data.json.bak").read_text(encoding="utf-8"))
+    assert bak["entries"][0]["id"] == e1.id
+
+
+def test_save_skips_backup_of_damaged_file(tmp_storage):
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-11"))
+    good_bak = (tmp_storage / "data.json.bak").read_bytes()
+    (tmp_storage / "data.json").write_text("[1, 2]", encoding="utf-8")   # not an object
+    storage._save_raw({"entries": [], "pay_rate": 20.0})
+    assert (tmp_storage / "data.json.bak").read_bytes() == good_bak
+
+
+def test_corrupt_data_and_bak_falls_back_to_snapshot(tmp_storage):
+    import json
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir()
+    older = {"entries": [], "pay_rate": 11.0}
+    newer = {"entries": [], "pay_rate": 12.0}
+    (snap_dir / "data-2026-05-01.json").write_text(json.dumps(older), encoding="utf-8")
+    (snap_dir / "data-2026-05-02.json").write_text(json.dumps(newer), encoding="utf-8")
+    (snap_dir / "data-2026-05-03.json").write_text("{ also broken", encoding="utf-8")
+    (tmp_storage / "data.json").write_text("{ broken", encoding="utf-8")
+    (tmp_storage / "data.json.bak").write_text("{ broken too", encoding="utf-8")
+    assert storage.get_pay_rate() == 12.0
+    assert storage.last_recovery["source"] == str(snap_dir / "data-2026-05-02.json")
+
+
+def test_locked_data_file_is_not_treated_as_damaged(tmp_storage, monkeypatch):
+    storage.save_entry(_entry())
+    import builtins
+    real_open = builtins.open
+
+    def locked(path, *a, **k):
+        if str(path) == storage.DATA_FILE:
+            raise PermissionError(13, "locked")
+        return real_open(path, *a, **k)
+
+    with monkeypatch.context() as m:
+        m.setattr(builtins, "open", locked)
+        with pytest.raises(PermissionError):
+            storage.load_all_entries()
+    assert not list(tmp_storage.glob("data.damaged-*.json"))
+    assert storage.last_recovery is None
+
+
+def test_data_file_with_bom_reads(tmp_storage):
+    (tmp_storage / "data.json").write_bytes(b'\xef\xbb\xbf{"entries": [], "pay_rate": 15.5}')
+    assert storage.get_pay_rate() == 15.5
+    assert storage.last_recovery is None
 
 
 # ── daily snapshots ─────────────────────────────────────────────────────────

@@ -433,6 +433,13 @@ export type OcrSaveResult = Result<{
 
 // ── Bootstrap ────────────────────────────────────────────────────
 
+export interface DataRecovery {
+  /** The backup file that now stands in for data.json. */
+  source: string;
+  /** Where the damaged data.json was kept ('' if it couldn't be). */
+  damaged_copy: string;
+}
+
 export interface Bootstrap {
   version: string;
   frozen: boolean;
@@ -446,6 +453,8 @@ export interface Bootstrap {
   /** Versions newer than last seen, newest first; null if none to show. */
   changelog: ChangelogBlock[] | null;
   recovery: Recovery | null;
+  /** Set once when a damaged data.json was replaced by a backup. */
+  data_recovery: DataRecovery | null;
   month: { year: number; month: number };
   error_log: string;
   data_dir: string;

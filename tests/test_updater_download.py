@@ -94,6 +94,45 @@ def test_apply_update_truncated_without_sha_never_launches(server):
     assert launched == [] and os.listdir(tmpdir) == []
 
 
+def test_apply_update_without_sha_never_launches_full_download(server):
+    """A release with no .sha256 asset can't be verified: refused outright."""
+    routes, launched, tmpdir = server
+    routes[DL + "Setup.exe"] = (200, PAYLOAD, None)
+    with pytest.raises(updater.UpdateError, match="checksum"):
+        updater.apply_update(URL, None)
+    assert launched == [] and os.listdir(tmpdir) == []
+
+
+def test_apply_update_untrusted_sha_url_refused(server):
+    routes, launched, tmpdir = server
+    routes[DL + "Setup.exe"] = (200, PAYLOAD, None)
+    with pytest.raises(updater.UpdateError, match="not trusted"):
+        updater.apply_update(URL, "https://example.com/Setup.exe.sha256")
+    assert launched == [] and os.listdir(tmpdir) == []
+
+
+def test_downloaded_installer_named_for_cleanup(server):
+    routes, launched, tmpdir = server
+    sha = hashlib.sha256(PAYLOAD).hexdigest()
+    routes[DL + "Setup.exe"] = (200, PAYLOAD, None)
+    routes[DL + "Setup.exe.sha256"] = (200, sha.encode(), None)
+    with pytest.raises(_Exited):
+        updater.apply_update(URL, SHA_URL)
+    [args] = launched
+    assert os.path.basename(args[0]).startswith("weleho-update-")
+    updater.cleanup_old_exe()
+    assert os.listdir(tmpdir) == []
+
+
+def test_cleanup_leaves_other_temp_files(server):
+    _, _, tmpdir = server
+    (tmpdir / "weleho-update-abc.exe").write_bytes(b"x")
+    (tmpdir / "someone-else.exe").write_bytes(b"x")
+    (tmpdir / "weleho-update-notes.txt").write_bytes(b"x")
+    updater.cleanup_old_exe()
+    assert sorted(os.listdir(tmpdir)) == ["someone-else.exe", "weleho-update-notes.txt"]
+
+
 def test_apply_update_wrong_hash_leaves_nothing(server):
     routes, launched, tmpdir = server
     routes[DL + "Setup.exe"] = (200, PAYLOAD, None)

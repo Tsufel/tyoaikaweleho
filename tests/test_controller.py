@@ -379,12 +379,77 @@ def test_recovery_over_limit(env):
     assert rec["over_limit"] is True and rec["suggested_end"] == "12:00"
 
 
-def test_recovery_corrupt_file_removed(env, tmp_timer):
+def test_recovery_corrupt_file_set_aside(env, tmp_timer):
     ctrl, _ = env
     with open(tm._SESSION_FILE, "w") as f:
         f.write("{not json")
     assert ctrl.recovery() is None
     assert not os.path.exists(tm._SESSION_FILE)
+    [kept] = list(tmp_timer.glob("session.bad-*.json"))
+    assert kept.read_text() == "{not json"
+    assert "session.json could not be read" in open(storage.ERROR_LOG, encoding="utf-8").read()
+
+
+def test_recovery_skips_shift_already_saved(env, tmp_timer):
+    """STOP saved the shift but session.json couldn't be removed: the next
+    launch must not offer it again (that would save it twice)."""
+    ctrl, _ = env
+    start = T0 - timedelta(hours=3)
+    _crash(start, job="Support")
+    e = _add(date="2026-09-23", t_in="07:00", t_out="10:00", job="Support")
+    tm.mark_session_saved(e.id)
+    assert ctrl.recovery() is None
+    assert not os.path.exists(tm._SESSION_FILE)
+
+
+def test_recovery_offers_shift_matching_an_unrelated_entry(env):
+    """An entry at the same date, minute and job (an earlier short shift,
+    an import) is not proof this shift was saved: it is still offered."""
+    ctrl, _ = env
+    _crash(T0 - timedelta(hours=3), job="Support")
+    _add(date="2026-09-23", t_in="07:00", t_out="07:10", job="Support")
+    assert ctrl.recovery()["job_shift"] == "Support"
+
+
+def test_recovery_offers_shift_when_marked_entry_missing(env):
+    """Marked just before a save that then failed: still offered."""
+    ctrl, _ = env
+    _crash(T0 - timedelta(hours=3), job="Support")
+    tm.mark_session_saved("never-saved")
+    assert ctrl.recovery()["job_shift"] == "Support"
+
+
+def test_recovery_save_then_locked_session_not_offered_again(env, monkeypatch):
+    ctrl, _ = env
+    _crash(T0 - timedelta(hours=3), job="Support")
+    with monkeypatch.context() as m:
+        m.setattr(tm, "clear_saved_session", _fail)
+        assert ctrl.recovery_resolve("save", "10:00")["status"] == "saved"
+    assert os.path.exists(tm._SESSION_FILE)
+    assert ctrl.recovery() is None
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_stop_save_failure_keeps_shift_recoverable(env, monkeypatch):
+    ctrl, clock = env
+    _started(ctrl, clock, job="Sales")
+    clock.now = T0 + timedelta(hours=2)
+    with monkeypatch.context() as m:
+        m.setattr(storage, "save_entry", _fail)
+        assert ctrl.timer_stop("button")["error"]["code"] == "save_failed"
+    assert "saved_entry_id" not in tm.load_saved_session()
+
+
+def test_stop_then_locked_session_not_saved_twice(env, monkeypatch):
+    ctrl, clock = env
+    _started(ctrl, clock, job="Sales")
+    clock.now = T0 + timedelta(hours=2)
+    with monkeypatch.context() as m:
+        m.setattr(tm, "clear_saved_session", _fail)
+        assert ctrl.timer_stop("button")["status"] == "saved"
+    assert os.path.exists(tm._SESSION_FILE)
+    assert ctrl.recovery() is None
+    assert len(storage.load_all_entries()) == 1
 
 
 def test_recovery_unreadable_file_kept(env, monkeypatch):
@@ -1114,6 +1179,24 @@ def test_bootstrap(env, monkeypatch):
     assert d["timer"]["recovery_pending"] is True
     assert d["month"] == {"year": 2026, "month": 9}
     assert d["shifts"] and d["settings"]["pay_rate"] == 20.0
+
+
+def test_bootstrap_reports_restored_data_once(env, tmp_storage, monkeypatch):
+    ctrl, _ = env
+    _dlc_state(monkeypatch, "missing", None)
+    _add(date="2026-09-20")
+    _add(date="2026-09-21")
+    (tmp_storage / "data.json").write_text("{ broken", encoding="utf-8")
+    d = ctrl.bootstrap("2.0.0")["data"]
+    assert d["data_recovery"]["source"].endswith("data.json.bak")
+    assert "data.damaged-" in d["data_recovery"]["damaged_copy"]
+    assert ctrl.bootstrap("2.0.0")["data"]["data_recovery"] is None
+
+
+def test_bootstrap_without_damage_has_no_data_recovery(env, monkeypatch):
+    ctrl, _ = env
+    _dlc_state(monkeypatch, "missing", None)
+    assert ctrl.bootstrap("2.0.0")["data"]["data_recovery"] is None
 
 
 def test_ensure_shifts_file(env, tmp_storage):

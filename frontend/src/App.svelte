@@ -16,7 +16,7 @@
   import { liquidGlass } from './lib/glass/liquidGlass';
   import { applySettings, dlc, settings } from './lib/stores/settings';
   import { setTimer, timer } from './lib/stores/timer';
-  import { runUndo } from './lib/stores/toasts';
+  import { runUndo, toast } from './lib/stores/toasts';
   import { startTheme } from './lib/theme/theme';
   import { MONTHS, monthLabel } from './lib/time';
   import { tooltip } from './lib/ui/actions';
@@ -103,6 +103,13 @@
     changelog = b.changelog?.length ? b.changelog : null;
     // §6.3: offered after the changelog; START stays blocked until resolved.
     pendingRecovery.set(b.recovery);
+    if (b.data_recovery) {
+      toast(
+        `Your hours file was damaged and has been restored from a backup (${b.data_recovery.source.split(/[\\/]/).pop()}). ` +
+          'Check your latest shifts.',
+        { tone: 'warning', ms: 0 },
+      );
+    }
     phase = 'ready';
   }
 

@@ -2,9 +2,10 @@ name: Tests
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]   # every branch (tags excluded): releases are cut from feature branches too
   pull_request:
     branches: [main]
+  workflow_call:       # release.yml runs these before building anything
 
 jobs:
   test:

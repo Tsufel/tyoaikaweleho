@@ -12,8 +12,13 @@ permissions:
   contents: write   # create the release and upload assets
 
 jobs:
+  tests:
+    name: Tests
+    uses: ./.github/workflows/tests.yml
+
   build-and-release:
     name: Build installer & publish release
+    needs: [tests]            # nothing is built or published unless every test passes
     runs-on: windows-latest   # Inno Setup 6 is preinstalled on this image
 
     steps:
@@ -33,13 +38,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
-      - name: Verify tag matches version.py
+      - name: Verify tag matches version.py and frontend/package.json
         shell: pwsh
         run: |
           $tagVer = "${{ github.ref_name }}".TrimStart("v")
           $pyVer = (python -c "from version import __version__; print(__version__)").Trim()
           if ($tagVer -ne $pyVer) {
             Write-Error "Tag v$tagVer does not match version.py ($pyVer) - bump version.py before tagging."
+          }
+          $feVer = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
+          if ($feVer -ne $pyVer) {
+            Write-Error "frontend/package.json ($feVer) does not match version.py ($pyVer) - bump both."
           }
           "VERSION=$pyVer" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 

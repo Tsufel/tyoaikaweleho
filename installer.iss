@@ -10,6 +10,9 @@
 #define AppPublisher "Tsufel"
 
 [Setup]
+; Pinned to the value Inno Setup used implicitly (AppName) so upgrades keep
+; finding the existing install. Never change it.
+AppId={#AppName}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -22,9 +25,9 @@ OutputDir=Output
 OutputBaseFilename=TyoaikawelehoSetup_{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
-; No admin rights needed — installs to %LOCALAPPDATA%
+; Per-user only: the app keeps its data next to the exe, so an all-users
+; install under Program Files couldn't save anything. No admin rights needed.
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesInstallIn64BitMode=x64compatible
 ; Gracefully close any running instance before updating
 CloseApplications=yes
@@ -135,9 +138,16 @@ begin
       begin
         DeleteFile(ExpandConstant('{app}\data.json'));
         DeleteFile(ExpandConstant('{app}\data.json.bak'));
+        DeleteFile(ExpandConstant('{app}\data.json.tmp'));
+        DelTree(ExpandConstant('{app}\data.damaged-*.json'), False, True, False);
         DelTree(ExpandConstant('{app}\backups'), True, True, True);
         DeleteFile(ExpandConstant('{app}\shifts.txt'));
         DeleteFile(ExpandConstant('{app}\session.json'));
+        // the running-shift file lives in %APPDATA%, not next to the exe
+        DeleteFile(ExpandConstant('{userappdata}\Tyoaikaweleho\session.json'));
+        DeleteFile(ExpandConstant('{userappdata}\Tyoaikaweleho\session.json.tmp'));
+        DelTree(ExpandConstant('{userappdata}\Tyoaikaweleho\session.bad-*.json'), False, True, False);
+        RemoveDir(ExpandConstant('{userappdata}\Tyoaikaweleho'));
         DeleteFile(ExpandConstant('{app}\image_ocr.py'));
         DeleteFile(ExpandConstant('{app}\error.log'));
         // Remove the install directory itself if now empty

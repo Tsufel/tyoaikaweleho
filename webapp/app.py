@@ -86,7 +86,14 @@ class _Shell:
         self._smoke = smoke
         self._dark = dark
         self._hwnd = None
-        self._placement = None if smoke else storage.get_window_placement()
+        self._placement = None
+        if not smoke:
+            try:
+                self._placement = storage.get_window_placement()
+            except (OSError, ValueError) as exc:
+                # data.json unreadable: open at the default size; the UI
+                # reports the problem once it has loaded
+                storage.append_error_log(f"[app] window placement unreadable: {exc}")
         self._reveal_lock = threading.Lock()
         self._revealed = False
         self._close_guard = False
@@ -234,7 +241,11 @@ def run(dev_url: str | None = None, smoke: bool = False) -> int:
                 win32.message_box(msg, TITLE, win32.MB_ICONERROR)
             return 3
 
-    appearance = "System" if smoke else storage.get_appearance_mode()
+    try:
+        appearance = "System" if smoke else storage.get_appearance_mode()
+    except (OSError, ValueError):
+        # data.json unreadable: open anyway, the UI shows what went wrong
+        appearance = "System"
     dark = _is_dark(appearance)
     controller = ShiftController()
     bus = EventBus()
