@@ -1,12 +1,11 @@
 <script lang="ts">
-  import logo from '../assets/logo.webp';
   import wizard from '../assets/wizard.webp';
   import { motion } from '../lib/stores/motion';
 
-  /** Replaces the v1.3 splash: the wizard rises in a soft glow beside the
-   *  logo + wordmark, then the overlay
-   *  fades. The timeline starts once `play` is set (the native window is
-   *  shown); `ondone` runs once, at once under reduced motion. */
+  /** Replaces the v1.3 splash: the wizard rises in a soft glow above the
+   *  wordmark, then the overlay fades. The timeline starts once `play` is
+   *  set (the native window is shown); `ondone` runs once, at once under
+   *  reduced motion. */
   let { ondone, version = '', play = true }: { ondone: () => void; version?: string; play?: boolean } = $props();
 
   let leaving = $state(false);
@@ -37,14 +36,8 @@
     <span class="wiz-glow"></span>
     <span class="wiz-frame"><img src={wizard} alt="" width="512" height="512" /></span>
   </div>
-  <div class="brand">
-    <div class="mark">
-      <span class="halo"></span>
-      <img src={logo} alt="" width="96" height="96" />
-    </div>
-    <div class="word">Työaikaweleho</div>
-    {#if version}<div class="ver">v{version}</div>{/if}
-  </div>
+  <div class="word">Työaikaweleho</div>
+  {#if version}<div class="ver">v{version}</div>{/if}
 </div>
 
 <style>
@@ -53,10 +46,10 @@
     inset: 0;
     z-index: 400;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 20px 44px;
+    gap: 14px;
     padding: 24px;
     background: var(--bg);
     transition: opacity 380ms var(--ease-out);
@@ -68,23 +61,18 @@
     opacity: 0;
     pointer-events: none;
   }
-  .brand {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-  }
   .wizard {
     position: relative;
     display: grid;
     place-items: center;
+    margin-bottom: 10px;
     animation: rise-far 760ms 60ms var(--ease-out) both;
   }
   /* top of the splash art only (bubble + wizard), not its baked-in wordmark */
   .wiz-frame {
     position: relative;
     display: block;
-    width: min(240px, 38vw);
+    width: min(300px, 70vw);
     aspect-ratio: 1 / 0.68;
     overflow: hidden;
     border-radius: var(--radius-lg);
@@ -104,23 +92,6 @@
     filter: blur(8px);
     animation: glow 1100ms 120ms var(--ease-out) both;
   }
-  .mark {
-    position: relative;
-    display: grid;
-    place-items: center;
-    animation: pop 700ms var(--ease-spring) both;
-  }
-  .mark img {
-    position: relative;
-    border-radius: 24px;
-  }
-  .halo {
-    position: absolute;
-    inset: -40px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--accent-glow), transparent 65%);
-    animation: glow 1100ms var(--ease-out) both;
-  }
   .word {
     font-size: var(--fs-2xl);
     font-weight: 750;
@@ -136,16 +107,6 @@
     font-size: var(--fs-xs);
     color: var(--text-muted);
     animation: rise 600ms 300ms var(--ease-out) both;
-  }
-  @keyframes pop {
-    from {
-      opacity: 0;
-      transform: scale(0.7);
-    }
-    to {
-      opacity: 1;
-      transform: none;
-    }
   }
   @keyframes glow {
     from {
