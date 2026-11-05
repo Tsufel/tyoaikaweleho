@@ -2,7 +2,11 @@
 
 > Status: **achievements built** (engine, API, persistence, Stats tile, sheet,
 > unlock card). **Pet built** (logic, prefs, Settings control, Timer companion,
-> pet sheet); auras (step 8) not yet.
+> pet sheet), and pet looks unlocked by level with the after-shift bazooka;
+> auras (step 8) not yet.
+> **Coming in 2.2** ([V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md)):
+> hours count **net** of breaks, and earnings use the rate on each shift's
+> date — see *Net hours and per-date rates* below.
 > Listed in [BACKLOG.md](BACKLOG.md). Interacts with [V2_SYNC_PLAN.md](V2_SYNC_PLAN.md)
 > (the new keys should sync).
 > Original ideas (chat, 2026-10-30): *"Tulevaisuudes voi sit laittaa achievements
@@ -335,8 +339,28 @@ validated-string branch.
 
 - Clean on read with defaults for missing keys — the existing pattern; there is
   no schema version.
-- Downgrade is safe: `storage._load_raw` / `_save_raw` load and rewrite the
-  whole dict, so an older version keeps unknown top-level keys untouched.
+- Downgrade is safe **for top-level keys only**: `storage._load_raw` /
+  `_save_raw` load and rewrite the whole dict, so an older version keeps
+  unknown top-level keys untouched. Entries are different: up to 2.1.3,
+  `storage._entry` raises `TypeError` on any entry key it doesn't know, which
+  breaks the month view, Stats, achievements and the pet. Nothing here adds an
+  entry key, but anything that does must wait for 2.1.4's tolerant reader
+  ([V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md#214--groundwork-a-tolerant-entry-reader)).
+
+## Net hours and per-date rates (2.2)
+
+From 2.2 ([V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md#net-or-gross--who-counts-what)):
+
+- Hour, target-day and streak badges and the pet (`pet_stats`: lifetime and
+  8-week days) count **net** minutes (gross minus the shift's break).
+- Badges about the clock — overnight, early bird, night owl, marathon,
+  inferno, blue flame — stay **gross**: they are about when and how long you
+  were there.
+- Earnings badges sum net hours × the rate in effect on each shift's date
+  (`evaluate` takes a rate callable instead of one `pay_rate`), so a raise no
+  longer rewrites past earnings.
+- Badges already seen stay unlocked (`with_seen`), so starting to log breaks
+  never takes one away.
 
 ## Sync interaction
 

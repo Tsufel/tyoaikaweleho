@@ -600,3 +600,60 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
 | `src/views/modals/closeFlow.ts` | — | `export function handleCloseRequest(): Promise<void>` — App calls on `close:requested` |
 | `src/views/ocr/OcrPreviewSheet.svelte` | `{candidates: OcrCandidate[], errors: string[], shifts: string[], onclose: (r: OcrSaveResult\|null) => void}` | opened by `openOcrImport()` exported from `src/views/ocr/ocrImport.ts`, which EntriesView's Import ▾ calls |
 | `src/fx/fire/FireLayer.svelte` | `{running, elapsedSeconds, burst: number}` | lazy; TimerView mounts only when `lulz` on |
+
+## 13. Planned (2.2 / 2.3) — not built yet
+
+Nothing in this section exists in the code yet. It is the contract the plans
+aim for, so the frontend and backend can be built against it; it moves into
+§3–§10 as each piece ships. Designs:
+[V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md) (2.1.4 / 2.2) and
+[V2_TIMESHEET_DAY_PLAN.md](V2_TIMESHEET_DAY_PLAN.md) (2.3).
+
+**2.1.4** — no API change. `WorkEntry` may carry extra keys from a newer
+version; `delete_entry`'s `deleted` and `restore_entry(entry)` pass them
+through untouched.
+
+**Shapes (2.2)**
+
+- `WorkEntry` gains optional `break_minutes` (int, `0 ≤ b <` gross minutes),
+  `break_auto` (bool) and `note` (≤ 200 chars, single line), present only when
+  non-default.
+- `EntryRow`: `minutes` becomes **net** (gross − break); new `gross_minutes`,
+  `break_minutes`, `break_auto`, `note`, `earnings` (net × the rate on the
+  entry's date).
+- `MonthData` / `WeekGroup` / `StatsData` minutes are net; earnings are summed
+  per entry. `MonthData.pay_rate` and `StatsData.pay_rate` = the rate in effect
+  today; new `mixed_rates: boolean` when the range spans a rate change.
+- `get_pet_stats` minutes are net.
+- `Settings` gains `pay_rates: {rows: [{from: IsoDate, rate}]}` (no `mirror` —
+  it is internal) and `break_rule: {enabled, min_shift_minutes,
+  deduct_minutes}`. `pay_rate` stays = today's rate.
+- `save_entry` / `update_entry_field` accept `break_minutes` and `note`
+  (`invalid(field:'break_minutes'|'note')`); a typed break clears
+  `break_auto`.
+
+**Shapes (2.3)**
+
+- `Settings` gains `employee_name`, `manager_name` (≤ 60, cleaned like
+  `pet_name`) and `job_shifts: [{name, hidden}]`; `shifts: string[]` keeps
+  listing the visible ones.
+
+**Methods (2.2 / 2.3)**
+
+| method | params | returns |
+|---|---|---|
+| `save_pay_rates(rows)` (2.2) | `[{from, rate}]` | `R<{settings: Settings}>`; `invalid(field:'pay_rates')` (empty, bad date or rate) |
+| `rename_shift(old, new, confirm?)` | `string`, `string`, answers | needs `rename_shift` when entries use `old`; `R<{shifts, renamed_entries}>`; `invalid` when blank or a duplicate |
+| `set_shift_hidden(name, hidden)` | `string`, `boolean` | `R<{settings: Settings, shifts}>` |
+| `reorder_shifts(names)` | `string[]` (every name, new order) | `R<{settings: Settings, shifts}>`; `invalid` if the set differs |
+| `export_range(start, end, kind)` | `IsoDate`, `IsoDate`, `'xlsx'\|'csv'` | Native save dialog; `cancelled` / `saved{path}` / `error(file_locked\|internal)` / `invalid(field:'range')`. `export_month` stays |
+| `list_backups()` | — | `R<{backups: [{name, kind:'daily'\|'bak'\|'before_restore', date, entries, last_entry_date, ok}]}>` newest first |
+| `restore_backup(name, confirm?)` | `string`, answers | needs `restore_backup`; `invalid` while a shift runs or `ok` is false; on success the current data is copied to `backups/data-before-restore-<ts>.json` first, then `data:changed` is emitted |
+
+**Confirm kinds**
+
+| kind | asked by | options (id) | default / cancel |
+|---|---|---|---|
+| `pay_rate_change` (2.2) | `save_settings` when `pay_rate` changes | `today` "From today", `from_date` "From date…" (`details.date`), `all` "Correct all history", `cancel` | `today` / `cancel` |
+| `rename_shift` (2.3) | `rename_shift` when N entries use the old name | `everywhere` "Rename everywhere", `list_only` "Only in the list", `cancel` | `everywhere` / `cancel` |
+| `restore_backup` (2.3) | `restore_backup` | `restore` (danger), `cancel` | `cancel` / `cancel` |

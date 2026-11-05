@@ -85,6 +85,14 @@ Error*.
 
 ## Data model changes (sync-ready)
 
+- **Prerequisite: 2.1.4's tolerant entry reader** (see
+  [V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md#214--groundwork-a-tolerant-entry-reader)).
+  Up to 2.1.3, `storage._entry` raises `TypeError` on any entry key it
+  doesn't know, so `updated_at` and tombstones would crash every older
+  install sharing the folder. From 2.1.4 unknown keys ride along in
+  `WorkEntry.extra`; the entry merge copies whole records, `extra` included,
+  so later entry fields (`break_minutes`, `break_auto`, `note`) need no
+  per-field merge logic.
 - Every entry gains `updated_at` (ISO UTC) set on create/edit.
 - Deletes become **tombstones** (`{"id": …, "deleted": true, "updated_at": …}`)
   instead of removing the row; `load_*` hides them. Tombstones older than
@@ -92,9 +100,13 @@ Error*.
 - Synced settings get per-key timestamps: `pay_rate`, `default_start_time`,
   `default_job_shift`, `export_format`, `export_include_pay`, and the shift
   list (moved from `shifts.txt` into the payload; `add_job_shift` keeps its
-  signature).
+  signature). Planned keys join the list as whole values: `pay_rates` and
+  `break_rule` (2.2), `employee_name`, `manager_name` and `job_shifts` (2.3 —
+  this is the shift list's new home, see
+  [V2_TIMESHEET_DAY_PLAN.md](V2_TIMESHEET_DAY_PLAN.md)).
 - Per-machine keys stay local: `window_geometry`, `last_seen_version`,
-  `appearance_mode`, `session.json`.
+  `appearance_mode`, `session.json`, `pay_rates.mirror` (it records what this
+  machine's older version last saw), and the backups.
 - **Merge rule:** per entry id and per settings key, the newer `updated_at`
   wins; ties broken by device id so every PC converges to the same result.
   Merge is pure, commutative and idempotent.
@@ -160,6 +172,8 @@ plan — no idle pausing, and a few users are far below the limits:
 
 ## Implementation order
 
+0. 2.1.4 shipped and on every PC (tolerant entry reader), so older installs
+   survive the new entry keys.
 1. V2_AUTH_PLAN phases 1–2 (local accounts + envelope encryption).
 2. Sync-ready data model (`updated_at`, tombstones, settings timestamps) +
    merge function and tests.
