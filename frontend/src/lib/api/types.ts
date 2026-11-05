@@ -148,6 +148,10 @@ export type ConfirmList = ConfirmAnswer[];
 
 // ── Entries ──────────────────────────────────────────────────────
 
+/**
+ * `delete_entry`'s `deleted` may also carry keys a newer app version stored
+ * on the entry (a break, a note): pass it back to `restore_entry` as is.
+ */
 export interface WorkEntry {
   id: string;
   date: IsoDate;

@@ -84,7 +84,32 @@ def test_default_start_time_roundtrip(tmp_storage):
 
 
 def test_default_job_shift_default(tmp_storage):
+    """Unset: the first shift in the list (GPSR is no longer a default)."""
+    assert storage.get_default_job_shift() == "Sales"
+
+
+def test_default_job_shift_legacy_gpsr(tmp_storage):
+    """Unset but GPSR is in use: keep the old default for those users."""
+    storage.save_entry(_entry(shift="GPSR"))
     assert storage.get_default_job_shift() == "GPSR"
+
+
+def test_default_job_shift_explicit_empty(tmp_storage):
+    storage.save_entry(_entry(shift="GPSR"))
+    storage.set_default_job_shift("")
+    assert storage.get_default_job_shift() == ""
+
+
+def test_default_job_shift_no_shifts(tmp_storage, monkeypatch):
+    monkeypatch.setattr(storage, "get_job_shift_list", lambda: [])
+    assert storage.get_default_job_shift() == ""
+
+
+def test_default_job_shift_list_unreadable(tmp_storage, monkeypatch):
+    def boom():
+        raise OSError("locked")
+    monkeypatch.setattr(storage, "get_job_shift_list", boom)
+    assert storage.get_default_job_shift() == "Sales"
 
 
 def test_default_job_shift_roundtrip(tmp_storage):
@@ -295,7 +320,7 @@ def test_save_entry_normalises_date(tmp_storage):
 def test_load_month_finds_raw_stored_date(tmp_storage):
     e = _entry(date="2026-06-02")
     data = storage._load_raw()
-    data["entries"].append({**e.__dict__, "date": "20260602"})
+    data["entries"].append({**e.to_dict(), "date": "20260602"})
     storage._save_raw(data)
     found = storage.load_month(2026, 6)
     assert [x.id for x in found] == [e.id]
@@ -306,7 +331,7 @@ def test_load_month_finds_raw_stored_date(tmp_storage):
 def test_save_entry_fixes_other_bad_dates(tmp_storage):
     bad = _entry(date="2026-06-02")
     data = storage._load_raw()
-    data["entries"].append({**bad.__dict__, "date": "20260602"})
+    data["entries"].append({**bad.to_dict(), "date": "20260602"})
     storage._save_raw(data)
     storage.save_entry(_entry(date="2026-06-05"))
     dates = [e["date"] for e in storage._load_raw()["entries"]]
@@ -421,3 +446,116 @@ def test_ui_prefs_pet_skin(tmp_storage):
     data["ui_prefs"]["pet_skin"] = "plaid"
     storage._save_raw(data)
     assert storage.get_ui_prefs()["pet_skin"] == "classic"
+
+
+# ── tolerant reader (2.1.4): unknown entry keys ──────────────────────────────
+
+def _raw_append(*rows):
+    data = storage._load_raw()
+    data["entries"].extend(rows)
+    storage._save_raw(data)
+
+
+def _future_row(id_="f1", date="2026-06-02"):
+    return {"id": id_, "date": date, "job_shift": "Sales", "time_in": "09:00",
+            "time_out": "17:00", "break_minutes": 30, "note": "covered",
+            "updated_at": "2026-06-02T17:00:00Z"}
+
+
+def test_unknown_entry_keys_load(tmp_storage):
+    _raw_append(_future_row())
+    [e] = storage.load_month(2026, 6)
+    assert (e.id, e.date, e.time_in, e.time_out) == ("f1", "2026-06-02", "09:00", "17:00")
+    assert e.extra == {"break_minutes": 30, "note": "covered",
+                       "updated_at": "2026-06-02T17:00:00Z"}
+    assert storage.load_all_entries()[0].extra["note"] == "covered"
+
+
+def test_unknown_entry_keys_survive_save(tmp_storage):
+    _raw_append(_future_row())
+    [e] = storage.load_all_entries()
+    e.time_out = "18:00"
+    storage.save_entry(e)
+    [row] = storage._load_raw()["entries"]
+    assert row == {**_future_row(), "time_out": "18:00"}
+
+
+def test_unknown_entry_keys_survive_other_saves(tmp_storage):
+    _raw_append(_future_row())
+    storage.save_entry(_entry(date="2026-06-01"))
+    storage.delete_entry(storage.load_month(2026, 6)[0].id)  # the 1 June one
+    assert storage._load_raw()["entries"] == [_future_row()]
+
+
+def test_known_fields_win_over_extra(tmp_storage):
+    e = _entry()
+    e.extra = {"time_in": "01:00", "note": "x"}
+    storage.save_entry(e)
+    [row] = storage._load_raw()["entries"]
+    assert row["time_in"] == "09:00" and row["note"] == "x"
+
+
+def test_plain_entry_stays_five_keys(tmp_storage):
+    storage.save_entry(_entry())
+    [row] = storage._load_raw()["entries"]
+    assert set(row) == set(storage.ENTRY_FIELDS)
+
+
+def test_extra_not_compared(tmp_storage):
+    a = _entry()
+    b = WorkEntry(**{k: getattr(a, k) for k in storage.ENTRY_FIELDS}, extra={"note": "x"})
+    assert a == b
+
+
+def test_tombstones_and_bad_rows_skipped_and_kept(tmp_storage):
+    bad = [{"id": "t1", "deleted": True, "updated_at": "2026-06-03T00:00:00Z"},
+           {"id": "t2", "date": "2026-06-04", "deleted": True},
+           {"id": "n1"},                       # no date
+           {"date": "2026-06-05"},             # no id
+           {"id": 7, "date": "2026-06-06"},    # id not a string
+           "junk", None, 5]
+    _raw_append(_future_row(), *bad)
+    assert [e.id for e in storage.load_all_entries()] == ["f1"]
+    assert [e.id for e in storage.load_month(2026, 6)] == ["f1"]
+    storage.save_entry(_entry(date="2026-06-07"))
+    rows = storage._load_raw()["entries"]
+    for b in bad:
+        assert b in rows
+    assert len(rows) == len(bad) + 2
+    storage.delete_entry("f1")
+    rows = storage._load_raw()["entries"]
+    assert all(b in rows for b in bad) and len(rows) == len(bad) + 1
+
+
+def test_missing_or_null_fields_load_as_empty(tmp_storage):
+    _raw_append({"id": "m1", "date": "2026-06-02", "time_in": "09:00",
+                 "time_out": None})
+    [e] = storage.load_all_entries()
+    assert e.job_shift == "" and e.time_out == "" and e.extra == {}
+
+
+def test_job_shift_list_tolerates_odd_entries(tmp_storage):
+    _raw_append({"id": "m1", "date": "2026-06-02", "job_shift": 5,
+                 "time_in": "09:00", "time_out": "17:00"},
+                {"id": "t", "deleted": True, "job_shift": "Ghost"})
+    shifts = storage.get_job_shift_list()
+    assert "Ghost" not in shifts and 5 not in shifts
+
+
+def test_save_leaves_skipped_rows_byte_for_byte(tmp_storage):
+    tomb = {"id": "t2", "date": "4.6.2026", "deleted": True}
+    _raw_append(tomb, {"id": "old", "date": "20260602", "job_shift": "Sales",
+                       "time_in": "09:00", "time_out": "17:00"})
+    storage.save_entry(_entry(date="2026-06-07"))
+    rows = storage._load_raw()["entries"]
+    assert tomb in rows                                   # not rewritten
+    assert {"id": "old", "date": "2026-06-02", "job_shift": "Sales",
+            "time_in": "09:00", "time_out": "17:00"} in rows  # still normalised
+
+
+def test_default_job_shift_legacy_gpsr_when_list_unreadable(tmp_storage, monkeypatch):
+    storage.save_entry(_entry(shift="GPSR"))
+    def boom():
+        raise OSError("locked")
+    monkeypatch.setattr(storage, "get_job_shift_list", boom)
+    assert storage.get_default_job_shift() == "GPSR"

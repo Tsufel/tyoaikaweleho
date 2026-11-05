@@ -46,6 +46,8 @@ def import_from_file(path: str) -> tuple[int, int]:
 
     existing = storage.load_all_entries()
     existing_keys = {(e.date, e.time_in) for e in existing}
+    # rows with no shift column (Simple) or an empty one (EAS)
+    default_js = storage.get_default_job_shift()
 
     imported = 0
     skipped = 0
@@ -67,14 +69,14 @@ def import_from_file(path: str) -> tuple[int, int]:
                 continue
 
             if fmt == "simple":
-                job_shift = "GPSR"
+                job_shift = default_js
                 time_in  = _normalise_time(row[1]) if len(row) > 1 else None
                 time_out = _normalise_time(row[2]) if len(row) > 2 else None
             else:  # eas
                 raw_shift = row[1] if len(row) > 1 else None
                 job_shift = str(raw_shift).strip() if raw_shift is not None else ""
                 if not job_shift or job_shift.lower() == "none":
-                    job_shift = "GPSR"
+                    job_shift = default_js
                 time_in  = _normalise_time(row[2]) if len(row) > 2 else None
                 time_out = _normalise_time(row[3]) if len(row) > 3 else None
 

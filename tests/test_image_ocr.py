@@ -154,11 +154,11 @@ def test_parse_dm_no_shift_uses_configured_default(tmp_storage):
     assert e["job_shift"] == "Sales/Support"
 
 
-def test_parse_dm_no_shift_default_is_gpsr_when_unconfigured(tmp_storage):
-    """storage.get_default_job_shift() itself defaults to 'GPSR' when unset."""
-    assert storage.get_default_job_shift() == "GPSR"
+def test_parse_dm_no_shift_default_is_first_shift_when_unconfigured(tmp_storage):
+    """Unset: storage.get_default_job_shift() falls back to the first shift."""
+    assert storage.get_default_job_shift() == "Sales"
     e = _parse_line("Monday 4.5. 10-16")
-    assert e["job_shift"] == "GPSR"
+    assert e["job_shift"] == "Sales"
 
 
 def test_save_confirmed_entries_uses_default_shift_when_missing(tmp_storage):

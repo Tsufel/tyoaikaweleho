@@ -6,7 +6,7 @@ import shutil
 import sys
 import unicodedata
 import uuid
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 
 from utils import parse_date_input, parse_time_input
@@ -41,6 +41,26 @@ class WorkEntry:
     job_shift: str
     time_in: str     # "HH:MM"
     time_out: str    # "HH:MM" or "" if still running
+    # Keys this version doesn't know (written by a newer one, e.g. a break or
+    # a note). Carried through load, save and undo so going back a version
+    # never strips them; never shown or compared.
+    extra: dict = field(default_factory=dict, compare=False, repr=False)
+
+    def to_dict(self) -> dict:
+        """The stored form: the known fields win over any extra of the same name."""
+        return {**self.extra, **{k: getattr(self, k) for k in ENTRY_FIELDS}}
+
+    @classmethod
+    def from_dict(cls, e: dict) -> "WorkEntry":
+        """Tolerant reader: unknown keys go to `extra`, missing text fields
+        are blank (only id and date are required)."""
+        known = {k: e.get(k, "") for k in ENTRY_FIELDS}
+        known = {k: "" if v is None else v for k, v in known.items()}
+        extra = {k: v for k, v in e.items() if k not in ENTRY_FIELDS}
+        return cls(**known, extra=extra)
+
+
+ENTRY_FIELDS = ("id", "date", "job_shift", "time_in", "time_out")
 
 
 def _migrate_from_appdata():
@@ -118,35 +138,56 @@ def _normalise_date(s: str) -> str:
     return parse_date_input(s) or s
 
 
+def _is_entry(e) -> bool:
+    """A row this version can show. Rows a newer version may write that
+    aren't shifts (a sync tombstone, `{"id", "deleted": true, ...}`) or that
+    lack an id or date are skipped, but left untouched on disk."""
+    return (isinstance(e, dict) and e.get("deleted") is not True
+            and isinstance(e.get("id"), str) and isinstance(e.get("date"), str))
+
+
 def _entry(e: dict) -> WorkEntry:
-    return WorkEntry(**{**e, "date": _normalise_date(e["date"])})
+    entry = WorkEntry.from_dict(e)
+    entry.date = _normalise_date(entry.date)
+    return entry
+
+
+def _entries(data: dict) -> list[WorkEntry]:
+    return [_entry(e) for e in data.get("entries", []) if _is_entry(e)]
 
 
 def load_month(year: int, month: int) -> list[WorkEntry]:
-    data = _load_raw()
     prefix = f"{year:04d}-{month:02d}"
-    entries = (_entry(e) for e in data["entries"])
-    return [e for e in entries if e.date.startswith(prefix)]
+    return [e for e in _entries(_load_raw()) if e.date.startswith(prefix)]
 
 
 def load_all_entries() -> list[WorkEntry]:
-    data = _load_raw()
-    return [_entry(e) for e in data["entries"]]
+    return _entries(_load_raw())
+
+
+def _sort_key(e) -> tuple:
+    if not isinstance(e, dict):
+        return ("", "")
+    return (str(e.get("date") or ""), str(e.get("time_in") or ""))
 
 
 def save_entry(entry: WorkEntry):
     data = _load_raw()
-    data["entries"] = [e for e in data["entries"] if e["id"] != entry.id]
-    data["entries"].append(asdict(entry))
-    for e in data["entries"]:
-        e["date"] = _normalise_date(e["date"])
-    data["entries"].sort(key=lambda e: (e["date"], e["time_in"]))
+    rows = [e for e in data.get("entries", [])
+            if not (isinstance(e, dict) and e.get("id") == entry.id)]
+    rows.append(entry.to_dict())
+    for e in rows:
+        if _is_entry(e):  # rows load skips (tombstones, bad rows) stay as they are
+            e["date"] = _normalise_date(e["date"])
+    rows.sort(key=_sort_key)
+    data["entries"] = rows
     _save_raw(data)
 
 
 def delete_entry(entry_id: str):
     data = _load_raw()
-    data["entries"] = [e for e in data["entries"] if e["id"] != entry_id]
+    data["entries"] = [e for e in data.get("entries", [])
+                       if not (isinstance(e, dict) and e.get("id") == entry_id)]
     _save_raw(data)
 
 
@@ -203,9 +244,8 @@ def get_job_shift_list() -> list[str]:
     _ensure_shifts_file()
     with open(SHIFTS_FILE, "r", encoding="utf-8") as f:
         lines = [ln.strip() for ln in f if ln.strip()]
-    data = _load_raw()
-    for e in data["entries"]:
-        js = e.get("job_shift", "").strip()
+    for e in _entries(_load_raw()):
+        js = e.job_shift.strip() if isinstance(e.job_shift, str) else ""
         if js and js not in lines:
             lines.append(js)
     return lines
@@ -229,7 +269,23 @@ def add_job_shift(js: str) -> bool:
 
 
 def get_default_job_shift() -> str:
-    return _load_raw().get("default_job_shift", "GPSR")
+    """The shift chosen in Settings ("" = none chosen on purpose). Never set:
+    the first shift in the list. Older versions fell back to a hard-coded
+    "GPSR" even when it wasn't a shift; that stays only for people who have
+    it in their list (in shifts.txt or used in an entry)."""
+    stored = _load_raw().get("default_job_shift")
+    if isinstance(stored, str):
+        return stored
+    try:
+        shifts = get_job_shift_list()
+    except OSError:  # shifts.txt unreadable: the defaults plus shifts in use
+        shifts = list(_DEFAULT_SHIFTS) + [e.job_shift for e in _entries(_load_raw())]
+    if _LEGACY_DEFAULT_SHIFT in shifts:
+        return _LEGACY_DEFAULT_SHIFT
+    return shifts[0] if shifts else ""
+
+
+_LEGACY_DEFAULT_SHIFT = "GPSR"
 
 
 def set_default_job_shift(js: str):

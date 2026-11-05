@@ -84,9 +84,21 @@ def answer(confirm, kind: str, token: str | None = None) -> str | None:
     return None
 
 
+_ENTRY_FIELDS = ("id", "date", "job_shift", "time_in", "time_out")
+
+
 def work_entry_dict(entry) -> dict:
+    """The five WorkEntry fields (the shape EntryRow builds on)."""
     d = asdict(entry) if is_dataclass(entry) else dict(entry)
-    return {k: d.get(k, "") for k in ("id", "date", "job_shift", "time_in", "time_out")}
+    return {k: d.get(k, "") for k in _ENTRY_FIELDS}
+
+
+def stored_entry_dict(entry) -> dict:
+    """WorkEntry as stored, extra keys from a newer version included, so the
+    undo of a delete (`deleted` → `restore_entry`) puts back all of it."""
+    if hasattr(entry, "to_dict"):
+        return entry.to_dict()
+    return work_entry_dict(entry)
 
 
 def entry_row(entry) -> dict:

@@ -151,3 +151,23 @@ def test_non_date_rows_ignored(tmp_path, tmp_storage):
     wb.save(p)
     imported, _ = import_from_file(p)
     assert imported == 1
+
+
+# ── default shift (2.1.4: no hard-coded GPSR) ────────────────────────────────
+
+def test_import_simple_uses_default_shift(tmp_path, tmp_storage):
+    storage.set_default_job_shift("Training")
+    p = str(tmp_path / "t.xlsx")
+    _make_simple_xlsx(p, [(datetime(2026, 5, 10), dt_time(9, 0), dt_time(17, 0))])
+    import_from_file(p)
+    assert storage.load_month(2026, 5)[0].job_shift == "Training"
+
+
+def test_import_eas_empty_shift_uses_default(tmp_path, tmp_storage):
+    p = str(tmp_path / "t.xlsx")
+    _make_eas_xlsx(p, [
+        (datetime(2026, 5, 10), None,   dt_time(9, 0),  dt_time(17, 0)),
+        (datetime(2026, 5, 11), "None", dt_time(10, 0), dt_time(18, 0)),
+    ])
+    import_from_file(p)
+    assert {e.job_shift for e in storage.load_month(2026, 5)} == {"Sales"}

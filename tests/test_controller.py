@@ -1227,3 +1227,94 @@ def test_achievements_ack_save_failure(env, monkeypatch):
     r = ctrl.ack_achievements(["first_shift"])
     assert r["status"] == "error" and r["error"]["code"] == "save_failed"
     assert storage.get_achievements_seen() is None
+
+
+# ── entries written by a newer version (2.1.4 tolerant reader) ───────────────
+
+_FUTURE = {"break_minutes": 30, "note": "covered", "updated_at": "2026-09-23T17:00:00Z"}
+
+
+def _add_future(date="2026-09-23", t_in="09:00", t_out="17:00", id_="fut1"):
+    data = storage._load_raw()
+    data["entries"].append({"id": id_, "date": date, "job_shift": "Sales",
+                            "time_in": t_in, "time_out": t_out, **_FUTURE})
+    storage._save_raw(data)
+    return id_
+
+
+def _row(id_):
+    return next(r for r in storage._load_raw()["entries"] if r.get("id") == id_)
+
+
+def test_future_entry_in_month_stats_and_export(env, monkeypatch):
+    import excel_export
+    ctrl, _ = env
+    storage.set_pay_rate(20.0)
+    _add_future()
+    d = ctrl.list_month(2026, 9)["data"]
+    assert [e["id"] for e in d["entries"]] == ["fut1"]
+    assert d["total_minutes"] == 480 and d["earnings"] == 160.0
+    assert "note" not in d["entries"][0]          # rows stay the 2.1 shape
+    r = ctrl.get_stats("2026-09-21", "2026-09-27", "day")
+    assert r["data"]["totals"]["minutes"] == 480
+    calls = []
+    monkeypatch.setattr(excel_export, "export_month", lambda **k: calls.append(k))
+    assert ctrl.export_month(2026, 9, "C:/x/out.xlsx")["status"] == "saved"
+    assert [e.id for e in calls[0]["entries"]] == ["fut1"]
+
+
+def test_edit_keeps_future_keys(env):
+    ctrl, _ = env
+    _add_future()
+    r = ctrl.save_entry({"id": "fut1", "date": "2026-09-23", "job_shift": "Support",
+                         "time_in": "08:00", "time_out": "16:00"})
+    assert r["status"] == "saved"
+    assert _row("fut1") == {"id": "fut1", "date": "2026-09-23", "job_shift": "Support",
+                            "time_in": "08:00", "time_out": "16:00", **_FUTURE}
+
+
+def test_new_entry_with_unknown_id_has_no_extras(env):
+    ctrl, _ = env
+    _add_future()
+    r = ctrl.save_entry({"id": "other", "date": "2026-09-24",
+                         "time_in": "08:00", "time_out": "16:00"})
+    assert r["status"] == "saved" and set(_row("other")) == set(storage.ENTRY_FIELDS)
+
+
+def test_inline_edit_keeps_future_keys(env):
+    ctrl, _ = env
+    _add_future()
+    assert ctrl.update_entry_field("fut1", "time_out", "18:00")["status"] == "saved"
+    assert _row("fut1")["time_out"] == "18:00"
+    assert {k: _row("fut1")[k] for k in _FUTURE} == _FUTURE
+
+
+def test_delete_and_undo_keep_future_keys(env):
+    ctrl, _ = env
+    _add_future()
+    before = _row("fut1")
+    token = ctrl.delete_entry("fut1")["confirm"]["token"]
+    r = ctrl.delete_entry("fut1", _answer("delete_entry", "delete", token))
+    assert r["status"] == "ok" and r["deleted"] == before
+    assert storage.load_all_entries() == []
+    r = ctrl.restore_entry(r["deleted"])
+    assert r["status"] == "saved" and _row("fut1") == before
+
+
+def test_restore_drops_deleted_flag(env):
+    ctrl, _ = env
+    r = ctrl.restore_entry({"id": "a", "date": "2026-09-23", "job_shift": "Sales",
+                            "time_in": "09:00", "time_out": "17:00",
+                            "deleted": True, "note": "x"})
+    assert r["status"] == "saved"
+    assert _row("a") == {"id": "a", "date": "2026-09-23", "job_shift": "Sales",
+                         "time_in": "09:00", "time_out": "17:00", "note": "x"}
+    assert [e.id for e in storage.load_all_entries()] == ["a"]
+
+
+def test_restore_rejects_unstorable_extras(env):
+    ctrl, _ = env
+    base = {"id": "a", "date": "2026-09-23", "time_in": "09:00", "time_out": "17:00"}
+    assert ctrl.restore_entry({**base, "note": object()})["status"] == "invalid"
+    assert ctrl.restore_entry({**base, "note": {1, 2}})["status"] == "invalid"
+    assert storage._load_raw()["entries"] == []

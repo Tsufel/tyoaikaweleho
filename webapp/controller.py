@@ -17,7 +17,7 @@ from utils import (MIN_SHIFT_SECONDS, entry_minutes, format_duration, format_rat
                    parse_time_input, resolve_start_time, start_time_needs_confirm,
                    week_key)
 from webapp import results as R
-from webapp.results import Stale, answer, describe, entry_row, money, opt, work_entry_dict
+from webapp.results import Stale, answer, describe, entry_row, money, opt, stored_entry_dict
 
 MAX_ENTRY_MINUTES = 24 * 60
 RECOVERY_LIMIT = timedelta(hours=8)
@@ -561,6 +561,10 @@ class ShiftController:
             job_shift=str(draft.get("job_shift") or "").strip(),
             time_in=t_in, time_out=t_out)
         with self._lock:
+            # editing keeps what a newer version stored on the entry
+            stored = self._find(entry.id) if draft.get("id") else None
+            if stored is not None:
+                entry.extra = dict(stored.extra)
             try:
                 storage.save_entry(entry)
             except OSError as exc:
@@ -629,15 +633,22 @@ class ShiftController:
                 return R.error("save_failed",
                                f"The entry could not be deleted:\n\n{exc}\n\n"
                                f"{_LOCKED_HINT} and try again.")
-            return R.ok(f"Deleted {desc}.", deleted=work_entry_dict(entry), description=desc)
+            return R.ok(f"Deleted {desc}.", deleted=stored_entry_dict(entry), description=desc)
 
     def restore_entry(self, entry: dict) -> dict:
         if not isinstance(entry, dict) or not all(
                 isinstance(entry.get(k), str) for k in ("id", "date", "time_in")):
             return R.invalid("entry", "That is not a saved entry.")
+        # keys a newer version wrote (a break, a note) come back too; a
+        # restored entry is never a tombstone
+        extra = {k: v for k, v in entry.items()
+                 if isinstance(k, str) and k not in storage.ENTRY_FIELDS and k != "deleted"}
+        try:
+            json.dumps(extra)
+        except (TypeError, ValueError):
+            return R.invalid("entry", "That is not a saved entry.")
         restored = storage.WorkEntry(**{
-            k: str(entry.get(k) or "")
-            for k in ("id", "date", "job_shift", "time_in", "time_out")})
+            k: str(entry.get(k) or "") for k in storage.ENTRY_FIELDS}, extra=extra)
         desc = describe(restored)
         with self._lock:
             try:
