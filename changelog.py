@@ -1,6 +1,24 @@
 """Release changelog — update this alongside version.py when cutting a release."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.4": [
+        "New pet looks: Cosmic at level 5, Neon at 10, Gilded at 20 and "
+        "Legend at 25. Pick one on the pet sheet once your pet gets there",
+        "Now and then, after you end a shift, your pet shows up with a "
+        "bazooka",
+        "Shifts that overlap another one are flagged: saving asks first, "
+        "and the Shifts list marks them with a warning sign",
+        "Exporting in the first days of a month offers last month's "
+        "timesheet, and Show in folder takes you straight to the saved file",
+        "Picking a start time 6 hours or more in the past asks before the "
+        "timer starts",
+        "Safer data: a damaged data file is restored from the latest good "
+        "backup automatically, and a file locked by another program is no "
+        "longer mistaken for a damaged one",
+        "Updates are only installed when their checksum matches",
+        "Reduce effects now also calms the update progress bar, and the "
+        "STOP button is easier to read",
+    ],
     "2.1.2": [
         "Setting a past start time by clicking the dial no longer jumps "
         "about 8 hours back: clicking now steps back in small steps, just "

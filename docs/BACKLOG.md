@@ -7,8 +7,8 @@ doc in `docs/` once they are planned.
 |---|---|---|---|---|
 | Achievements — badges earned from logged hours, shown in Stats | done | M | — | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#achievements) |
 | Work pet — the wizard as a companion that gains energy as hours pile up | done (auras later) | L | Achievements | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#work-pet) |
-| Pet looks — unlocked by pet level, plus an after-shift bazooka | done (unreleased) | M | Work pet | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#work-pet) |
-| **2.1.4 Groundwork** — tolerant entry reader (unknown entry keys survive load, save and undo); default shift no longer falls back to "GPSR" | planned | S | — | [V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md#214--groundwork-a-tolerant-entry-reader) |
+| Pet looks — unlocked by pet level, plus an after-shift bazooka | done (2.1.4) | M | Work pet | [V2_GAMIFICATION_PLAN.md](V2_GAMIFICATION_PLAN.md#work-pet) |
+| **2.1.4 Groundwork** — tolerant entry reader (unknown entry keys survive load, save and undo); default shift no longer falls back to "GPSR" | done (2.1.4) | S | — | [V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md#214--groundwork-a-tolerant-entry-reader) |
 | **2.2 Accurate pay** — pay-rate history with effective dates; unpaid breaks with an optional auto rule; a note per shift | planned | L | 2.1.4 | [V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md) |
 | **2.3 Timesheet day** — names on the EAS sheet; shift manager (rename, hide, reorder); date-range and CSV export; restore from backup | planned | M | 2.2 (soft) | [V2_TIMESHEET_DAY_PLAN.md](V2_TIMESHEET_DAY_PLAN.md) |
 | **2.4 Never forget the timer** — tray icon; "still running after N h?" and "forgot to start?" notifications; opt-in autostart; Pause (feeds the break) | idea | M–L | 2.2 | — |
