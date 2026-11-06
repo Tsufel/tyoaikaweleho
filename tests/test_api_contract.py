@@ -159,6 +159,7 @@ def test_every_method_returns_json(rig):
                          "job_shift": "Sales"}, None)),
         ("update_entry_field", ("missing", "time_in", "09:00", None)),
         ("delete_entry", ("missing", None)), ("restore_entry", ({"bad": 1},)),
+        ("revert_entry", ({"bad": 1}, "x")),
         ("get_settings", ()), ("save_settings", ({},)), ("save_ui_prefs", ({"lulz": True},)),
         ("add_job_shift", ("Night",)),
         ("open_data_folder", ()), ("list_backups", ()), ("backup_now", ()),

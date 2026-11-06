@@ -14,10 +14,11 @@
   import Modal from '../../lib/ui/Modal.svelte';
   import TextInput from '../../lib/ui/TextInput.svelte';
   import TimeInput from '../../lib/ui/TimeInput.svelte';
-  import { dateHint, draftChanged, newEntryDraft } from './entriesLogic';
+  import { dateHint, draftChanged, newEntryDraft, type SavedEntry } from './entriesLogic';
 
   /** Add / edit an entry (v1.3 EditEntryDialog). Enter saves, Esc cancels.
-   *  `template` prefills a new entry (Duplicate). */
+   *  `template` prefills a new entry (Duplicate). `onclose` gets the saved
+   *  row and what undoes the save (null when nothing was written). */
   let {
     entry,
     defaultDate,
@@ -27,14 +28,21 @@
     entry: EntryRow | null;
     defaultDate: string;
     template?: EntryDraft | null;
-    onclose: (saved: EntryRow | null) => void;
+    onclose: (saved: SavedEntry | null) => void;
   } = $props();
 
-  type FieldName = 'date' | 'job_shift' | 'time_in' | 'time_out';
+  type FieldName = 'date' | 'job_shift' | 'time_in' | 'time_out' | 'note';
 
   function initial(): EntryDraft {
     if (entry) {
-      return { id: entry.id, date: entry.date, job_shift: entry.job_shift, time_in: entry.time_in, time_out: entry.time_out };
+      return {
+        id: entry.id,
+        date: entry.date,
+        job_shift: entry.job_shift,
+        time_in: entry.time_in,
+        time_out: entry.time_out,
+        note: entry.note ?? '',
+      };
     }
     if (template) {
       return { date: template.date, job_shift: template.job_shift, time_in: template.time_in, time_out: template.time_out };
@@ -52,11 +60,12 @@
   let job = $state(init.job_shift);
   let timeIn = $state(init.time_in);
   let timeOut = $state(init.time_out);
+  let noteText = $state(init.note ?? '');
   let errors = $state<Partial<Record<FieldName, string>>>({});
   let saveError = $state<string | null>(null);
   let saving = $state(false);
 
-  const current = (): EntryDraft => ({ date, job_shift: job, time_in: timeIn, time_out: timeOut });
+  const current = (): EntryDraft => ({ date, job_shift: job, time_in: timeIn, time_out: timeOut, note: noteText });
   let asking = false;
 
   /** Esc / × / Cancel; ignored while a save is in flight. Typed changes
@@ -97,21 +106,21 @@
     if (saving) return;
     // an unchanged edit needs no write (and no backup rotation)
     if (entry && !draftChanged(init, current())) {
-      onclose(entry);
+      onclose({ entry, undo: null });
       return;
     }
     saving = true;
     saveError = null;
-    const draft: EntryDraft = { date, job_shift: job.trim(), time_in: timeIn, time_out: timeOut };
+    const draft: EntryDraft = { date, job_shift: job.trim(), time_in: timeIn, time_out: timeOut, note: noteText.trim() };
     if (entry) draft.id = entry.id;
     try {
       const r = await runFlow((c) => api.save_entry(draft, c));
       if (r.ok) {
-        if (r.status === 'saved' && r.entry) onclose(r.entry);
+        if (r.status === 'saved' && r.entry) onclose({ entry: r.entry, undo: r.token ? { token: r.token, before: r.before ?? null } : null });
         return;
       }
       if (r.status === 'invalid') {
-        const f = (['date', 'job_shift', 'time_in', 'time_out'] as const).find((x) => x === r.field);
+        const f = (['date', 'job_shift', 'time_in', 'time_out', 'note'] as const).find((x) => x === r.field);
         if (f) {
           errors = { [f]: r.message };
           els[f]?.focus();
@@ -201,6 +210,19 @@
       {#if note.tone === 'warning'}<Icon name="warning" size={15} />{:else}<Icon name="clock" size={15} />{/if}
       <span>{note.text}</span>
     </p>
+
+    <Field label="Note (optional)" forId="em-note" error={errors.note}>
+      <TextInput
+        id="em-note"
+        bind:value={noteText}
+        bind:el={els.note}
+        maxlength={200}
+        placeholder="e.g. Covered for Sam"
+        invalid={!!errors.note}
+        aria-describedby={errors.note ? 'em-note-note' : undefined}
+        oninput={() => clear('note')}
+      />
+    </Field>
 
     {#if saveError}
       <div class="save-error" role="alert" transition:fade={{ duration: 160 }}>

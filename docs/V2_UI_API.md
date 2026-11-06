@@ -169,10 +169,11 @@ The current shift must never be lost:
 | method | params | returns |
 |---|---|---|
 | `list_month(year, month)` | ints (month 1–12) | `R<{data: MonthData}>` (§9) |
-| `save_entry(draft, confirm?)` | `EntryDraft` (id absent = add), answers | `R<{entry: E}>` §6.5 |
-| `update_entry_field(id, field, value, confirm?)` | `string`, `'time_in'\|'time_out'`, raw text, answers | `R<{entry?: E, unchanged?: true}>` §6.4 |
+| `save_entry(draft, confirm?)` | `EntryDraft` (id absent = add), answers | `R<{entry: E, token, before: WorkEntry\|null}>` §6.5 |
+| `update_entry_field(id, field, value, confirm?)` | `string`, `'time_in'\|'time_out'`, raw text, answers | `R<{entry?: E, unchanged?: true, token?, before?: WorkEntry}>` §6.4 |
 | `delete_entry(id, confirm?)` | `string`, answers | `R<{deleted: WorkEntry, description: string}>` §6.6 |
 | `restore_entry(entry)` | `WorkEntry` (from `deleted`) | `R<{entry: E}>` status `saved` / `error(save_failed)` |
+| `revert_entry(entry, token)` | `WorkEntry` (a save's `before`), `string` (that save's `token`) | `R<{entry: E, description}>` status `saved` / `error(stale\|not_found\|save_failed)` §6.6 |
 | `get_entry(id)` | `string` | `R<{entry: E}>` / `error(not_found)` |
 
 ### Shifts & settings
@@ -362,7 +363,8 @@ Alt+Tab keeps the editor open). Python:
 - Then a new overlap → `needs_confirm(overlap)`; `cancel` behaves the same.
 - OSError → `error(save_failed)`; JS shows the error and reopens the editor
   with the typed text (original kept for the unchanged check).
-- OK → `saved{entry}`; JS refreshes the month, keeping selection/scroll.
+- OK → `saved{entry, token, before}`; JS refreshes the month, keeping
+  selection/scroll, and shows "Changed the shift … ." with **Undo** (§6.6).
 
 Leaving the month, opening Settings/Add/Edit/Delete/Export/month picker and
 closing the app first commit an open edit; if that does not succeed the action
@@ -373,7 +375,9 @@ Draft fields are raw text. Validation order and messages as `EditEntryDialog._sa
 `invalid(date)` "Enter the date as YYYY-MM-DD or D.M.YYYY (e.g. 2026-09-23 or
 23.9.2026).", `invalid(time_in)` "Time In must be a valid time (e.g. 09:30).",
 `invalid(time_out)` "Time Out must be a valid time (e.g. 17:00)." (empty
-time_out allowed). >14 h → `needs_confirm(long_entry)`, then a new overlap →
+time_out allowed), `invalid(note)` "Notes can be at most 200 characters." (the
+note is trimmed and made one line; a draft without `note` keeps the stored
+one, `""` clears it). >14 h → `needs_confirm(long_entry)`, then a new overlap →
 `needs_confirm(overlap)` (an edit that keeps an overlap it already had isn't
 asked again). OSError →
 `error(save_failed)` — modal stays open with everything typed. OK →
@@ -392,6 +396,16 @@ with **Undo** for 8 s; Ctrl+Z triggers it only while the toast is visible and
 no modal is open. Undo → `restore_entry(deleted)` → `saved` (jump + select,
 toast `"Restored {description}."`) or `error(save_failed)` → toast
 `"Could not restore {description}."` with **Retry** (same entry kept).
+
+Adds and edits (modal save or inline edit) can be undone the same way: their
+`saved` result carries `token` (the saved entry's fingerprint) and `before`
+(the entry as stored before, keys from a newer version included; `null` for
+an add). The toast ("Added the shift …" / "Changed the shift …") offers
+**Undo** for 8 s (Ctrl+Z too). Undo of an add →
+`delete_entry(id, [{kind:'delete_entry', choice:'delete', token}])`; undo of
+an edit → `revert_entry(before, token)`. Both only act while the entry still
+matches `token`: otherwise `error(stale)` and JS says the shift was changed
+since; a shift already gone → `error(not_found)`.
 
 ### 6.7 Changelog
 `bootstrap().data.changelog` is the list of versions newer than
@@ -455,9 +469,11 @@ Bootstrap = {
 
 ## 8. Shared shapes
 
-- `WorkEntry {id, date, job_shift, time_in, time_out}` (time_out `""` = open).
+- `WorkEntry {id, date, job_shift, time_in, time_out, note?}` (time_out `""` =
+  open; `note` ≤ 200 chars, one line, stored in data.json only when not blank).
 - `EntryRow = WorkEntry + {minutes: number|null, overnight, display_date
-  ("Tue 23 Sep 2026"), time_out_display ("06:00 +1"), week_key ("2026-W39")}`.
+  ("Tue 23 Sep 2026"), time_out_display ("06:00 +1"), week_key ("2026-W39"),
+  note ("" when none)}`.
   `list_month` rows also carry `overlap: boolean` (overlaps another saved
   entry, including one from the day before) — the list shows a ⚠ by the date —
   and `overlap_with: WorkEntry[]`, the entries it overlaps (empty when none);
@@ -738,7 +754,7 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
 |---|---|---|
 | `src/views/timer/TimerView.svelte` | — | Hero ring + start/stop; registers `timer.toggle`. Hidden on `settings` route. |
 | `src/views/entries/EntriesView.svelte` | — | Header (month nav, Add, Import ▾, status), table, bottom bar (Edit/Delete/Total/Export). Registers `entry.*`, `export`, `import.menu`, `month.*`; registers edit guard. |
-| `src/views/entries/EntryModal.svelte` | `{entry: EntryRow\|null, defaultDate: string, onclose: (saved: EntryRow\|null) => void}` | mounted by EntriesView |
+| `src/views/entries/EntryModal.svelte` | `{entry: EntryRow\|null, defaultDate: string, template?: EntryDraft\|null, onclose: (saved: SavedEntry\|null) => void}` (`SavedEntry = {entry: EntryRow, undo: SaveUndo\|null}`, the toast's Undo) | mounted by EntriesView |
 | `src/views/entries/MonthPicker.svelte` | `{year, month, onpick: (y,m)=>void, oncancel}` | mounted by EntriesView |
 | `src/views/stats/StatsView.svelte` | — | lazy-loaded on `stats` route |
 | `src/views/settings/SettingsView.svelte` | — | `settings` route; registers `settings.save` / `settings.back` |
@@ -763,11 +779,11 @@ through untouched.
 
 **Shapes (2.2)**
 
-- `WorkEntry` gains optional `break_minutes` (int, `0 ≤ b <` gross minutes),
-  `break_auto` (bool) and `note` (≤ 200 chars, single line), present only when
-  non-default.
+- `WorkEntry` gains optional `break_minutes` (int, `0 ≤ b <` gross minutes)
+  and `break_auto` (bool), present only when non-default. (`note` **shipped
+  early**, see §8 and §6.5.)
 - `EntryRow`: `minutes` becomes **net** (gross − break); new `gross_minutes`,
-  `break_minutes`, `break_auto`, `note`, `earnings` (net × the rate on the
+  `break_minutes`, `break_auto`, `earnings` (net × the rate on the
   entry's date).
 - `MonthData` / `WeekGroup` / `StatsData` minutes are net; earnings are summed
   per entry. `MonthData.pay_rate` and `StatsData.pay_rate` = the rate in effect
@@ -776,8 +792,8 @@ through untouched.
 - `Settings` gains `pay_rates: {rows: [{from: IsoDate, rate}]}` (no `mirror` —
   it is internal) and `break_rule: {enabled, min_shift_minutes,
   deduct_minutes}`. `pay_rate` stays = today's rate.
-- `save_entry` / `update_entry_field` accept `break_minutes` and `note`
-  (`invalid(field:'break_minutes'|'note')`); a typed break clears
+- `save_entry` / `update_entry_field` accept `break_minutes`
+  (`invalid(field:'break_minutes')`); a typed break clears
   `break_auto`.
 
 **Shapes (2.3)**

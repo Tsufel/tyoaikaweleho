@@ -221,6 +221,13 @@ class Api:
             self._emit("data:changed", {"reason": "restore"})
         return result
 
+    @_guarded
+    def revert_entry(self, entry, token):
+        result = self._c.revert_entry(entry, token)
+        if result.get("ok"):
+            self._emit("data:changed", {"reason": "restore"})
+        return result
+
     # ── shifts & settings ────────────────────────────────────────
 
     @_guarded
