@@ -245,7 +245,7 @@ def test_stop_shortcut_asks(env):
     clock.now = T0 + timedelta(hours=2)
     r = ctrl.timer_stop("shortcut")
     c = r["confirm"]
-    assert c["kind"] == "stop_shift" and c["token"] == token
+    assert c["kind"] == "stop_shift" and c["token"] == f"{token}@{token[:11]}12:00:00"
     assert c["title"] == "Stop shift?" and c["icon"] == "question"
     r = ctrl.timer_stop("shortcut", _answer("stop_shift", "keep", token))
     assert r["status"] == "cancelled" and r["timer"]["running"]

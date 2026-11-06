@@ -182,7 +182,7 @@ def test_aged_25h_session_over_24h(tmp_path, choice):
     c = b["first"]["confirm"]
     assert b["first"]["status"] == "needs_confirm" and c["kind"] == "over_24h"
     assert [o["id"] for o in c["options"]] == ["save", "discard", "keep"]
-    assert c["token"] == start.isoformat()
+    assert c["token"].startswith(start.isoformat() + "@")   # start@press time
     capped = f"{start + timedelta(hours=8):%H:%M}"
     assert c["details"]["capped_end"] == capped
     assert c["details"]["elapsed_minutes"] >= 25 * 60
@@ -224,7 +224,7 @@ def test_aged_15h_session_long_shift_confirm(tmp_path):
     assert b["resume"]["timer"]["start_iso"] == start.isoformat()
     c = b["first"]["confirm"]
     assert b["first"]["status"] == "needs_confirm" and c["kind"] == "long_shift"
-    assert c["token"] == start.isoformat()
+    assert c["token"].startswith(start.isoformat() + "@")   # start@press time
     assert 15 * 60 <= c["details"]["elapsed_minutes"] < 24 * 60
     assert b["keep"]["status"] == "cancelled" and b["keep"]["timer"]["running"]
     assert b["stale"]["error"]["code"] == "stale" and b["stale"]["timer"]["running"]

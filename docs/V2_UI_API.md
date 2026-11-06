@@ -243,9 +243,19 @@ Order of checks (port of `TimerPanel.stop` / `toggle`):
      the saved shift overlaps another entry; never asked, the shift is already
      over) turns the "Shift saved" toast into a 12 s warning that appends it.
 
-`token` for 1–5 = running `start_iso`. The 24 h and 14 h limits (steps 4–5)
+`token` for 1–5 (and `close_running`) = `start_iso@press_iso`: the running
+start plus the moment STOP (or close) was pressed. Answers echo it back, so
+the elapsed time, the limits and the saved end all go by the press minute,
+not the moment the question was answered. An answer whose token is the plain
+`start_iso` (older callers) is still accepted and stops at "now"; a token
+naming another start, or a press time outside start…now, → `error(stale)`.
+The 24 h and 14 h limits (steps 4–5)
 go by whole clock minutes (seconds dropped on both ends), the way the HH:MM
 entry counts them, so a shift is never saved as `HH:MM–HH:MM` = 0 min.
+Elapsed time (`elapsed_minutes`, "Xh YYm ago", `start_epoch_ms`) is real
+time via the epoch, so the night the clocks go back counts the repeated hour.
+A start in the repeated hour's second pass is kept in `session.json` with an
+optional `"start_fold": 1` (older files without it load as before).
 
 ### 6.2 Timer start — `timer_start(mode, time, job_shift, confirm)`
 - Running → `error(already_running)`; recovery pending → `error(recovery_pending)`.
