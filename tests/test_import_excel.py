@@ -1,4 +1,6 @@
 """Tests for import_excel — both formats, dedup, edge cases."""
+import os
+
 import pytest
 from datetime import datetime, time as dt_time
 from openpyxl import Workbook
@@ -171,3 +173,85 @@ def test_import_eas_empty_shift_uses_default(tmp_path, tmp_storage):
     ])
     import_from_file(p)
     assert {e.job_shift for e in storage.load_month(2026, 5)} == {"Sales"}
+
+
+# ── one save, with a pre-import copy ──────────────────────────────────────────
+
+def _rows(n):
+    return [(datetime(2026, 5, d), dt_time(9, 0), dt_time(17, 0)) for d in range(1, n + 1)]
+
+
+def _backup_dir():
+    return os.path.join(os.path.dirname(storage.DATA_FILE), "backups")
+
+
+def _pre_import_copies():
+    if not os.path.isdir(_backup_dir()):
+        return []
+    return sorted(f for f in os.listdir(_backup_dir()) if f.startswith("pre-import-"))
+
+
+def test_import_writes_once(tmp_path, tmp_storage, monkeypatch):
+    storage.set_default_job_shift("Sales")
+    saves = []
+    real = storage._save_raw
+    monkeypatch.setattr(storage, "_save_raw", lambda d: (saves.append(1), real(d)))
+    p = str(tmp_path / "t.xlsx")
+    _make_simple_xlsx(p, _rows(5))
+    assert import_from_file(p) == (5, 0)
+    assert len(saves) == 1
+    assert len(storage.load_month(2026, 5)) == 5
+
+
+def test_import_keeps_a_pre_import_copy(tmp_path, tmp_storage):
+    storage.set_default_job_shift("Sales")
+    with open(storage.DATA_FILE, "rb") as f:
+        before = f.read()
+    p = str(tmp_path / "t.xlsx")
+    _make_simple_xlsx(p, _rows(2))
+    import_from_file(p)
+    copies = _pre_import_copies()
+    assert len(copies) == 1
+    with open(os.path.join(_backup_dir(), copies[0]), "rb") as f:
+        assert f.read() == before
+    # never mistaken for a daily snapshot by recovery
+    assert all("pre-import-" not in c for c in storage._backup_candidates())
+
+
+def test_import_of_only_duplicates_takes_no_copy(tmp_path, tmp_storage):
+    p = str(tmp_path / "t.xlsx")
+    _make_simple_xlsx(p, _rows(1))
+    import_from_file(p)
+    n = len(_pre_import_copies())
+    assert import_from_file(p) == (0, 1)
+    assert len(_pre_import_copies()) == n
+
+
+def test_pre_import_copies_are_pruned(tmp_storage):
+    storage.set_default_job_shift("Sales")
+    os.makedirs(_backup_dir(), exist_ok=True)
+    for i in range(7):
+        open(os.path.join(_backup_dir(), f"pre-import-2026010{i}-000000.json"), "w").close()
+    open(os.path.join(_backup_dir(), "data-2026-01-01.json"), "w").close()
+    storage.pre_import_snapshot()
+    copies = _pre_import_copies()
+    assert len(copies) == storage._PRE_IMPORT_KEEP
+    assert "pre-import-20260100-000000.json" not in copies
+    assert os.path.exists(os.path.join(_backup_dir(), "data-2026-01-01.json"))
+
+
+def test_failed_pre_import_copy_writes_nothing(tmp_path, tmp_storage, monkeypatch):
+    storage.set_default_job_shift("Sales")
+    with open(storage.DATA_FILE, "rb") as f:
+        before = f.read()
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(storage.shutil, "copy2", boom)
+    p = str(tmp_path / "t.xlsx")
+    _make_simple_xlsx(p, _rows(3))
+    with pytest.raises(OSError):
+        import_from_file(p)
+    with open(storage.DATA_FILE, "rb") as f:
+        assert f.read() == before
+    assert storage.load_month(2026, 5) == []

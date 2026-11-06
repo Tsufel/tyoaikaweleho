@@ -41,6 +41,8 @@ def import_from_file(path: str) -> tuple[int, int]:
 
     Returns (imported_count, skipped_count).
     Skips duplicates (same date + time_in already in storage).
+    New rows are written in one save, after a pre-import copy of data.json
+    (a failed copy aborts the import with nothing written).
     """
     wb = load_workbook(path, data_only=True)
 
@@ -49,7 +51,7 @@ def import_from_file(path: str) -> tuple[int, int]:
     # rows with no shift column (Simple) or an empty one (EAS)
     default_js = storage.get_default_job_shift()
 
-    imported = 0
+    new_entries: list[storage.WorkEntry] = []
     skipped = 0
 
     for ws in wb.worksheets:
@@ -95,8 +97,10 @@ def import_from_file(path: str) -> tuple[int, int]:
                 time_in=time_in,
                 time_out=time_out or "",
             )
-            storage.save_entry(entry)
+            new_entries.append(entry)
             existing_keys.add(key)
-            imported += 1
 
-    return imported, skipped
+    if new_entries:
+        storage.pre_import_snapshot()
+        storage.add_entries(new_entries)
+    return len(new_entries), skipped

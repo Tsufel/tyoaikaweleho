@@ -194,7 +194,7 @@ The current shift must never be lost:
 |---|---|---|
 | `export_month(year, month)` | ints | Native save dialog (initial `Hours {Month YYYY}.xlsx`, `.xlsx`). `cancelled` / `saved{path}` / `error(file_locked\|internal)` with v1.3 messages. Uses stored format / include-pay / pay rate. |
 | `reveal_export()` | — | Opens Explorer with the last file `export_month` saved this session selected (its folder if the file is gone). `ok` / `error(not_found)` (nothing exported yet, or the folder is gone) / `error(internal)`. The export toast's **Show in folder** calls it. |
-| `import_excel()` | — | Native multi-open dialog (`*.xlsx *.xls`). `cancelled` / `ok{imported, skipped, files, errors: string[]}` |
+| `import_excel()` | — | Native multi-open dialog (`*.xlsx *.xls`). `cancelled` / `ok{imported, skipped, files, errors: string[]}`. Each file's new rows are written in one save, after a copy to `backups/pre-import-<timestamp>.json` (newest 5 kept); a failed copy skips that file into `errors`. |
 | `ocr_pick_and_extract()` | — | Native multi-open dialog (images). `cancelled` / `error(dlc_unavailable)` / `error(ocr_failed, errors)` when nothing extracted and errors / `ok{candidates: OcrCandidate[], errors}` (empty `candidates` → "No entries found") |
 | `ocr_save(rows)` | `OcrRow[]` (checked rows only, trimmed) | `R<{imported, skipped, invalid_skipped}>` status `saved` / `error(save_failed)`. Rows missing date or time_in are skipped and counted in `invalid_skipped` (v1.3 "Rows skipped" warning). |
 

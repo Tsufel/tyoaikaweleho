@@ -249,6 +249,33 @@ def _daily_snapshot():
         pass
 
 
+_PRE_IMPORT_KEEP = 5
+
+
+def pre_import_snapshot() -> str:
+    """Copy data.json to backups/pre-import-<timestamp>.json before a bulk
+    import, keeping the newest _PRE_IMPORT_KEEP. The name must not start
+    with "data-": those are the daily snapshots that pruning and recovery
+    key on. Returns the copy's path ("" when there is no data.json yet).
+    Raises OSError so the caller can refuse to import without a copy."""
+    if not os.path.exists(DATA_FILE):
+        return ""
+    backup_dir = os.path.join(os.path.dirname(DATA_FILE), "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = os.path.join(backup_dir, f"pre-import-{stamp}.json")
+    if not os.path.exists(target):   # same second: keep the older state
+        shutil.copy2(DATA_FILE, target)
+    try:
+        copies = sorted(f for f in os.listdir(backup_dir)
+                        if f.startswith("pre-import-") and f.endswith(".json"))
+        for old in copies[:-_PRE_IMPORT_KEEP]:
+            os.remove(os.path.join(backup_dir, old))
+    except OSError:
+        pass
+    return target
+
+
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
@@ -294,10 +321,19 @@ def _sort_key(e) -> tuple:
 
 
 def save_entry(entry: WorkEntry):
+    add_entries([entry])
+
+
+def add_entries(entries: list[WorkEntry]):
+    """Add or replace entries by id with a single save, so a bulk import
+    rotates .bak once and is all-or-nothing on disk."""
+    if not entries:
+        return
+    ids = {e.id for e in entries}
     data = _load_raw()
     rows = [e for e in data.get("entries", [])
-            if not (isinstance(e, dict) and e.get("id") == entry.id)]
-    rows.append(entry.to_dict())
+            if not (isinstance(e, dict) and e.get("id") in ids)]
+    rows.extend(e.to_dict() for e in entries)
     for e in rows:
         if _is_entry(e):  # rows load skips (tombstones, bad rows) stay as they are
             e["date"] = _normalise_date(e["date"])
