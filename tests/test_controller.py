@@ -438,6 +438,15 @@ def test_discard_stale(env):
 
 # ── stop at / adjust the running shift ───────────────────────────────────────
 
+def test_running_start_follows_the_timer(env):
+    ctrl, clock = env
+    assert ctrl.running_start() is None
+    token = _started(ctrl, clock)
+    assert ctrl.running_start() == T0
+    ctrl.timer_discard(_answer("discard_shift", "discard", token))
+    assert ctrl.running_start() is None
+
+
 def test_stop_at_saves_the_given_end(env, tmp_timer):
     ctrl, clock = env
     _started(ctrl, clock, T0.replace(hour=9, second=40))

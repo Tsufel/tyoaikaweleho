@@ -116,6 +116,12 @@ class ShiftController:
                 "recovery_pending": self._session_pending(),
             }
 
+    def running_start(self) -> datetime | None:
+        """The running shift's start, or None; no disk reads (window title)."""
+        with self._lock:
+            t = self._timer
+            return t.start_dt if t.is_running else None
+
     def _start(self, job_shift: str, start: datetime) -> dict | None:
         """Start the timer; an error result if session.json can't be written."""
         try:

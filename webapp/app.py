@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 import traceback
+from datetime import datetime
 
 import storage
 from services import net
@@ -22,6 +23,7 @@ SMOKE_TIMEOUT_S = 30.0
 PLACEMENT_LOCK_TIMEOUT_S = 2.0
 _QUIT_DELAY_S = 0.05
 _HUNG_RENDERER_S = 5.0
+TITLE_TICK_S = 15.0
 
 WEBVIEW2_MISSING = (
     "Työaikaweleho needs the Microsoft Edge WebView2 Runtime, which was not "
@@ -58,6 +60,15 @@ def _is_dark(appearance: str) -> bool:
     if appearance == "Light":
         return False
     return _system_dark()
+
+
+def title_for(start: datetime | None, now: datetime) -> str:
+    """Window title: a running shift's elapsed H:MM first, so it shows on the
+    taskbar button; just the app name while idle."""
+    if start is None:
+        return TITLE
+    minutes = max(0, int((now - start).total_seconds() // 60))
+    return f"{minutes // 60}:{minutes % 60:02d} · {TITLE}"
 
 
 def frontend_index() -> str:
@@ -100,6 +111,7 @@ class _Shell:
         self._quitting = False
         self.ready = threading.Event()
         self.renderer_ok = True
+        self._title_stop = threading.Event()
 
     # window events ---------------------------------------------------
 
@@ -144,6 +156,7 @@ class _Shell:
             return False
 
     def on_closed(self):
+        self._title_stop.set()
         self._bus.close()
 
     def on_visibility(self):
@@ -196,6 +209,7 @@ class _Shell:
 
     def quit(self):
         self._quitting = True
+        self._title_stop.set()
         window = self.window
         if window is not None:
             threading.Timer(_QUIT_DELAY_S, window.destroy).start()
@@ -205,6 +219,22 @@ class _Shell:
     def _title_bar(self, dark: bool):
         win32.set_title_bar(self._hwnd, dark, BG_DARK if dark else BG_LIGHT,
                             TEXT_DARK if dark else TEXT_LIGHT)
+
+    def title_loop(self, clock=datetime.now):
+        """Light ticker: the running shift's elapsed time in the window title.
+        Reads the timer only (no disk); sets the title only when it changes."""
+        shown = TITLE
+        while not self._quitting:
+            try:
+                title = title_for(self._c.running_start(), clock())
+                if title != shown and self.window is not None:
+                    self.window.set_title(title)
+                    shown = title
+            except Exception:
+                storage.append_error_log("[app] window title\n" + traceback.format_exc())
+                return
+            if self._title_stop.wait(TITLE_TICK_S):
+                return
 
     def activation_loop(self, handle):
         while win32.wait_activate(handle):
@@ -291,6 +321,8 @@ def run(dev_url: str | None = None, smoke: bool = False) -> int:
         if handle:
             threading.Thread(target=shell.activation_loop, args=(handle,),
                              name="weleho-activate", daemon=True).start()
+        threading.Thread(target=shell.title_loop, name="weleho-title",
+                         daemon=True).start()
         watchdog = threading.Timer(REVEAL_WATCHDOG_S, shell.show)
         watchdog.daemon = True
         watchdog.start()
