@@ -1600,6 +1600,11 @@ def test_list_month_overlap_flag(env):
     assert [(r["date"], r["overlap"]) for r in rows] == [
         ("2026-09-01", True), ("2026-09-10", False), ("2026-09-10", False),
         ("2026-09-12", False)]
+    prev = [e for e in storage.load_all_entries() if e.date == "2026-08-31"][0]
+    assert rows[0]["overlap_with"] == [{"id": prev.id, "date": "2026-08-31",
+                                        "job_shift": prev.job_shift,
+                                        "time_in": "22:00", "time_out": "06:00"}]
+    assert all(r["overlap_with"] == [] for r in rows[1:])
 
 
 def test_export_remembers_last_path(env, monkeypatch):

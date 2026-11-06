@@ -383,7 +383,9 @@ Bootstrap = {
 - `EntryRow = WorkEntry + {minutes: number|null, overnight, display_date
   ("Tue 23 Sep 2026"), time_out_display ("06:00 +1"), week_key ("2026-W39")}`.
   `list_month` rows also carry `overlap: boolean` (overlaps another saved
-  entry, including one from the day before) — the list shows a ⚠ by the date.
+  entry, including one from the day before) — the list shows a ⚠ by the date —
+  and `overlap_with: WorkEntry[]`, the entries it overlaps (empty when none);
+  the ⚠ names them and jumps to the first.
 - `TimerState {running, start_iso, start_epoch_ms, job_shift, default_job_shift,
   default_start_time, pay_rate, recovery_pending}` — idle: start fields null.
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
