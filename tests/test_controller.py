@@ -880,6 +880,15 @@ def test_list_month(env):
     assert d["weeks"][1]["minutes"] == 480 and len(d["weeks"][1]["entry_ids"]) == 2
     assert d["total_minutes"] == 960 and d["earnings"] == 320.0
     assert d["entries"][2]["minutes"] is None
+    assert d["holidays"] == {}
+
+
+def test_list_month_carries_holidays(env):
+    ctrl, _ = env
+    d = ctrl.list_month(2026, 12)["data"]
+    assert d["holidays"] == {"2026-12-06": "Itsenäisyyspäivä", "2026-12-24": "Jouluaatto",
+                             "2026-12-25": "Joulupäivä", "2026-12-26": "Tapaninpäivä"}
+    assert ctrl.list_month(2026, 10)["data"]["holidays"] == {"2026-10-31": "Pyhäinpäivä"}
 
 
 def test_list_month_invalid(env):

@@ -19,6 +19,8 @@ import {
   isFiltering,
   isSameMonth,
   isWeekend,
+  dateTitle,
+  holidayOn,
   jobsInMonth,
   monthAsText,
   overlapText,
@@ -384,6 +386,16 @@ describe('row polish', () => {
     expect(isWeekend('2026-09-26')).toBe(true);
     expect(isWeekend('2026-09-27')).toBe(true);
     expect(isWeekend('2026-09-28')).toBe(false);
+  });
+
+  it('names public holidays from the month payload', () => {
+    const dec: MonthData = { ...month, holidays: { '2026-12-06': 'Itsenäisyyspäivä' } };
+    expect(holidayOn(dec, '2026-12-06')).toBe('Itsenäisyyspäivä');
+    expect(holidayOn(dec, '2026-12-07')).toBeNull();
+    expect(holidayOn(month, '2026-09-23')).toBeNull(); // older backend: no field
+    expect(holidayOn(null, '2026-12-06')).toBeNull();
+    expect(dateTitle('Sun 6 Dec 2026', 'Itsenäisyyspäivä')).toBe('Sun 6 Dec 2026 · Itsenäisyyspäivä (public holiday)');
+    expect(dateTitle('Mon 7 Dec 2026', null)).toBe('Mon 7 Dec 2026');
   });
 });
 

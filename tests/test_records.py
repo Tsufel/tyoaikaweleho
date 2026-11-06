@@ -64,6 +64,8 @@ def test_week_53_and_year_boundary():
     r = _r(entries, today=date(2027, 2, 1))
     assert r["best_week"] == {"key": "2026-W53", "start": "2026-12-28", "minutes": 960}
     assert r["best_month"] == {"key": "2027-01", "minutes": 1020}
+    # Fri 1 Jan is Uudenvuodenpäivä: no count, no break; the missed Mon 4 Jan breaks
+    assert r["streak"] == {"current": 0, "best": 1}
 
 
 def test_best_week_tie_goes_to_the_earliest_week():
@@ -120,6 +122,14 @@ def test_current_streak_skips_weekends_and_breaks_on_a_missed_weekday():
     # Wed missed: only Thu counts
     r = _r(_days(date(2026, 10, 26), 2) + _days(date(2026, 10, 29), 1), today=date(2026, 10, 29))
     assert r["streak"] == {"current": 1, "best": 2}
+
+
+def test_streak_skips_public_holidays():
+    # Mon 30 Mar - Thu 2 Apr 2026, Easter off (Fri 3 - Mon 6 Apr), Tue 7 Apr today
+    entries = _days(date(2026, 3, 30), 4) + _days(date(2026, 4, 7), 1)
+    assert _r(entries, today=date(2026, 4, 7))["streak"] == {"current": 5, "best": 5}
+    # on Easter Monday itself the run up to Thursday stands
+    assert _r(entries[:4], today=date(2026, 4, 6))["streak"]["current"] == 4
 
 
 def test_best_streak_survives_a_break_and_uses_target():

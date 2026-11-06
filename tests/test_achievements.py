@@ -164,6 +164,23 @@ def test_streak_broken_by_weekday_below_target():
     assert a["streak_5"]["progress"]["cur"] == 2
 
 
+def test_streak_public_holidays_do_not_break_run():
+    # Mon 30 Mar - Thu 2 Apr 2026, (Pitkäperjantai, weekend, 2. pääsiäispäivä), Tue 7 Apr
+    entries = _days(date(2026, 3, 30), 4) + _days(date(2026, 4, 7), 1)
+    a = _by_id(entries)
+    assert a["streak_5"]["met_on"] == "2026-04-07"
+
+
+def test_streak_work_on_a_public_holiday_neither_counts_nor_breaks():
+    # Pitkäperjantai at target doesn't count: still met on Tue 7 Apr, not Fri 3 Apr
+    entries = _days(date(2026, 3, 30), 5) + _days(date(2026, 4, 7), 1)
+    assert _by_id(entries)["streak_5"]["met_on"] == "2026-04-07"
+    # nor does a short shift on it break the run
+    entries = (_days(date(2026, 3, 30), 4) + [_e("2026-04-03", "10:00", "11:00")]
+               + _days(date(2026, 4, 7), 1))
+    assert _by_id(entries)["streak_5"]["met_on"] == "2026-04-07"
+
+
 def test_streak_uses_best_run_for_progress():
     entries = _days(MON, 4) + _days(date(2026, 10, 13), 2)  # Mon-Thu, (Fri, Mon off), Tue-Wed
     assert _by_id(entries)["streak_5"]["progress"]["cur"] == 4

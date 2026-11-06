@@ -238,6 +238,9 @@ export interface MonthData {
   weeks: WeekGroup[];
   total_minutes: number;
   earnings: number;
+  /** Finnish public holidays in this month: ISO date -> name ("Vappu").
+   *  Two on one date are joined with " / ". Optional for older backends. */
+  holidays?: Record<IsoDate, string>;
 }
 
 // ── Timer & recovery ─────────────────────────────────────────────

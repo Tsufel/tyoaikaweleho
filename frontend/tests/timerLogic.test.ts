@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   DIAL_MAX_MIN,
   IDLE_TEXT,
+  idleGreeting,
   RING,
   RING_INNER,
   agoText,
@@ -124,6 +125,18 @@ describe('texts (v1.3 TimerPanel)', () => {
 
   it('idle text', () => {
     expect(IDLE_TEXT).toBe('Press START (F5) to begin tracking');
+  });
+
+  it('idle greeting follows the time, weekend and holidays, F5 hint kept', () => {
+    const at = (y: number, mo: number, d: number, h: number) => idleGreeting(new Date(y, mo - 1, d, h));
+    expect(at(2026, 11, 4, 7)).toBe('Good morning. Press START (F5) to begin tracking'); // Wed
+    expect(at(2026, 11, 4, 13)).toBe('Good afternoon. Press START (F5) to begin tracking');
+    expect(at(2026, 11, 4, 19)).toBe('Good evening. Press START (F5) to begin tracking');
+    expect(at(2026, 11, 4, 2)).toBe('Up late? Press START (F5) to begin tracking');
+    expect(at(2026, 11, 7, 10)).toBe('Weekend shift? Press START (F5) to begin tracking'); // Sat
+    expect(at(2026, 12, 6, 10)).toBe('Itsenäisyyspäivä today. Working anyway? Press START (F5) to begin tracking');
+    expect(at(2026, 5, 1, 9)).toContain('Vappu today');
+    for (const h of [0, 6, 12, 23]) expect(at(2026, 11, 4, h)).toContain('(F5)');
   });
 
   it('started today / yesterday / earlier', () => {

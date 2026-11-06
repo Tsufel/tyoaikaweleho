@@ -60,6 +60,8 @@ describe('computeRecords (mock port of records.py)', () => {
     expect(r.total_shifts).toBe(3);
     expect(r.best_week).toEqual({ key: '2026-W53', start: '2026-12-28', minutes: 960 });
     expect(r.best_month).toEqual({ key: '2027-01', minutes: 1020 });
-    expect(r.streak).toEqual({ current: 0, best: 2 });
+    // Fri 1 Jan 2027 is Uudenvuodenpäivä: neither counts nor breaks, but the
+    // missed Mon 4 Jan does
+    expect(r.streak).toEqual({ current: 0, best: 1 });
   });
 });

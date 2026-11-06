@@ -14,6 +14,7 @@ Rules shared by every achievement:
 import math
 from datetime import date, timedelta
 
+from holidays import is_holiday
 from utils import entry_minutes
 from webapp.results import money
 
@@ -52,7 +53,7 @@ CATALOGUE = [
     {"id": "hours_100", "tier": "silver", "goal": 100, "unit": "h",
      "title": "100 hours", "desc": "Log 100 hours in total."},
     {"id": "streak_5", "tier": "silver", "goal": 5, "unit": "days",
-     "title": "Full week", "desc": "Hit your target on 5 workdays in a row (weekends don't count)."},
+     "title": "Full week", "desc": "Hit your target on 5 workdays in a row (weekends and public holidays don't count)."},
     {"id": "weeks_4", "tier": "silver", "goal": 4, "unit": "weeks",
      "title": "Regular", "desc": "Work at least one shift in 4 weeks in a row."},
     {"id": "early_bird", "tier": "silver", "goal": 1, "unit": "shifts", "hidden": True,
@@ -77,7 +78,7 @@ CATALOGUE = [
     {"id": "shifts_100", "tier": "gold", "goal": 100, "unit": "shifts", "icon": "first_shift",
      "title": "Centurion", "desc": "Save 100 shifts."},
     {"id": "streak_10", "tier": "gold", "goal": 10, "unit": "days", "icon": "streak_5",
-     "title": "Fortnight", "desc": "Hit your target on 10 workdays in a row (weekends don't count)."},
+     "title": "Fortnight", "desc": "Hit your target on 10 workdays in a row (weekends and public holidays don't count)."},
     {"id": "weeks_12", "tier": "gold", "goal": 12, "unit": "weeks", "icon": "weeks_4",
      "title": "Seasoned", "desc": "Work at least one shift in 12 weeks in a row."},
     {"id": "no_days_off", "tier": "gold", "goal": 7, "unit": "days", "hidden": True,
@@ -154,9 +155,15 @@ def pet_stats(entries, today: date | None = None) -> dict:
     return {"lifetime_minutes": lifetime, "days": days}
 
 
-def _prev_workday(d: date) -> date:
+def is_workday(d: date) -> bool:
+    """Mon-Fri and not a Finnish public holiday: the days a streak counts.
+    Shared with records.py so both streaks agree."""
+    return d.weekday() < 5 and not is_holiday(d)
+
+
+def prev_workday(d: date) -> date:
     d -= timedelta(days=1)
-    while d.weekday() >= 5:
+    while not is_workday(d):
         d -= timedelta(days=1)
     return d
 
@@ -241,16 +248,17 @@ def evaluate(entries, target_hours=8.0, pay_rate=0.0, today: date | None = None)
                 hit("target_10", d)
             if target_days >= goals["target_50"]:
                 hit("target_50", d)
-            if d.weekday() < 5:
+            if is_workday(d):
                 # Only worked days are replayed, so a weekday with no shift at
                 # all shows up as a gap to the previous workday and breaks it.
-                run = run + 1 if last_run_day == _prev_workday(d) else 1
+                # Weekends and public holidays neither count nor break it.
+                run = run + 1 if last_run_day == prev_workday(d) else 1
                 last_run_day = d
                 best_run = max(best_run, run)
                 for aid in ("streak_5", "streak_10"):
                     if run >= goals[aid]:
                         hit(aid, d)
-        elif d.weekday() < 5:
+        elif is_workday(d):
             run, last_run_day = 0, None
         monday = d - timedelta(days=d.weekday())
         if monday != last_week:

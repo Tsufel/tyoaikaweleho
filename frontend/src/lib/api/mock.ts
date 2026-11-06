@@ -60,6 +60,7 @@ import {
   toIsoDateTime,
   weekKey,
 } from '../time';
+import { holidaysInMonth } from '../holidays';
 import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
 import { computeRecords } from './mockRecords';
 
@@ -372,6 +373,7 @@ export function createMockApi(): Api {
         .map(([key, g]) => ({ key, iso_year: g.iso_year, week: g.week, entry_ids: g.ids, minutes: g.minutes, earnings: pay(g.minutes) })),
       total_minutes: total,
       earnings: pay(total),
+      holidays: holidaysInMonth(year, m),
     };
   }
 

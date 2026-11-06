@@ -517,11 +517,18 @@ Bootstrap = {
 MonthData = { year, month, label: "October 2026", pay_rate,
   entries: EntryRow[],          // sorted by date, time_in
   weeks: WeekGroup[],           // ISO-week groups, sorted by (iso_year, week)
-  total_minutes, earnings }
+  total_minutes, earnings,
+  holidays?: Record<IsoDate, string> } // Finnish public holidays this month
 WeekGroup = { key:"2026-W39", iso_year, week, entry_ids: string[],
   minutes, earnings }
 ```
-Entries without a time_out count 0 minutes. Export: on the 1st–5th, viewing
+Entries without a time_out count 0 minutes. `holidays` comes from
+`holidays.py` (computed locally, never stored): Uudenvuodenpäivä, Loppiainen,
+Easter (Pitkäperjantai to 2. pääsiäispäivä), Vappu, Helatorstai, Juhannusaatto
+and -päivä, Pyhäinpäivä, Itsenäisyyspäivä and Jouluaatto to Tapaninpäivä; two
+on one date are joined with " / ". The table marks rows on a holiday, with the
+name as a tooltip. Holidays on a weekday neither count toward nor break the
+workday streak (`streak_5`, `streak_10`, Hall of fame), like weekends. Export: on the 1st–5th, viewing
 the current month, Export first asks "Export which month?" with last month as
 the default when last month has shifts; exporting a month with no shifts asks
 first. After a save the toast offers **Show in folder** (`reveal_export`).
