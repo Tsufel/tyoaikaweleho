@@ -66,6 +66,12 @@
       const n = shown.length;
       active = (active + (e.key === 'ArrowDown' ? 1 : -1) + n) % n;
       document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' });
+    } else if ((e.key === 'PageDown' || e.key === 'PageUp') && open && shown.length) {
+      // a page of options at a time; Home/End stay with the text caret
+      e.preventDefault();
+      const step = e.key === 'PageDown' ? 5 : -5;
+      active = Math.min(shown.length - 1, Math.max(0, (active < 0 ? 0 : active) + step));
+      document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: 'nearest' });
     } else if (e.key === 'Enter' && open && active >= 0) {
       e.preventDefault();
       e.stopPropagation();

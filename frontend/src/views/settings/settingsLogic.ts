@@ -1,4 +1,5 @@
 import type { Appearance, DlcStatus, ExportFormat, Settings, SettingsDraft, VersionCheck } from '../../lib/api/types';
+import { SHORTCUT_GROUPS } from '../../lib/shortcutList';
 
 /** Editable Settings form state (raw text where the user types). */
 export interface SettingsForm {
@@ -219,18 +220,6 @@ export function dlcInstalledMessage(verified: boolean, d: DlcStatus): string {
 }
 
 // ── Shortcuts table (v1.3 _SHORTCUTS) ────────────────────────────
+// Kept in lib/shortcutList.ts so the cheat sheet and this page can't drift.
 
-export const SHORTCUTS: { keys: string[]; what: string }[] = [
-  { keys: ['F5'], what: 'Start / stop the timer' },
-  { keys: ['Ctrl+N'], what: 'Add an entry' },
-  { keys: ['Enter', 'F2'], what: 'Edit the selected entry' },
-  { keys: ['Delete'], what: 'Delete the selected entry' },
-  { keys: ['Ctrl+Z'], what: 'Undo a delete (while the note is shown)' },
-  { keys: ['Click a time'], what: 'Edit Time In / Time Out in place' },
-  { keys: ['Ctrl+←', 'Ctrl+→'], what: 'Previous / next month (also PageUp / PageDown)' },
-  { keys: ['Ctrl+Home'], what: 'Go to the current month' },
-  { keys: ['Ctrl+E'], what: 'Export to Excel' },
-  { keys: ['Ctrl+I'], what: 'Import menu' },
-  { keys: ['Ctrl+,'], what: 'Open Settings' },
-  { keys: ['Esc', 'Ctrl+S'], what: 'In Settings: back / save' },
-];
+export const SHORTCUTS: { keys: string[]; what: string }[] = SHORTCUT_GROUPS.flatMap((g) => g.rows);

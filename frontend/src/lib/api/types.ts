@@ -655,4 +655,11 @@ export type CommandName =
   | 'settings.back'
   | 'month.prev'
   | 'month.next'
-  | 'month.current';
+  | 'month.current'
+  // shell shortcuts: views, the cheat sheet and one secret
+  | 'view.timer'
+  | 'view.shifts'
+  | 'view.stats'
+  | 'stats.back'
+  | 'help.shortcuts'
+  | 'wizard.secret';

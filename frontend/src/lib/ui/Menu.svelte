@@ -17,9 +17,11 @@
   import { onMount, tick } from 'svelte';
   import Icon from './Icon.svelte';
   import Popover from './Popover.svelte';
+  import { createTypeahead, isPrintableKey, typeaheadIndex } from './typeahead';
 
-  /** Dropdown menu; mount with {#if open}. ↑/↓/Home/End move, Enter picks,
-   *  Esc closes and returns focus to the anchor. */
+  /** Dropdown menu; mount with {#if open}. ↑/↓/Home/End move, letters jump
+   *  to a matching item, Enter picks, Esc closes and returns focus to the
+   *  anchor. */
   let {
     anchor,
     items,
@@ -40,8 +42,19 @@
 
   const buttons = () => [...(list?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
 
+  const typed = createTypeahead();
+
   function onKeydown(e: KeyboardEvent) {
     const all = buttons();
+    if (isPrintableKey(e)) {
+      const labels = all.map((b) => b.querySelector('.lbl')?.textContent ?? '');
+      const hit = typeaheadIndex(labels, all.indexOf(document.activeElement as HTMLButtonElement), typed(e.key));
+      if (hit >= 0) {
+        e.preventDefault();
+        all[hit].focus();
+      }
+      return;
+    }
     const i = all.indexOf(document.activeElement as HTMLButtonElement);
     let n: number;
     if (e.key === 'ArrowDown') n = (i + 1) % all.length;
@@ -69,7 +82,7 @@
   });
 </script>
 
-<Popover {anchor} {onclose} {placement} role="none">
+<Popover {anchor} {onclose} {placement} role="none" closeOnFocusOut={false}>
   <div bind:this={list} class="menu" role="menu" aria-label={label} tabindex="-1" onkeydown={onKeydown}>
     {#each items as it (it.id)}
       {#if it.separator}<div class="sep" role="separator"></div>{/if}

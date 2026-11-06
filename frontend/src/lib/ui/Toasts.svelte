@@ -1,52 +1,29 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { dismiss, runToastAction, toasts, type Toast } from '../stores/toasts';
+  import { pageVisible, windowFocused } from '../stores/app';
   import { fly, flip } from '../motion';
   import Icon, { type IconName } from './Icon.svelte';
   import { liquidGlass } from '../glass/liquidGlass';
+  import { createToastTimers } from './toastTimers';
 
-  // per-toast countdown that pauses while hovered / focused
-  const timers = new Map<number, { left: number; started: number; handle?: ReturnType<typeof setTimeout> }>();
-  let hovering = $state(false);
-
-  function arm(t: Toast) {
-    if (t.ms <= 0) return;
-    const s = timers.get(t.id) ?? { left: t.ms, started: 0 };
-    timers.set(t.id, s);
-    if (hovering || s.handle) return;
-    s.started = Date.now();
-    s.handle = setTimeout(() => dismiss(t.id), s.left);
-  }
-
-  function pauseAll() {
-    hovering = true;
-    for (const s of timers.values()) {
-      if (!s.handle) continue;
-      clearTimeout(s.handle);
-      s.handle = undefined;
-      s.left = Math.max(1500, s.left - (Date.now() - s.started));
-    }
-  }
-
-  function resumeAll() {
-    hovering = false;
-    for (const t of $toasts) arm(t);
-  }
+  // per-toast countdowns; paused while hovered, focused or the window is away
+  const timers = createToastTimers(dismiss);
+  let stackEl = $state<HTMLElement>();
 
   $effect(() => {
-    const ids = new Set($toasts.map((t) => t.id));
-    for (const [id, s] of timers) {
-      if (!ids.has(id)) {
-        clearTimeout(s.handle);
-        timers.delete(id);
-      }
-    }
-    for (const t of $toasts) arm(t);
+    timers.sync($toasts);
+  });
+  $effect(() => {
+    timers.hold('away', !$windowFocused || !$pageVisible);
   });
 
-  onDestroy(() => {
-    for (const s of timers.values()) clearTimeout(s.handle);
-  });
+  function focusOut(e: FocusEvent) {
+    const next = e.relatedTarget as Node | null;
+    if (!next || !stackEl?.contains(next)) timers.hold('focus', false);
+  }
+
+  onDestroy(() => timers.destroy());
 
   const ICONS: Record<Toast['tone'], IconName> = {
     info: 'info',
@@ -57,12 +34,13 @@
 </script>
 
 <section
+  bind:this={stackEl}
   class="toasts"
   aria-label="Notifications"
-  onpointerenter={pauseAll}
-  onpointerleave={resumeAll}
-  onfocusin={pauseAll}
-  onfocusout={resumeAll}
+  onpointerenter={() => timers.hold('hover', true)}
+  onpointerleave={() => timers.hold('hover', false)}
+  onfocusin={() => timers.hold('focus', true)}
+  onfocusout={focusOut}
 >
   <div aria-live="polite" aria-atomic="false" class="stack">
     {#each $toasts as t (t.id)}
@@ -76,6 +54,9 @@
       >
         <span class="ic"><Icon name={ICONS[t.tone]} size={18} /></span>
         <span class="msg">{t.message}</span>
+        {#if t.count > 1}
+          <span class="count"><span aria-hidden="true">×{t.count}</span><span class="sr-only">({t.count} times)</span></span>
+        {/if}
         {#if t.action}
           <button type="button" class="action" onclick={() => runToastAction(t.id)}>{t.label}</button>
         {/if}
@@ -132,6 +113,16 @@
     min-width: 0;
     line-height: 1.4;
     white-space: pre-line;
+  }
+  .count {
+    flex: none;
+    padding: 2px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--neutral-fill);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
   }
   .action {
     border: 0;

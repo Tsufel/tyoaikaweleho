@@ -9,6 +9,7 @@
   let { ondone, version = '', play = true }: { ondone: () => void; version?: string; play?: boolean } = $props();
 
   let leaving = $state(false);
+  let skipped = $state(false);
   let done = false;
   const finish = () => {
     if (done) return;
@@ -23,15 +24,28 @@
   $effect(() => {
     if (!play || done) return;
     const t1 = setTimeout(() => (leaving = true), 1050);
-    const t2 = setTimeout(finish, 1450);
+    let t2 = setTimeout(finish, 1450);
+    // a click or key skips ahead to a short fade
+    const skip = () => {
+      if (leaving) return;
+      leaving = true;
+      skipped = true;
+      clearTimeout(t1);
+      clearTimeout(t2);
+      t2 = setTimeout(finish, 200);
+    };
+    window.addEventListener('pointerdown', skip, true);
+    window.addEventListener('keydown', skip, true);
     return () => {
       clearTimeout(t1);
       clearTimeout(t2);
+      window.removeEventListener('pointerdown', skip, true);
+      window.removeEventListener('keydown', skip, true);
     };
   });
 </script>
 
-<div class="intro" class:leaving class:waiting={!play} aria-hidden="true">
+<div class="intro" class:leaving class:skipped class:waiting={!play} aria-hidden="true">
   <div class="wizard">
     <span class="wiz-glow"></span>
     <span class="wiz-frame"><img src={wizard} alt="" width="512" height="512" /></span>
@@ -56,6 +70,9 @@
   }
   .waiting * {
     animation-play-state: paused;
+  }
+  .skipped {
+    transition-duration: 200ms;
   }
   .leaving {
     opacity: 0;
