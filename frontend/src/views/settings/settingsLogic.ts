@@ -9,6 +9,7 @@ export interface SettingsForm {
   default_job_shift: string;
   export_format: ExportFormat;
   export_include_pay: boolean;
+  export_include_names: boolean;
   employee_name: string;
   manager_name: string;
   target_hours: number;
@@ -34,6 +35,7 @@ export function formFromSettings(s: Settings): SettingsForm {
     default_job_shift: s.default_job_shift,
     export_format: s.export_format,
     export_include_pay: s.export_include_pay,
+    export_include_names: !!s.export_include_names,
     employee_name: s.employee_name ?? '',
     manager_name: s.manager_name ?? '',
     target_hours: s.ui_prefs.target_hours,
@@ -52,6 +54,7 @@ export function snapshot(f: SettingsForm): string {
     f.target_hours,
     f.employee_name.trim(),
     f.manager_name.trim(),
+    !!f.export_include_names,
   ]);
 }
 
@@ -66,6 +69,7 @@ export function draftFromForm(f: SettingsForm, live: Settings): SettingsDraft {
     default_job_shift: f.default_job_shift.trim(),
     export_format: f.export_format,
     export_include_pay: !!f.export_include_pay,
+    export_include_names: !!f.export_include_names,
     employee_name: f.employee_name.trim(),
     manager_name: f.manager_name.trim(),
     ui_prefs: { ...live.ui_prefs, target_hours: f.target_hours },

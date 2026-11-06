@@ -494,13 +494,15 @@ Bootstrap = {
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
-  employee_name:'', manager_name:'',
+  export_include_names:false, employee_name:'', manager_name:'',
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
   liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false,
   pet_skin:'classic', zoom:100}}`. `pet_skin` is `'classic'|'cosmic'|'neon'|'gilded'|'legend'`
   (a look not yet unlocked by the pet's level is drawn as classic).
   `employee_name` / `manager_name` are printed after EMPLOYEE: / MANAGER: (B3 /
-  B5) on the Full sheet; `''` leaves the line blank, as before. They are saved
+  B5) on the Full sheet only while `export_include_names` is on (default off;
+  a draft that leaves it out keeps it; turning it off keeps the names saved);
+  `''` leaves the line blank, as before. They are saved
   through `save_settings`, trimmed with inner whitespace collapsed, at most 60
   characters with no control characters (`invalid(field:'employee_name'|
   'manager_name')`); a draft that leaves a name out keeps the stored one.

@@ -1135,12 +1135,27 @@ def test_save_settings_sheet_names(env, tmp_path):
         _settings_draft(employee_name="bell\x07"))["message"]
     assert "60 characters" in ctrl.save_settings(
         _settings_draft(employee_name="x" * 61))["message"]
-    # the Full export prints them after EMPLOYEE: / MANAGER:
     from openpyxl import load_workbook
-    out = tmp_path / "Full.xlsx"
-    assert ctrl.export_month(2026, 5, str(out))["status"] == "saved"
-    ws = load_workbook(str(out)).active
-    assert ws["B3"].value == "Aino Virtanen" and ws["B5"].value == "Pekka"
+
+    def names_on_sheet(name):
+        out = tmp_path / name
+        assert ctrl.export_month(2026, 5, str(out))["status"] == "saved"
+        ws = load_workbook(str(out)).active
+        return ws["B3"].value, ws["B5"].value
+
+    # printing the names is optional and off by default
+    assert r["settings"]["export_include_names"] is False
+    assert names_on_sheet("off.xlsx") == (None, None)
+    # turned on, the Full export prints them after EMPLOYEE: / MANAGER:
+    r = ctrl.save_settings(_settings_draft(export_include_names=True))
+    assert r["settings"]["export_include_names"] is True
+    assert names_on_sheet("on.xlsx") == ("Aino Virtanen", "Pekka")
+    # a draft without the switch leaves it as it was
+    assert ctrl.save_settings(_settings_draft())["settings"]["export_include_names"] is True
+    # turned off again, the names stay saved but are not printed
+    r = ctrl.save_settings(_settings_draft(export_include_names=False))
+    assert r["settings"]["employee_name"] == "Aino Virtanen"
+    assert names_on_sheet("off-again.xlsx") == (None, None)
 
 
 def test_save_settings_lulz_sound(env):

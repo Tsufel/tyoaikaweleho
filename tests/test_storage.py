@@ -137,6 +137,20 @@ def test_export_include_pay_roundtrip(tmp_storage):
     assert storage.get_export_include_pay() is True
 
 
+def test_export_include_names_off_by_default_and_saved(tmp_storage):
+    assert storage.get_export_include_names() is False
+    storage.save_settings({"export_include_names": True})
+    assert storage.get_export_include_names() is True
+    with pytest.raises(ValueError):
+        storage.save_settings({"export_include_names": "yes"})
+    assert storage.get_export_include_names() is True
+
+
+def test_export_include_names_hand_edited_junk_reads_off(tmp_storage):
+    (tmp_storage / "data.json").write_text('{"export_include_names": "yes"}', encoding="utf-8")
+    assert storage.get_export_include_names() is False
+
+
 def test_sheet_names_default_blank(tmp_storage):
     assert storage.get_sheet_names() == {"employee_name": "", "manager_name": ""}
 

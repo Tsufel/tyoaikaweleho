@@ -505,10 +505,19 @@
           </div>
           <Switch label="Include pay in export" bind:checked={form.export_include_pay} />
         </div>
+        <div class="switch-row">
+          <div>
+            <div class="row-title">Include names</div>
+            <div class="muted small">Prints employee and manager names on Full timesheets.</div>
+          </div>
+          <Switch label="Include names in export" bind:checked={form.export_include_names} />
+        </div>
+        <!-- an error on a name field keeps the fields on screen so it can be fixed -->
+        {#if form.export_include_names || errors.employee_name || errors.manager_name}
         <div class="two">
           {#each [{ f: 'employee_name', id: 'set-employee', label: 'Employee name' }, { f: 'manager_name', id: 'set-manager', label: 'Manager name' }] as const as n (n.f)}
             <div bind:this={els[n.f]}>
-              <Field label={n.label} forId={n.id} error={errors[n.f]} hint="Printed on Full timesheets.">
+              <Field label={n.label} forId={n.id} error={errors[n.f]} hint="Leave blank for an empty line.">
                 <TextInput
                   id={n.id}
                   bind:value={form[n.f]}
@@ -522,6 +531,7 @@
             </div>
           {/each}
         </div>
+        {/if}
       </div>
     </GlassCard>
 

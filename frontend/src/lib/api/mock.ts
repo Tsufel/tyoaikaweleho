@@ -249,6 +249,7 @@ export function createMockApi(): Api {
     default_job_shift: 'Sales',
     export_format: 'Simple',
     export_include_pay: false,
+    export_include_names: false,
     employee_name: '',
     manager_name: '',
     ui_prefs: {
@@ -1101,6 +1102,8 @@ ${saveFailMsg()}`, { timer: timerState() });
         default_job_shift: job,
         export_format: draft.export_format,
         export_include_pay: draft.export_include_pay,
+        // left out = unchanged, like Python
+        export_include_names: draft.export_include_names ?? settings.export_include_names,
         ...names,
         ui_prefs: { ...draft.ui_prefs },
       };

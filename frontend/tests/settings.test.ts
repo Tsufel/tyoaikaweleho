@@ -33,6 +33,7 @@ const S: Settings = {
   default_job_shift: 'Morning',
   export_format: 'Simple',
   export_include_pay: false,
+  export_include_names: false,
   employee_name: 'Aino Virtanen',
   manager_name: '',
   ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '', pet_hint_seen: false, pet_skin: 'classic', zoom: 100 },
@@ -61,6 +62,7 @@ describe('settings form', () => {
     expect(isDirty(a, { ...a, appearance: 'Dark' })).toBe(true);
     expect(isDirty(a, { ...a, target_hours: 7.5 })).toBe(true);
     expect(isDirty(a, { ...a, export_include_pay: true })).toBe(true);
+    expect(isDirty(a, { ...a, export_include_names: true })).toBe(true);
   });
 
   it('draft keeps instantly-saved prefs from live settings', () => {

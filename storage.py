@@ -802,6 +802,11 @@ def set_export_include_pay(val: bool):
     _save_raw(data)
 
 
+def get_export_include_names() -> bool:
+    """Print employee_name / manager_name on the Full sheet (default off)."""
+    return _read_raw().get("export_include_names", False) is True
+
+
 def get_last_seen_version() -> str | None:
     """Return the version string from the last time the app ran, or None on first install."""
     return _read_raw().get("last_seen_version")
@@ -1101,7 +1106,8 @@ def add_achievements_seen(seen: dict) -> dict:
 
 EXPORT_FORMATS = ("Simple", "Full")
 
-# names printed on the Full (EAS) sheet; "" leaves the line blank
+# names printed on the Full (EAS) sheet while export_include_names is on;
+# "" leaves the line blank
 SHEET_NAME_KEYS = ("employee_name", "manager_name")
 SHEET_NAME_MAX = 60
 
@@ -1141,9 +1147,9 @@ def _check_setting(key: str, value):
     elif key == "export_format":
         if value not in EXPORT_FORMATS:
             raise ValueError(f"export_format must be one of {EXPORT_FORMATS}")
-    elif key == "export_include_pay":
+    elif key in ("export_include_pay", "export_include_names"):
         if not isinstance(value, bool):
-            raise ValueError("export_include_pay must be true or false")
+            raise ValueError(f"{key} must be true or false")
     elif key == "appearance_mode":
         if value not in APPEARANCE_MODES:
             raise ValueError(f"appearance mode must be one of {APPEARANCE_MODES}")
@@ -1159,8 +1165,8 @@ def save_settings(values: dict):
     """Write several settings in one load/save, so either all or none of
     them are stored. Keys are the data.json names (pay_rate,
     default_start_time, default_job_shift, export_format,
-    export_include_pay, appearance_mode, employee_name, manager_name,
-    ui_prefs — which may be partial).
+    export_include_pay, export_include_names, appearance_mode,
+    employee_name, manager_name, ui_prefs — which may be partial).
     Raises ValueError, writing nothing, for a bad key or value."""
     for key, value in values.items():
         _check_setting(key, value)
