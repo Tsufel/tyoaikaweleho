@@ -112,6 +112,17 @@ function answerFor<K extends ConfirmKind>(list: ConfirmList | undefined, kind: K
   return all[all.length - 1] as ConfirmAnswer<K> | undefined;
 }
 
+/** An answer carrying a token other than *token* (results.answer → Stale). */
+function staleAnswer(list: ConfirmList | undefined, token: string): boolean {
+  return (list ?? []).some((a) => a.token !== undefined && a.token !== token);
+}
+
+/** Whole clock minutes from start to end (controller._wall_minutes). */
+function wallMinutes(start: Date, end: Date): number {
+  const floor = (d: Date) => Math.floor(d.getTime() / 60000);
+  return Math.max(0, floor(end) - floor(start));
+}
+
 function needs<K extends ConfirmKind>(req: ConfirmRequest<K>): any {
   return { ok: false, status: 'needs_confirm', confirm: req };
 }
@@ -373,7 +384,7 @@ export function createMockApi(): Api {
     const stale = (confirm ?? []).some((a) => a.token !== undefined && a.token !== token);
     if (stale) return err('stale', 'The shift changed in the meantime.', { timer: timerState() });
     const elapsedSec = (Date.now() - s.start.getTime()) / 1000;
-    const minutes = Math.floor(elapsedSec / 60);
+    const minutes = wallMinutes(s.start, new Date());
     const long = minutes > LONG_SHIFT_MINUTES;
 
     let skipLong = source === 'close';
@@ -535,7 +546,7 @@ export function createMockApi(): Api {
       default: 'save',
       cancel: 'cancel',
       icon: 'warning',
-      details: { time_in: tIn, time_out: tOut, overnight: isOvernight(tIn, tOut) },
+      details: { time_in: tIn, time_out: tOut, overnight: isOvernight(tIn, tOut), elapsed_minutes: minutes },
     };
   }
 
@@ -735,7 +746,7 @@ export function createMockApi(): Api {
     },
     async timer_discard(confirm) {
       await latency();
-      if (!session) return okR('ok', { timer: timerState() });
+      if (!session) return err('not_running', 'No shift is running.', { timer: timerState() });
       const token = toIsoDateTime(session.start);
       const a = answerFor(confirm, 'discard_shift');
       if (!a) return needs(discardConfirm(token));
@@ -763,6 +774,16 @@ export function createMockApi(): Api {
       }
       const t = parseTimeInput(end ?? '');
       if (!t) return invalid('end', 'End time must be a valid time (e.g. 17:00).', { timer: timerState(), recovery: rec });
+      const tIn = hhmm(rs.start);
+      if (entryMinutes(tIn, t) === 0) {
+        return invalid('end', `End time must be after the start (${tIn}).`, { timer: timerState(), recovery: rec });
+      }
+      if (entryMinutes(tIn, t) > LONG_SHIFT_MINUTES) {
+        if (staleAnswer(confirm, rec.start_iso)) return err('stale', 'The shift changed in the meantime.', { timer: timerState(), recovery: rec });
+        const a = answerFor(confirm, 'long_entry');
+        if (!a) return needs({ ...longEntryConfirm(tIn, t), token: rec.start_iso });
+        if (a.choice !== 'save') return okR('cancelled', { timer: timerState(), recovery: rec });
+      }
       const row = persist({ id: `m${++nextId}`, date: toIsoDate(rs.start), job_shift: rs.job, time_in: hhmm(rs.start), time_out: t });
       if (!row) {
         // recovery stays pending (§4.5)

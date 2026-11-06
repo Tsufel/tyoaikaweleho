@@ -15,9 +15,11 @@ import {
   nudgeStart,
   pointerFraction,
   recoveryDate,
+  recoveryEndNote,
   ringPoint,
   ringProgress,
   runningText,
+  sinceText,
   snapStart,
   spokenDuration,
   startFromLaps,
@@ -234,5 +236,27 @@ describe('start dial', () => {
   it('says how long ago the picked start is', () => {
     expect(agoText(at(10, 0), now)).toBe('3m ago');
     expect(agoText(at(8, 45), now)).toBe('1h 18m ago');
+  });
+});
+
+describe('recovery dialog', () => {
+  it('says how long ago an unfinished shift started', () => {
+    expect(sinceText(20)).toBe('less than an hour ago');
+    expect(sinceText(60)).toBe('1 hour ago');
+    expect(sinceText(47 * 60 + 59)).toBe('47 hours ago');
+    expect(sinceText(3 * 24 * 60 + 5)).toBe('3 days ago');
+  });
+
+  it('notes the length, pay and next day for the end time', () => {
+    expect(recoveryEndNote('09:00', '17:30', 20)).toEqual({ text: '8h 30m · €170.00', tone: 'muted' });
+    expect(recoveryEndNote('22:00', '06:00', 10)).toEqual({ text: '8h 00m · €80.00 (+1 day)', tone: 'muted' });
+    expect(recoveryEndNote('09:00', 'nope', 20)).toBeNull();
+  });
+
+  it('warns about a zero-length or unusually long shift', () => {
+    expect(recoveryEndNote('09:00', '09:00', 20)).toEqual({ text: 'Must be after the start (09:00)', tone: 'warning' });
+    const long = recoveryEndNote('08:00', '06:30', 0)!;
+    expect(long.tone).toBe('warning');
+    expect(long.text).toBe('22h 30m · €0.00 (+1 day) — unusually long');
   });
 });

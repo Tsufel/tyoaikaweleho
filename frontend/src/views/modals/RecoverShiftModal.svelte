@@ -2,17 +2,20 @@
   import { onDestroy } from 'svelte';
   import { api, runFlow } from '../../lib/api';
   import type { Recovery, RecoveryResult } from '../../lib/api/types';
-  import { formatMoney, fromIsoDateTime, hhmm, parseTimeInput } from '../../lib/time';
+  import { fromIsoDateTime, hhmm, parseTimeInput } from '../../lib/time';
+  import { pendingRecovery } from '../../lib/stores/recovery';
   import { timer } from '../../lib/stores/timer';
   import Button from '../../lib/ui/Button.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
   import Modal from '../../lib/ui/Modal.svelte';
   import TimeInput from '../../lib/ui/TimeInput.svelte';
-  import { elapsedHM, recoveryDate } from '../timer/timerLogic';
+  import { elapsedHM, recoveryDate, recoveryEndNote, sinceText } from '../timer/timerLogic';
 
-  /** §6.3: an unfinished shift from a crash or "Close anyway". Only Resume
-   *  dismisses it (Escape too); Save and Discard go through Python, and a
-   *  failure hands back a recovery, so App re-offers the modal. */
+  /** §6.3: an unfinished shift from a crash or "Close anyway". Resume, Save
+   *  and Discard go through Python, and a failure hands back a recovery, so App
+   *  re-offers the modal. Escape resumes a fresh shift; one over the 8-hour
+   *  limit is only put aside (the timer's banner offers it again), since
+   *  resuming it would put days on the clock. */
   let { recovery, onresolved }: { recovery: Recovery; onresolved: (r: RecoveryResult) => void } = $props();
 
   type Action = 'resume' | 'save' | 'discard';
@@ -27,13 +30,8 @@
 
   const start = $derived(fromIsoDateTime(recovery.start_iso));
   const elapsed = $derived(elapsedHM(recovery.start_epoch_ms, now));
-  const endMinutes = $derived.by(() => {
-    const t = parseTimeInput(end);
-    if (!t || !start) return null;
-    const [h, m] = t.split(':').map(Number);
-    const s = start.getHours() * 60 + start.getMinutes();
-    return (h * 60 + m - s + 1440) % 1440;
-  });
+  const note = $derived(start ? recoveryEndNote(hhmm(start), end, $timer.pay_rate) : null);
+  const stale = $derived(recovery.over_limit);
 
   async function run(action: Action, call: () => Promise<RecoveryResult>) {
     if (busy) return;
@@ -61,13 +59,20 @@
       return;
     }
     endError = '';
-    void run('save', () => api.recovery_resolve('save', end));
+    void run('save', () => runFlow((c) => api.recovery_resolve('save', end, c)));
   }
+
+  const putAside = () => pendingRecovery.set(null);
 </script>
 
-<Modal title="An unfinished shift was found" icon="warning" size="md" onclose={() => void resume()}>
+<Modal title="An unfinished shift was found" icon="warning" size="md" onclose={stale ? putAside : () => void resume()}>
   <p class="lead">
-    The app was closed while a shift was running. Resume it, save it with an end time, or discard it.
+    {#if stale}
+      The app was closed while a shift was running, started {sinceText(recovery.elapsed_minutes)}. Check the end
+      time and save it, or discard it.
+    {:else}
+      The app was closed while a shift was running. Resume it, save it with an end time, or discard it.
+    {/if}
   </p>
 
   <div class="ticket">
@@ -94,11 +99,11 @@
         describedby="{formId}-hint"
         onchange={() => (endError = '')}
       />
-      <span id="{formId}-hint" class="hint" class:error={!!endError} aria-live="polite">
+      <span id="{formId}-hint" class="hint" class:error={!!endError} class:warn={!endError && note?.tone === 'warning'} aria-live="polite">
         {#if endError}
           {endError}
-        {:else if endMinutes != null}
-          {Math.floor(endMinutes / 60)}h {String(endMinutes % 60).padStart(2, '0')}m · {formatMoney((endMinutes / 60) * ($timer.pay_rate || 0))}
+        {:else if note}
+          {note.text}
         {/if}
       </span>
     </div>
@@ -110,14 +115,22 @@
         Discard
       </Button>
       <span class="grow"></span>
-      <Button variant="secondary" icon="check" type="submit" form={formId} loading={busy === 'save'} disabled={!!busy && busy !== 'save'}>
+      <Button
+        variant={stale ? 'primary' : 'secondary'}
+        icon="check"
+        type="submit"
+        form={formId}
+        data-autofocus={stale ? '' : undefined}
+        loading={busy === 'save'}
+        disabled={!!busy && busy !== 'save'}
+      >
         Save
       </Button>
       <Button
-        variant="success"
-        glow
+        variant={stale ? 'secondary' : 'success'}
+        glow={!stale}
         icon="play"
-        data-autofocus
+        data-autofocus={stale ? undefined : ''}
         loading={busy === 'resume'}
         disabled={!!busy && busy !== 'resume'}
         onclick={() => void resume()}
@@ -202,6 +215,9 @@
   .hint {
     font-size: var(--fs-sm);
     color: var(--text-subtle);
+  }
+  .hint.warn {
+    color: var(--warning-text);
   }
   .hint.error {
     color: var(--danger-text);

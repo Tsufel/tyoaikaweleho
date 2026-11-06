@@ -1,4 +1,14 @@
-import { fromIsoDateTime, hhmm, strftime, toIsoDate } from '../../lib/time';
+import {
+  entryMinutes,
+  formatMoney,
+  fromIsoDateTime,
+  hhmm,
+  isLongShift,
+  isOvernight,
+  parseTimeInput,
+  strftime,
+  toIsoDate,
+} from '../../lib/time';
 
 export const IDLE_TEXT = 'Press START (F5) to begin tracking';
 
@@ -119,6 +129,31 @@ export function recoveryDate(startIso: string): string {
 export function elapsedHM(fromMs: number, nowMs: number = Date.now()): string {
   const m = Math.max(0, Math.floor((nowMs - fromMs) / 60_000));
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** "5 hours ago" / "2 days ago" for how long an unfinished shift has sat. */
+export function sinceText(minutes: number): string {
+  const h = Math.floor(Math.max(0, minutes) / 60);
+  if (h < 1) return 'less than an hour ago';
+  if (h < 48) return `${h} hour${h === 1 ? '' : 's'} ago`;
+  return `${Math.floor(h / 24)} days ago`;
+}
+
+/** Hint beside the recovery end time: length and pay, '(+1 day)' past
+ *  midnight, a warning for nothing or an unusually long shift. */
+export function recoveryEndNote(
+  timeIn: string,
+  end: string,
+  payRate: number,
+): { text: string; tone: 'muted' | 'warning' } | null {
+  const t = parseTimeInput(end);
+  if (!t) return null;
+  const minutes = entryMinutes(timeIn, t);
+  if (minutes === 0) return { text: `Must be after the start (${timeIn})`, tone: 'warning' };
+  let text = `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m · ${formatMoney((minutes / 60) * (payRate || 0))}`;
+  if (isOvernight(timeIn, t)) text += ' (+1 day)';
+  if (isLongShift(minutes)) return { text: `${text} — unusually long`, tone: 'warning' };
+  return { text, tone: 'muted' };
 }
 
 // ── Start dial: drag the idle ring to back-date the start ─────────────────────

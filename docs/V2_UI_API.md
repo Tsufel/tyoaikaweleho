@@ -156,7 +156,7 @@ The current shift must never be lost:
 | `get_timer()` | — | `R<{timer: T}>` |
 | `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
 | `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
-| `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded` |
+| `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded`; idle → `error(not_running)` |
 | `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
 
 ### Entries
@@ -268,7 +268,9 @@ session (an invalid one is cleared silently). It carries `start_iso`,
 **after** the changelog modal; START is blocked until resolved.
 
 - `resume` (also Esc / closing the modal) → timer runs from the saved start;
-  `ok{timer, recovery:null}`; frontend jumps to the start's month.
+  `ok{timer, recovery:null}`; frontend jumps to the start's month. When
+  `over_limit`, Esc only puts the modal aside (no call; the Timer view's
+  "blocked" banner offers it again) and Save takes the first focus.
 - `save` with `end` → invalid end → `invalid(field:'end')` ("End time must be a
   valid time (e.g. 17:00)."); end = start minute → `invalid(field:'end')`
   ("End time must be after the start (HH:MM)."); > 14 h →
