@@ -413,6 +413,8 @@ export type ImportResult = Result<{
   skipped: number;
   files: number;
   errors: string[];
+  /** Why a file gave nothing (no timesheet rows, unreadable times). */
+  notes: string[];
 }>;
 
 export interface OcrCandidate {

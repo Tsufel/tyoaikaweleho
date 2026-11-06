@@ -70,6 +70,12 @@ describe('texts', () => {
     );
     expect(importSummary({ imported: 0, skipped: 1, files: 1, errors: [] })).toBe('Imported 0 entries from 1 file.\n1 duplicate skipped.');
   });
+
+  it('says why a file gave nothing', () => {
+    expect(
+      importSummary({ imported: 0, skipped: 0, files: 2, errors: ['b.xls: save it as .xlsx'], notes: ['No timesheet rows found in a.xlsx'] }),
+    ).toBe('Imported 0 entries from 2 files.\n\nNo timesheet rows found in a.xlsx\n\nErrors:\nb.xls: save it as .xlsx');
+  });
 });
 
 describe('inline editor', () => {

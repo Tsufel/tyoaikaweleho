@@ -1082,16 +1082,44 @@ def test_import_excel(env, monkeypatch):
     import import_excel
     ctrl, _ = env
 
-    def fake(path):
-        if path == "bad.xlsx":
+    def fake(path, report=None):
+        if path.endswith("bad.xlsx"):
             raise ValueError("not a timesheet")
         return 3, 1
     monkeypatch.setattr(import_excel, "import_from_file", fake)
     assert ctrl.import_excel([])["status"] == "cancelled"
-    r = ctrl.import_excel(["a.xlsx", "bad.xlsx"])
+    r = ctrl.import_excel(["a.xlsx", r"C:\some\dir\bad.xlsx"])
     assert (r["imported"], r["skipped"], r["files"]) == (3, 1, 2)
     assert r["message"].startswith("Imported 3 entries from 2 files.\n1 duplicate skipped.")
-    assert "bad.xlsx: not a timesheet" in r["errors"][0]
+    # the base name, not the whole path
+    assert r["errors"] == ["bad.xlsx: not a timesheet"]
+    assert r["notes"] == []
+
+
+def test_import_excel_says_why_nothing_was_found(env, tmp_path):
+    from datetime import datetime
+    from openpyxl import Workbook
+    ctrl, _ = env
+    empty = tmp_path / "Notes.xlsx"
+    wb = Workbook()
+    wb.active.append(["Just some notes", 1, 2])
+    wb.save(empty)
+    odd = tmp_path / "Odd.xlsx"
+    wb = Workbook()
+    wb.active.append([datetime(2026, 5, 10), "Sales", "half past", "17:00"])
+    wb.save(odd)
+    old = tmp_path / "Old.xls"
+    old.write_bytes(b"\xd0\xcf\x11\xe0")
+    r = ctrl.import_excel([str(empty), str(odd), str(old)])
+    assert r["imported"] == 0
+    assert r["notes"] == [
+        "No timesheet rows found in Notes.xlsx: dates go in column A, "
+        "times in B/C (or C/D with a shift in B).",
+        "Odd.xlsx: found dates, but the start times weren't readable times "
+        "(e.g. 9:30 or 9.30).",
+    ]
+    assert len(r["errors"]) == 1 and r["errors"][0].startswith("Old.xls: this isn't an .xlsx")
+    assert "No timesheet rows found in Notes.xlsx" in r["message"]
 
 
 # ── OCR / DLC / updates ──────────────────────────────────────────────────────

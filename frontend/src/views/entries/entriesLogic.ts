@@ -65,9 +65,16 @@ export function decideClose(field: EditField, text: string, original: string, co
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /** "Import complete" text of v1.3 `_import_excel`. */
-export function importSummary(r: { imported: number; skipped: number; files: number; errors: string[] }): string {
+export function importSummary(r: {
+  imported: number;
+  skipped: number;
+  files: number;
+  errors: string[];
+  notes?: string[];
+}): string {
   let msg = `Imported ${r.imported} ${plural(r.imported, 'entry', 'entries')} from ${r.files} ${plural(r.files, 'file', 'files')}.`;
   if (r.skipped) msg += `\n${r.skipped} ${plural(r.skipped, 'duplicate', 'duplicates')} skipped.`;
+  if (r.notes?.length) msg += '\n\n' + r.notes.join('\n');
   if (r.errors.length) msg += '\n\nErrors:\n' + r.errors.join('\n');
   return msg;
 }

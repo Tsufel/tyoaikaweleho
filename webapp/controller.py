@@ -1016,24 +1016,44 @@ class ShiftController:
         if not paths:
             return R.cancelled()
         import import_excel
+        from openpyxl.utils.exceptions import InvalidFileException
         imported = skipped = 0
         errors = []
+        notes = []
         with self._lock:
             for path in paths:
+                name = os.path.basename(path)
+                report = {}
                 try:
-                    imp, skp = import_excel.import_from_file(path)
+                    imp, skp = import_excel.import_from_file(path, report)
                     imported += imp
                     skipped += skp
+                except InvalidFileException:
+                    errors.append(f"{name}: this isn't an .xlsx workbook. "
+                                  "Open it in Excel and save it as .xlsx first.")
+                    continue
                 except Exception as exc:
-                    errors.append(f"{path}: {exc}")
+                    errors.append(f"{name}: {exc}")
+                    continue
+                if imp or skp:
+                    continue
+                if report.get("unreadable"):
+                    notes.append(f"{name}: found dates, but the start times weren't "
+                                 "readable times (e.g. 9:30 or 9.30).")
+                else:
+                    notes.append(f"No timesheet rows found in {name}: dates go in "
+                                 "column A, times in B/C (or C/D with a shift in B).")
         n = len(paths)
         msg = (f"Imported {imported} {_plural(imported, 'entry', 'entries')}"
                f" from {n} {_plural(n, 'file', 'files')}.")
         if skipped:
             msg += f"\n{skipped} {_plural(skipped, 'duplicate', 'duplicates')} skipped."
+        if notes:
+            msg += "\n\n" + "\n".join(notes)
         if errors:
             msg += "\n\nErrors:\n" + "\n".join(errors)
-        return R.ok(msg, imported=imported, skipped=skipped, files=n, errors=errors)
+        return R.ok(msg, imported=imported, skipped=skipped, files=n, errors=errors,
+                    notes=notes)
 
     @staticmethod
     def _dlc_unavailable() -> dict:

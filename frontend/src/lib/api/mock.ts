@@ -1057,7 +1057,7 @@ export function createMockApi(): Api {
       if (controls.failSave) return err('save_failed', `Import could not be saved.\n\n${saveFailMsg()}`);
       entries.push(...added);
       entries.sort(sortEntries);
-      return okR('ok', { imported: added.length, skipped: 1, files: 1, errors: [] });
+      return okR('ok', { imported: added.length, skipped: 1, files: 1, errors: [], notes: [] });
     },
     async ocr_pick_and_extract() {
       await wait(700);

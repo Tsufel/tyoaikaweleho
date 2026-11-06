@@ -16,7 +16,8 @@ from version import __version__
 from webapp import results as R
 from webapp.controller import ShiftController
 
-_EXCEL_TYPES = ("Excel files (*.xlsx;*.xls)", "All files (*.*)")
+# no *.xls: openpyxl can't read the old binary format
+_EXCEL_TYPES = ("Excel workbooks (*.xlsx;*.xlsm)", "All files (*.*)")
 _EXPORT_TYPES = ("Excel workbook (*.xlsx)",)
 _IMAGE_TYPES = ("Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tiff;*.tif;*.webp)",
                 "All files (*.*)")
