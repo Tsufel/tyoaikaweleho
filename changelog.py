@@ -2,6 +2,12 @@
 next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.7": [
+        "Fixed: Stats, the pet's details and Achievements open again after "
+        "an update. Weleho no longer keeps an old copy of its screens",
+        "Settings: the keyboard shortcut list is folded behind Show all",
+        "Timer: the start time, job and week lines sit behind a ⋯ button",
+    ],
     "2.1.6": [
         "Forgot to press STOP? Stop the shift at an earlier time, or fix "
         "its start time and job while it runs. A \"Still working?\" note "
