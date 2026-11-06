@@ -38,6 +38,7 @@
     isDirty,
     draftFromForm,
     payPreview,
+    payRateWarning,
     SHORTCUTS,
     TARGET_MAX,
     TARGET_MIN,
@@ -65,6 +66,7 @@
   const version = $derived($bootstrap?.version ?? '');
   const rate = $derived(parsePayRate(form.pay_rate));
   const payHint = $derived(payPreview(rate, form.target_hours));
+  const payWarning = $derived(errors.pay_rate ? null : payRateWarning(rate));
   const dv = $derived(dlcView($dlc));
 
   const appearanceOptions: { value: Appearance; label: string; icon: IconName }[] = [
@@ -439,6 +441,12 @@
                 {#snippet leading()}<span class="euro" aria-hidden="true">€</span>{/snippet}
               </TextInput>
             </Field>
+            {#if payWarning}
+              <p class="pay-warning" role="status">
+                <Icon name="warning" size={13} />
+                {payWarning}
+              </p>
+            {/if}
           </div>
         </div>
       </div>
@@ -796,6 +804,15 @@
   input[type='range']:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 4px;
+  }
+  .pay-warning {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: var(--fs-xs);
+    line-height: 1.4;
+    color: var(--warning-text);
   }
   .euro {
     color: var(--text-muted);

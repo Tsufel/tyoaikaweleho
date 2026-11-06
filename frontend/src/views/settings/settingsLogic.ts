@@ -105,6 +105,15 @@ export function payPreview(rate: number | null, targetHours: number): string | n
   return `€${(rate * targetHours).toFixed(2)} for a ${formatTarget(targetHours)} day`;
 }
 
+/** Rates above this get a "check the decimal point" nudge. */
+export const HIGH_PAY_RATE = 200;
+
+/** Non-blocking warning for a suspiciously high hourly rate, else null. */
+export function payRateWarning(rate: number | null): string | null {
+  if (rate === null || !(rate > HIGH_PAY_RATE)) return null;
+  return "That's a high hourly rate. Check the decimal point.";
+}
+
 // ── Updates ──────────────────────────────────────────────────────
 
 export type CheckState =
