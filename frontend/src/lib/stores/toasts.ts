@@ -12,6 +12,8 @@ export interface Toast {
   /** Ctrl+Z may run the action (false for plain links such as "View"). */
   undo: boolean;
   ms: number;
+  /** How many identical toasts this one stands for (shown as ×N above 1). */
+  count: number;
 }
 
 export interface ToastOptions {
@@ -30,17 +32,41 @@ const list = writable<Toast[]>([]);
 
 export const toasts = { subscribe: list.subscribe };
 
+/** Drop toasts until `max` remain. Sticky toasts (ms 0, e.g. the data
+ *  recovery notice) go last, and the newest toast always stays. */
+export function trimToasts(all: Toast[], max = MAX_TOASTS): Toast[] {
+  const out = [...all];
+  while (out.length > max) {
+    const older = out.slice(0, -1);
+    let i = older.findIndex((t) => t.ms > 0);
+    if (i < 0) i = 0;
+    out.splice(i, 1);
+  }
+  return out;
+}
+
 export function toast(message: string, opts: ToastOptions = {}): number {
+  const tone = opts.tone ?? 'info';
+  // An identical plain toast is already showing: count it instead of stacking.
+  if (!opts.action) {
+    const same = get(list).find((x) => !x.action && x.message === message && x.tone === tone);
+    if (same) {
+      const ms = same.ms === 0 ? 0 : opts.ms ?? 8000;
+      list.update((all) => all.map((x) => (x.id === same.id ? { ...x, ms, count: x.count + 1 } : x)));
+      return same.id;
+    }
+  }
   const t: Toast = {
     id: nextId++,
     message,
-    tone: opts.tone ?? 'info',
+    tone,
     action: opts.action,
     label: opts.action ? opts.label ?? 'Undo' : undefined,
     undo: opts.undo ?? true,
     ms: opts.ms ?? 8000,
+    count: 1,
   };
-  list.update((all) => [...all, t].slice(-MAX_TOASTS));
+  list.update((all) => trimToasts([...all, t]));
   return t.id;
 }
 
