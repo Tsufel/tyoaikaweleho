@@ -15,6 +15,8 @@ import { emitEvent } from './events';
 import type {
   Api,
   Appearance,
+  BackupInfo,
+  BackupKind,
   ConfirmAnswer,
   ConfirmKind,
   ConfirmList,
@@ -561,6 +563,35 @@ export function createMockApi(): Api {
     return [...out.values()];
   }
 
+  // ── your data: in-memory backups (Settings → Your data) ──
+  interface MockBackup {
+    info: BackupInfo;
+    entries: WorkEntry[];
+    settings: Settings;
+    shifts: string[];
+  }
+  const stamp = (d: Date) =>
+    `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+  function snapshot(kind: BackupKind, name: string, at: Date, upto?: string): MockBackup {
+    const es = entries.filter((e) => !upto || e.date <= upto).map((e) => ({ ...e }));
+    const last = es.reduce<string | null>((m, e) => (m === null || e.date > m ? e.date : m), null);
+    return {
+      info: { name, kind, saved_at: toIsoDateTime(at), size: 180 + es.length * 120, ok: true, entries: es.length, last_entry_date: last },
+      entries: es,
+      settings: structuredClone(settings),
+      shifts: [...shifts],
+    };
+  }
+  let backups: MockBackup[] = [];
+  if (entries.length) {
+    for (const daysAgo of [1, 2, 3, 10, 40]) {
+      const at = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysAgo, 17, 5, 0);
+      backups.push(snapshot('daily', `data-${toIsoDate(at)}.json`, at, toIsoDate(at)));
+    }
+    backups.unshift(snapshot('bak', 'data.json.bak', new Date(Date.now() - 3 * 60_000)));
+  }
+  const backupList = () => backups.map((b) => ({ ...b.info }));
+
   const api: Api = {
     // ── app / lifecycle ──
     async bootstrap() {
@@ -936,6 +967,78 @@ export function createMockApi(): Api {
       }
       shifts = [...shifts, n];
       return okR('saved', { added: true, shifts: [...shifts] });
+    },
+
+    // ── your data: folder, backups, restore ──
+    async open_data_folder() {
+      console.info('[mock] would open the data folder');
+      return okR('ok');
+    },
+    async list_backups() {
+      return okR('ok', {
+        backups: backupList(),
+        data_dir: 'C:\\Users\\you\\AppData\\Roaming\\Tyoaikaweleho (mock)',
+        backups_dir: 'C:\\Users\\you\\AppData\\Roaming\\Tyoaikaweleho (mock)\\backups',
+      });
+    },
+    async backup_now() {
+      await latency();
+      if (!entries.length) {
+        return okR('ok', { backup: null, backups: backupList() }, 'Nothing to back up yet: no shifts have been saved.');
+      }
+      if (controls.failSave) return err('save_failed', `The backup could not be written:\n\n${saveFailMsg()}`);
+      const name = `manual-${stamp(new Date())}.json`;
+      backups = [snapshot('manual', name, new Date()), ...backups.filter((b) => b.info.name !== name)];
+      return okR('saved', { backup: name, backups: backupList() }, `Backed up to backups\\${name}.`);
+    },
+    async restore_backup(name, confirm) {
+      const b = backups.find((x) => x.info.name === name);
+      if (!b) return invalid('name', 'That backup no longer exists.');
+      const token = `${b.info.name}|${b.info.size}|${b.info.saved_at}`;
+      const a = answerFor(confirm, 'restore_backup');
+      if (a && a.token !== token) return err('stale', 'Things changed while the question was open. Try again.');
+      if (!a) {
+        const when = strftime(new Date(b.info.saved_at), '%a %d %b %Y, %H:%M');
+        return needs<'restore_backup'>({
+          kind: 'restore_backup',
+          title: 'Restore backup',
+          message:
+            `Replace your shifts and settings with the copy from ${when} (${b.entries.length} shifts)? ` +
+            `You have ${entries.length} shifts now.\n\nYour current data is copied to the backups folder first, so you can go back.`,
+          options: [
+            { id: 'restore', label: 'Restore', variant: 'danger' },
+            { id: 'cancel', label: 'Cancel', variant: 'neutral' },
+          ],
+          default: 'cancel',
+          cancel: 'cancel',
+          icon: 'warning',
+          token,
+          details: { name: b.info.name, entries: b.entries.length, current_entries: entries.length, saved_at: b.info.saved_at },
+        });
+      }
+      if (a.choice !== 'restore') return okR('cancelled');
+      await latency();
+      if (controls.failSave) return err('save_failed', `The backup could not be restored, nothing was changed:\n\n${saveFailMsg()}`);
+      const safety = `pre-restore-${stamp(new Date())}.json`;
+      const before = snapshot('pre-restore', safety, new Date());
+      entries = b.entries.map((e) => ({ ...e }));
+      settings = structuredClone(b.settings);
+      shifts = [...b.shifts];
+      backups = [before, ...backups];
+      emitEvent('data:changed', { reason: 'restore_backup' });
+      emitEvent('timer:changed', timerState());
+      return okR(
+        'saved',
+        {
+          restored: b.info.name,
+          safety_copy: safety,
+          settings: structuredClone(settings),
+          shifts: [...shifts],
+          timer: timerState(),
+          backups: backupList(),
+        },
+        `Restored the backup from ${b.info.saved_at.slice(0, 10)}. Your previous data is in backups\\${safety}.`,
+      );
     },
 
     // ── stats ──

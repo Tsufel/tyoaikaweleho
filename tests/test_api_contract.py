@@ -160,6 +160,8 @@ def test_every_method_returns_json(rig):
         ("delete_entry", ("missing", None)), ("restore_entry", ({"bad": 1},)),
         ("get_settings", ()), ("save_settings", ({},)), ("save_ui_prefs", ({"lulz": True},)),
         ("add_job_shift", ("Night",)),
+        ("open_data_folder", ()), ("list_backups", ()), ("backup_now", ()),
+        ("restore_backup", ("nope", None)),
         ("get_stats", ("2026-09-01", "2026-09-30", "day")), ("get_stats_span", ()),
         ("get_achievements", ()), ("ack_achievements", (["first_shift"],)),
         ("ack_achievements", (["nope"],)), ("get_pet_stats", ()),
@@ -416,3 +418,25 @@ def test_open_download_page_opens_the_releases_page(rig, monkeypatch):
     monkeypatch.setattr(os, "startfile", opened.append, raising=False)
     assert _check(rig[0].open_download_page())["ok"]
     assert opened == [f"https://github.com/{GITHUB_REPO}/releases/latest"]
+
+
+def test_open_data_folder_opens_the_data_dir(rig, monkeypatch):
+    opened = []
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+    assert _check(rig[0].open_data_folder())["ok"]
+    assert opened == [storage.DATA_DIR]
+
+
+def test_restore_backup_emits_data_changed_only_when_saved(rig):
+    api, _w, _s, bus, _t = rig
+    storage.save_entry(storage.WorkEntry(id="a1", date="2026-09-01", job_shift="Sales",
+                                         time_in="09:00", time_out="17:00"))
+    name = _check(api.backup_now())["backup"]
+    ask = _check(api.restore_backup(name))
+    assert ask["status"] == "needs_confirm" and bus.events == []
+    token = ask["confirm"]["token"]
+    res = _check(api.restore_backup(
+        name, [{"kind": "restore_backup", "choice": "restore", "token": token}]))
+    assert res["status"] == "saved"
+    assert [n for n, _ in bus.events] == ["data:changed", "timer:changed"]
+    assert bus.events[0][1] == {"reason": "restore_backup"}

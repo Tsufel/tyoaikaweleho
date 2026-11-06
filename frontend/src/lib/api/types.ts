@@ -94,7 +94,8 @@ export type ConfirmKind =
   | 'overlap'
   | 'delete_entry'
   | 'close_running'
-  | 'remove_dlc';
+  | 'remove_dlc'
+  | 'restore_backup';
 
 /** Option ids per kind (choice values sent back). */
 export interface ConfirmChoices {
@@ -109,6 +110,7 @@ export interface ConfirmChoices {
   delete_entry: 'delete' | 'cancel';
   close_running: 'stop_close' | 'close' | 'cancel';
   remove_dlc: 'remove' | 'cancel';
+  restore_backup: 'restore' | 'cancel';
 }
 
 export interface ConfirmOption {
@@ -127,6 +129,11 @@ export interface ConfirmDetails {
   description?: string;
   /** overlap: how many saved entries the shift overlaps. */
   overlaps?: number;
+  /** restore_backup: the backup, its shift count, today's count (null when unreadable). */
+  name?: string;
+  entries?: number;
+  current_entries?: number | null;
+  saved_at?: IsoDateTime;
 }
 
 export interface ConfirmRequest<K extends ConfirmKind = ConfirmKind> {
@@ -314,6 +321,37 @@ export interface SettingsDraft {
 }
 
 export type SettingsResult = Result<{ settings: Settings; shifts: string[] }>;
+
+// ── Your data: backups (Settings → Your data) ────────────────────
+
+/** Who made the copy: data.json.bak (last save), daily snapshot, Back up now,
+ *  before an Excel import, before a restore, before an app update. */
+export type BackupKind = 'bak' | 'daily' | 'manual' | 'pre-import' | 'pre-restore' | 'pre-update';
+
+export interface BackupInfo {
+  /** The only handle restore_backup accepts (a listed name, never a path). */
+  name: string;
+  kind: BackupKind;
+  /** When that data was last saved (file mtime). */
+  saved_at: IsoDateTime;
+  size: number;
+  /** false: unreadable or not app data; listed but cannot be restored. */
+  ok: boolean;
+  entries: number | null;
+  last_entry_date: IsoDate | null;
+}
+
+export type BackupsResult = Result<{ backups: BackupInfo[]; data_dir: string; backups_dir: string }>;
+export type BackupNowResult = Result<{ backup: string | null; backups: BackupInfo[] }>;
+export type RestoreBackupResult = Result<{
+  restored: string;
+  /** pre-restore-*.json holding the data that was replaced (null when there was none). */
+  safety_copy: string | null;
+  settings: Settings;
+  shifts: string[];
+  timer: TimerState;
+  backups: BackupInfo[];
+}>;
 
 // ── Stats ────────────────────────────────────────────────────────
 
@@ -531,6 +569,13 @@ export interface Api {
   save_ui_prefs(prefs: Partial<UiPrefs>): Promise<Result<{ settings: Settings }>>;
   add_job_shift(name: string): Promise<Result<{ added: boolean; shifts: string[] }>>;
 
+  // your data: folder, backups, restore (Settings → Your data)
+  open_data_folder(): Promise<Result>;
+  list_backups(): Promise<BackupsResult>;
+  backup_now(): Promise<BackupNowResult>;
+  /** Asks restore_backup first; on success emits data:changed {reason:'restore_backup'}. */
+  restore_backup(name: string, confirm?: ConfirmList): Promise<RestoreBackupResult>;
+
   // stats
   get_stats(
     start_iso: IsoDate,
@@ -578,7 +623,7 @@ export interface EventMap {
   'dlc:update': { version: string };
   'dlc:status': DlcStatus;
   'timer:changed': TimerState;
-  'data:changed': { reason: 'import' | 'ocr' | 'recovery' | 'restore' };
+  'data:changed': { reason: 'import' | 'ocr' | 'recovery' | 'restore' | 'restore_backup' };
 }
 
 export type EventName = keyof EventMap;

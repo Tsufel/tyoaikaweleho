@@ -928,6 +928,82 @@ class ShiftController:
             return R.ok(f"'{js}' is already in the shift list.", added=False, shifts=shifts)
         return R.ok(added=True, shifts=shifts)
 
+    # ── your data: backups & restore (Settings → Your data) ──────
+
+    def list_backups(self) -> dict:
+        with self._lock:
+            return R.ok(backups=storage.list_backups(), data_dir=storage.DATA_DIR,
+                        backups_dir=storage.backups_dir())
+
+    def backup_now(self) -> dict:
+        with self._lock:
+            try:
+                path = storage.manual_backup()
+            except OSError as exc:
+                return R.error("save_failed", f"The backup could not be written:\n\n{exc}")
+            backups = storage.list_backups()
+        if not path:
+            return R.ok("Nothing to back up yet: no shifts have been saved.",
+                        backup=None, backups=backups)
+        name = os.path.basename(path)
+        return R.saved(f"Backed up to backups\\{name}.", backup=name, backups=backups)
+
+    @staticmethod
+    def _backup_token(b: dict) -> str:
+        return f"{b['name']}|{b['size']}|{b['saved_at']}"
+
+    def restore_backup(self, name, confirm=None) -> dict:
+        """Swap a listed backup in for data.json, after a pre-restore copy
+        of the current file. A running shift is untouched (it lives in
+        session.json) and is saved into the restored data when stopped."""
+        with self._lock:
+            b = next((x for x in storage.list_backups() if x["name"] == name), None) \
+                if isinstance(name, str) else None
+            if b is None:
+                return R.invalid("name", "That backup no longer exists.")
+            if not b["ok"]:
+                return R.invalid("name", "That backup can't be read, so it can't be restored.")
+            token = self._backup_token(b)
+            try:
+                choice = answer(confirm, "restore_backup", token)
+            except Stale:
+                return R.stale()
+            if choice is None:
+                try:
+                    current = len(storage.load_all_entries())
+                except (OSError, storage.DataFileCorrupt):
+                    current = None
+                when = datetime.fromisoformat(b["saved_at"]).strftime("%a %d %b %Y, %H:%M")
+                n = b["entries"]
+                now_part = "" if current is None else \
+                    f" You have {current} {_plural(current, 'shift', 'shifts')} now."
+                return R.needs_confirm(
+                    "restore_backup", "Restore backup",
+                    f"Replace your shifts and settings with the copy from {when} "
+                    f"({n} {_plural(n, 'shift', 'shifts')})?{now_part}\n\n"
+                    "Your current data is copied to the backups folder first, "
+                    "so you can go back.",
+                    [opt("restore", "Restore", "danger"), opt("cancel", "Cancel", "neutral")],
+                    default="cancel", cancel="cancel", icon="warning", token=token,
+                    details={"name": b["name"], "entries": n, "current_entries": current,
+                             "saved_at": b["saved_at"]})
+            if choice != "restore":
+                return R.cancelled()
+            try:
+                safety = storage.restore_backup(name)
+            except LookupError:
+                return R.invalid("name", "That backup can't be read, so it can't be restored.")
+            except OSError as exc:
+                return R.error("save_failed", f"The backup could not be restored, nothing "
+                                              f"was changed:\n\n{exc}\n\n{_LOCKED_HINT}.")
+            safety_name = os.path.basename(safety) if safety else None
+            msg = f"Restored the backup from {b['saved_at'][:10]}."
+            if safety_name:
+                msg += f" Your previous data is in backups\\{safety_name}."
+            return R.saved(msg, restored=b["name"], safety_copy=safety_name,
+                           settings=self._settings(), shifts=storage.get_job_shift_list(),
+                           timer=self.timer_state(), backups=storage.list_backups())
+
     # ── stats ────────────────────────────────────────────────────
 
     def get_stats(self, start_iso: str, end_iso: str, granularity: str = "day") -> dict:

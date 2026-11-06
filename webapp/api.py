@@ -225,6 +225,34 @@ class Api:
     def add_job_shift(self, name):
         return self._c.add_job_shift(name)
 
+    # ── your data: folder, backups, restore (Settings → Your data) ──
+
+    @_guarded
+    def open_data_folder(self):
+        path = storage.DATA_DIR
+        try:
+            os.startfile(path)
+        except OSError as exc:
+            return R.error("internal", f"Could not open:\n{path}\n\n{exc}")
+        return R.ok()
+
+    @_guarded
+    def list_backups(self):
+        return self._c.list_backups()
+
+    @_guarded
+    def backup_now(self):
+        return self._c.backup_now()
+
+    @_guarded
+    def restore_backup(self, name, confirm=None):
+        result = self._c.restore_backup(name, confirm)
+        if result.get("status") == "saved":
+            self._emit("data:changed", {"reason": "restore_backup"})
+            if "timer" in result:
+                self._emit("timer:changed", result["timer"])
+        return result
+
     @_guarded
     def get_stats(self, start_iso, end_iso, granularity="day"):
         return self._c.get_stats(start_iso, end_iso, granularity or "day")
