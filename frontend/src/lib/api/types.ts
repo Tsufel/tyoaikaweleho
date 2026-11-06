@@ -307,6 +307,8 @@ export interface UiPrefs {
   pet_hint_seen: boolean;
   /** The chosen look (views/pet/petSkins.ts); drawn once the pet's level unlocks it. */
   pet_skin: PetSkinId;
+  /** In-app UI zoom, percent: 80–150 in steps of 10 (lib/zoom.ts). Default 100. */
+  zoom: number;
 }
 
 export type PetKind = 'off' | 'familiar' | 'wizard';
@@ -730,4 +732,9 @@ export type CommandName =
   | 'view.stats'
   | 'stats.back'
   | 'help.shortcuts'
-  | 'wizard.secret';
+  | 'wizard.secret'
+  // UI zoom (Ctrl+= / Ctrl+- / Ctrl+0) and the command palette (Ctrl+K)
+  | 'zoom.in'
+  | 'zoom.out'
+  | 'zoom.reset'
+  | 'palette.open';

@@ -63,9 +63,12 @@ interface Binding {
   when?: () => boolean;
   /** Prevent the browser default even when gated off (Ctrl+N opens a window, F5 reloads). */
   alwaysPrevent?: boolean;
+  /** Also works while a modal is open (UI zoom). */
+  inModal?: boolean;
 }
 
 const ALL_ROUTES = ['main', 'stats', 'settings'];
+const zoomBinding = (cmd: CommandName): Binding => ({ cmd, typing: true, routes: ALL_ROUTES, alwaysPrevent: true, inModal: true });
 
 /** The command a key press maps to, with its gates (exported for tests). */
 export function bindingFor(e: KeyboardEvent): Binding | null {
@@ -80,8 +83,13 @@ export function bindingFor(e: KeyboardEvent): Binding | null {
   if (!ctrl && !e.shiftKey && k === 'F1') {
     return { cmd: 'help.shortcuts', typing: true, routes: ALL_ROUTES, alwaysPrevent: true };
   }
+  // UI zoom: '+' is Shift+= on a US keyboard and its own key on a Finnish one
+  if (ctrl && (k === '+' || k === '=')) return zoomBinding('zoom.in');
+  if (ctrl && (k === '-' || k === '_')) return zoomBinding('zoom.out');
+  if (ctrl && !e.shiftKey && k === '0') return zoomBinding('zoom.reset');
   if (ctrl && !e.shiftKey) {
     switch (k.toLowerCase()) {
+      case 'k': return { cmd: 'palette.open', typing: true, routes: ALL_ROUTES, alwaysPrevent: true };
       case 'n': return { cmd: 'entry.add', typing: true, alwaysPrevent: true };
       case 'e': return { cmd: 'export', typing: true, alwaysPrevent: true };
       case 'i': return { cmd: 'import.menu', typing: true, alwaysPrevent: true };
@@ -151,15 +159,18 @@ function onKeyDown(e: KeyboardEvent): void {
   // a focused component already handled the key
   if (e.defaultPrevented) return;
   if (b.alwaysPrevent) e.preventDefault();
-  if (isModalOpen()) return; // the modal owns the keyboard
+  if (isModalOpen() && !b.inModal) return; // the modal owns the keyboard
   if (!b.typing && isTyping(e.target)) return;
   if (b.notOnActivator && isActivator(e.target)) return;
   if (b.inTable && !(e.target instanceof Element && e.target.closest('[data-entries-table]'))) return;
   if (!(b.routes ?? ['main']).includes(get(route))) return;
   if (b.when && !b.when()) return;
-  if (e.repeat && b.cmd !== 'month.prev' && b.cmd !== 'month.next') return;
+  if (e.repeat && !REPEATABLE.has(b.cmd)) return;
   if (runCommand(b.cmd)) e.preventDefault();
 }
+
+/** Commands that run again while the key is held. */
+const REPEATABLE = new Set<CommandName>(['month.prev', 'month.next', 'zoom.in', 'zoom.out']);
 
 let installed = false;
 

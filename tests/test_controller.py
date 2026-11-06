@@ -1105,7 +1105,8 @@ def test_get_settings_defaults(env):
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                              "liquid_glass": False, "target_hours": 8.0, "pet": "off",
-                             "pet_name": "", "pet_hint_seen": False, "pet_skin": "classic"}
+                             "pet_name": "", "pet_hint_seen": False, "pet_skin": "classic",
+                             "zoom": 100}
 
 
 def test_save_settings(env):
@@ -2173,3 +2174,14 @@ def test_restore_backup_keeps_a_running_shift(env):
     token = ctrl.restore_backup(name)["confirm"]["token"]
     r = ctrl.restore_backup(name, _answer("restore_backup", "restore", token))
     assert r["status"] == "saved" and r["timer"]["running"]
+
+
+def test_save_ui_prefs_zoom(env):
+    ctrl, _ = env
+    r = ctrl.save_ui_prefs({"zoom": 120})
+    assert r["ok"] and r["settings"]["ui_prefs"]["zoom"] == 120
+    assert storage.get_ui_prefs()["zoom"] == 120
+    for bad in (75, 155, 115, "110", True, None):
+        r = ctrl.save_ui_prefs({"zoom": bad})
+        assert not r["ok"] and r["status"] == "invalid" and r["field"] == "ui_prefs"
+    assert storage.get_ui_prefs()["zoom"] == 120

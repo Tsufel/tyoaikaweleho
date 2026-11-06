@@ -1,13 +1,14 @@
-// Make the WebView feel like an app: no reload, print, find, zoom, browser
-// context menu, or navigation by dropping a file. F5 is left to shortcuts.ts
-// (timer toggle), which always prevents the reload.
+// Make the WebView feel like an app: no reload, print, find, browser zoom,
+// browser context menu, or navigation by dropping a file. F5 is left to
+// shortcuts.ts (timer toggle), and so are Ctrl+= / Ctrl+- / Ctrl+0 (the
+// app's own UI zoom, lib/zoom.ts); it always prevents their browser default.
 
 const isEditable = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
   return !!el && (el.isContentEditable || !!el.closest?.('input, textarea, [contenteditable="true"]'));
 };
 
-const CTRL_BLOCK = ['r', 'p', 'f', 'g', 'h', 'j', 'u', 'o', 'l', 'd', 't', 'w', '+', '-', '=', '0', '_'];
+const CTRL_BLOCK = ['r', 'p', 'f', 'g', 'h', 'j', 'u', 'o', 'l', 'd', 't', 'w'];
 
 function onKey(e: KeyboardEvent): void {
   const ctrl = e.ctrlKey || e.metaKey;

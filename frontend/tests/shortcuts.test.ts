@@ -33,6 +33,11 @@ const KEYS: KeyInit[] = [
   { key: 'PageDown' },
   { key: 'Enter' },
   { key: 'F2' },
+  { key: '=', ctrlKey: true },
+  { key: '+', ctrlKey: true, shiftKey: true },
+  { key: '-', ctrlKey: true },
+  { key: '0', ctrlKey: true },
+  { key: 'k', ctrlKey: true },
   { key: 'Delete' },
   { key: 'Escape' },
 ];

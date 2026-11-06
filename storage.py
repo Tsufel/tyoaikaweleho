@@ -912,7 +912,7 @@ def set_window_placement(placement: dict):
 
 UI_PREF_DEFAULTS = {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                     "liquid_glass": False, "target_hours": 8.0, "pet": "off", "pet_name": "",
-                    "pet_hint_seen": False, "pet_skin": "classic"}
+                    "pet_hint_seen": False, "pet_skin": "classic", "zoom": 100}
 _BOOL_PREFS = ("lulz", "reduce_effects", "lulz_sound", "liquid_glass", "pet_hint_seen")
 TARGET_HOURS_RANGE = (1.0, 24.0)
 PETS = ("off", "familiar", "wizard")
@@ -920,6 +920,8 @@ PET_NAME_MAX = 24
 # Pet looks (frontend/src/views/pet/petSkins.ts). Each unlocks at a pet level;
 # the app shows a locked choice as classic, so only the id is checked here.
 PET_SKINS = ("classic", "cosmic", "neon", "gilded", "legend")
+# In-app UI zoom, percent (Ctrl+= / Ctrl+- / Ctrl+0): 80 to 150 in steps of 10.
+ZOOM_LEVELS = tuple(range(80, 151, 10))
 
 
 # Control, surrogate, private-use and line/paragraph separator characters, and
@@ -992,6 +994,11 @@ def _valid_target_hours(v) -> bool:
             and TARGET_HOURS_RANGE[0] <= v <= TARGET_HOURS_RANGE[1])
 
 
+def _valid_zoom(v) -> bool:
+    return (isinstance(v, (int, float)) and not isinstance(v, bool)
+            and math.isfinite(v) and v == int(v) and int(v) in ZOOM_LEVELS)
+
+
 def _clean_ui_prefs(raw) -> dict:
     prefs = dict(UI_PREF_DEFAULTS)
     if isinstance(raw, dict):
@@ -1007,6 +1014,8 @@ def _clean_ui_prefs(raw) -> dict:
             prefs["pet_name"] = name
         if raw.get("pet_skin") in PET_SKINS:
             prefs["pet_skin"] = raw["pet_skin"]
+        if _valid_zoom(raw.get("zoom")):
+            prefs["zoom"] = int(raw["zoom"])
     return prefs
 
 
@@ -1038,6 +1047,10 @@ def merge_ui_prefs(base, changes: dict) -> dict:
             if value not in PET_SKINS:
                 raise ValueError(f"pet_skin must be one of {', '.join(PET_SKINS)}")
             prefs[key] = value
+        elif key == "zoom":
+            if not _valid_zoom(value):
+                raise ValueError("zoom must be 80 to 150 in steps of 10")
+            prefs[key] = int(value)
         else:
             raise ValueError(f"unknown ui pref: {key}")
     return prefs
@@ -1045,7 +1058,7 @@ def merge_ui_prefs(base, changes: dict) -> dict:
 
 def get_ui_prefs() -> dict:
     """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours, pet, pet_name,
-    pet_hint_seen, pet_skin}, defaults for anything unset."""
+    pet_hint_seen, pet_skin, zoom}, defaults for anything unset."""
     return _clean_ui_prefs(_read_raw().get("ui_prefs"))
 
 

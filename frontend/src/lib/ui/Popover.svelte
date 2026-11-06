@@ -3,6 +3,7 @@
   import { scale } from '../motion';
   import { clickOutside, portal } from './actions';
   import { liquidGlass } from '../glass/liquidGlass';
+  import { layoutRect, uiScale } from '../zoom';
 
   interface Props {
     /** Element the popover is positioned against. */
@@ -38,14 +39,17 @@
 
   function place() {
     if (!anchor || !el) return;
-    const r = anchor.getBoundingClientRect();
+    // layout px: the UI zoom scales what we place (lib/zoom.ts)
+    const r = layoutRect(anchor.getBoundingClientRect());
+    const vw = window.innerWidth / uiScale();
+    const vh = window.innerHeight / uiScale();
     const h = el.offsetHeight;
     const w = matchWidth ? r.width : el.offsetWidth;
     let up = placement.startsWith('top');
-    if (!up && r.bottom + 6 + h > window.innerHeight - 8 && r.top - 6 - h > 8) up = true;
-    else if (up && r.top - 6 - h < 8 && r.bottom + 6 + h < window.innerHeight - 8) up = false;
+    if (!up && r.bottom + 6 + h > vh - 8 && r.top - 6 - h > 8) up = true;
+    else if (up && r.top - 6 - h < 8 && r.bottom + 6 + h < vh - 8) up = false;
     let left = placement.endsWith('end') ? r.right - w : r.left;
-    left = Math.min(Math.max(8, left), window.innerWidth - w - 8);
+    left = Math.min(Math.max(8, left), vw - w - 8);
     pos = { left, top: up ? r.top - 6 - h : r.bottom + 6, width: r.width, up };
   }
 
