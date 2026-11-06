@@ -7,10 +7,20 @@ on:
     branches: [main]
   workflow_call:       # release.yml runs these before building anything
 
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older run. Never cancel when
+# release.yml calls this for a tag: that run gates a release.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   test:
     name: pytest (Windows / Python 3.12)
     runs-on: windows-latest   # winocr requires Windows; matches target platform
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v5
@@ -23,12 +33,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Lint (ruff)
+        run: ruff check .
+
       - name: Run tests
-        run: pytest tests/ -v --tb=short --cov=. --cov-report=term-missing
+        # test paths, markers and the coverage floor live in pyproject.toml
+        run: pytest -v --tb=short --cov --cov-report=term-missing
 
   frontend:
     name: frontend (svelte-check / vitest / build)
     runs-on: windows-latest
+    timeout-minutes: 20
 
     defaults:
       run:
@@ -54,3 +69,50 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  smoke:
+    # The same --smoke-test the release runs on the bundle, but from source,
+    # so a startup or UI-load regression shows up before anything is tagged.
+    name: smoke test from source (WebView2)
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Start the app hidden and wait for the UI
+        shell: pwsh
+        run: |
+          $env:WELEHO_DATA_DIR = Join-Path $env:RUNNER_TEMP "weleho-smoke"
+          New-Item -ItemType Directory -Force $env:WELEHO_DATA_DIR | Out-Null
+          $python = (Get-Command python).Source
+          # One retry on timeout, as in release.yml: a cold WebView2 start can stall
+          foreach ($attempt in 1..2) {
+            $p = Start-Process $python -ArgumentList "main.py", "--smoke-test" -PassThru -NoNewWindow
+            $null = $p.Handle   # keeps ExitCode readable after exit
+            if ($p.WaitForExit(90000)) { break }
+            Stop-Process -Id $p.Id -Force
+            if ($attempt -eq 2) { Write-Error "Smoke test timed out" }
+            Write-Warning "Smoke test timed out, retrying"
+          }
+          if ($p.ExitCode -ne 0) { Write-Error "Smoke test failed with exit code $($p.ExitCode)" }

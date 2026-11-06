@@ -300,7 +300,7 @@ def test_stop_close_source_long_does_not_ask(env):
 
 def test_stop_over_24h_asks(env):
     ctrl, clock = env
-    token = _started(ctrl, clock)
+    _started(ctrl, clock)
     clock.now = T0 + timedelta(hours=26)
     r = ctrl.timer_stop("close")
     c = r["confirm"]

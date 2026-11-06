@@ -1,7 +1,7 @@
 # Työaikaweleho
 
 <p align="center">
-  <img src="splash.png" width="420" alt="Työvuoroweleho"/>
+  <img src="splash.png" width="420" alt="Työaikaweleho"/>
 </p>
 
 **Työaikaweleho** is a Windows desktop app for tracking shift work hours.
@@ -21,10 +21,12 @@ you can send straight to your employer.
 
 ## Features
 
-- **Glassy UI** — frosted-glass panels, animated gradient background, light/dark themes
+- **Glassy UI** — frosted-glass panels, animated gradient background, light/dark themes, and an optional *Liquid glass* look with refraction and a specular rim
 - **Animated timer ring** — fills toward your daily target with live hours and earnings; start now or at a chosen time
 - **Stats** — hours and earnings per day, week or month, per-shift breakdown, averages
-- **Lulz mode** *(off by default)* — your running shift catches fire
+- **Achievements** — badges earned from your shift history, with a sheet to browse them from Stats
+- **Work pet** *(off by default)* — a companion on the timer card that levels up with your lifetime hours and unlocks new looks (Cosmic, Neon, Gilded, Legend)
+- **Lulz mode** *(off by default)* — your running shift catches fire, with an optional synthesized fire sound
 - **Crash recovery** — unfinished shifts survive app restarts and can be recovered with an edited end time
 - **Manual entries** — add, edit, delete (with undo) or edit times inline; pick dates from a calendar
 - **Excel export** — Simple layout (PVM / Start / End / Total) or full EAS format
@@ -77,7 +79,23 @@ npm run dev                 # Vite dev server on http://localhost:5173/
   `python main.py --dev` (or `--dev http://localhost:5174/` for another port).
   The window loads the dev server with hot reload and DevTools enabled.
 - **Browser only:** open `http://localhost:5173/?mock` for a mock API with
-  sample data, handy for design work.
+  sample data, handy for design work. Add flags to set up a scene, e.g.
+  `?mock&empty&running=2`:
+
+  | Flag | Effect |
+  |------|--------|
+  | `empty` | start with no shifts |
+  | `running=H` / `recovery=H` | a shift running for H hours / one to recover (default 3) |
+  | `failsave` | saving a shift fails with `save_failed` |
+  | `update` | a newer app version is available (and announced) |
+  | `certfail` | update checks and installs fail as a certificate error |
+  | `changelog` | show the What's new dialog on start |
+  | `dlc` | the Image OCR DLC is installed |
+  | `glass`, `lulz`, `sound` | Liquid glass, Lulz, Lulz sound on |
+  | `pet=familiar\|wizard`, `skin=<look>`, `petxp=H` | pet, its look, extra lifetime hours |
+  | `nopethint` | the one-time pet offer was already answered |
+  | `achnew` | every earned achievement unlocks anew |
+  | `glassdebug` | dev server only: Liquid glass draws a test map |
 - **Keep your real data safe:** set `WELEHO_DATA_DIR` to a scratch folder and
   the app reads/writes `data.json`, `shifts.txt`, `session.json`, backups and
   `error.log` there instead:
@@ -92,6 +110,8 @@ npm run dev                 # Vite dev server on http://localhost:5173/
 
 The Python ⇄ JS interface is documented in [`docs/V2_UI_API.md`](docs/V2_UI_API.md)
 and mirrored in `frontend/src/lib/api/types.ts`; change both together.
+[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) has the checklist for adding an API
+method and the checks CI runs.
 
 ---
 
@@ -107,6 +127,9 @@ stats.py             hours/earnings summaries for the Stats view
 excel_export.py      Excel export (Simple / Full layouts)
 import_excel.py      Excel import
 updater.py           auto-update check + verified installer download
+achievements.py      achievements and pet level, derived from the entries
+changelog.py         What's new text per release
+image_ocr.py         Image OCR DLC source (published on the dlc branch)
 webapp/
   app.py             pywebview window, close guard, theme, start-up
   api.py             js_api surface exposed to the frontend
@@ -115,6 +138,8 @@ webapp/
   win32.py           window placement, single instance, message boxes
 services/
   dlc.py             secure DLC download / verify / install / remove
+  net.py             HTTPS for updates and DLC (Windows certificate store)
+scripts/             one-off asset tools (pet sprites and particles)
 frontend/            Vite + Svelte 5 + TypeScript UI
   src/views/         timer, entries, stats, settings, OCR, modals
   src/fx/            gradient mesh, intro, Lulz fire
@@ -155,6 +180,7 @@ breakdown, average per day and your longest shift.
 | Ctrl+N | Add entry |
 | Ctrl+E | Export to Excel |
 | Ctrl+I | Import menu |
+| Del | Delete the selected entry (in the table) |
 | Ctrl+Z | Undo delete |
 | Ctrl+, | Settings |
 | Ctrl+S / Esc | Save settings / back |
@@ -195,8 +221,12 @@ back with Esc.
 | Include total pay | Adds Rate + Earned rows to the Simple export |
 | Appearance | System / Light / Dark theme |
 | Daily target | Hours that fill the timer ring |
+| Liquid glass | iOS-style glass look with refraction, off by default |
 | Reduce effects | Tones animations down (also follows Windows' reduced motion) |
 | Lulz | Fire effects around the running timer, off by default |
+| Lulz sound | Synthesized fire sound while Lulz is on, off by default |
+| Pet | Off, Familiar or Wizard companion on the timer card; pick its look on the pet sheet |
+| Pet name | Up to 24 characters; empty uses the default name |
 
 ---
 
@@ -282,12 +312,14 @@ The script automatically:
 To check a bundle without installing it: `dist\Tyoaikaweleho\Tyoaikaweleho.exe --smoke-test`.
 
 **Releasing:**
-1. Create a GitHub Release tagged `vx.x.x`
-2. Attach `Output\TyoaikawelehoSetup_x.x.x.exe`
-3. *(Recommended)* Also attach `TyoaikawelehoSetup_x.x.x.exe.sha256` containing the installer's SHA-256 hex digest:
-   ```powershell
-   (Get-FileHash Output\TyoaikawelehoSetup_x.x.x.exe -Algorithm SHA256).Hash.ToLower() | Out-File -Encoding ascii Output\TyoaikawelehoSetup_x.x.x.exe.sha256
-   ```
+1. Bump the version in `version.py` and `frontend/package.json`, and add the
+   release notes to `changelog.py`
+2. Commit, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+
+The **Release** workflow (`.github/workflows/release.yml`) runs the tests,
+checks the tag matches both version files, builds the installer and publishes
+a GitHub release with `TyoaikawelehoSetup_X.Y.Z.exe` and its `.sha256` checksum
+attached. `build.bat` is for local builds only.
 
 Installed copies of the app detect the new release on next launch and offer to update silently. The updater only accepts release assets from this repository over HTTPS, and verifies the installer's SHA-256 when a `.sha256` asset is published.
 
@@ -297,7 +329,8 @@ Installed copies of the app detect the new release on next launch and offer to u
 
 ```batch
 pip install -r requirements-dev.txt
-pytest tests/ -v
+ruff check .
+pytest --cov                # coverage report; fails under the floor in pyproject.toml
 
 cd frontend
 npm run check
@@ -305,7 +338,12 @@ npm test
 ```
 
 The pytest suite covers storage (incl. atomic writes & corruption recovery), timer, the webapp controller and API contract, stats, updater URL/checksum validation, DLC verification, Excel import/export and time parsing; the vitest suite covers the frontend logic, stores and components.
-Both run automatically on every push to `main` via GitHub Actions.
+Tests never touch the network or your real data: outside connections are
+blocked (mark a test `network` to allow them) and data goes to temp folders.
+
+GitHub Actions runs ruff, pytest with coverage, the frontend checks and tests,
+and a `--smoke-test` of the built app on every push to any branch and on pull
+requests to `main`.
 
 ---
 

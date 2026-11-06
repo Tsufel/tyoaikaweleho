@@ -408,6 +408,7 @@ Bootstrap = {
   version, frozen, dev, today, now_epoch_ms,
   settings: Settings, shifts: string[], timer: TimerState,
   dlc: DlcStatus, changelog: ChangelogBlock[] | null, recovery: Recovery | null,
+  data_recovery: {source, damaged_copy} | null,  // once, after a backup replaced data.json
   month: {year, month},          // initial view (today)
   error_log, data_dir, shifts_file
 }
@@ -429,7 +430,9 @@ Bootstrap = {
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
   employee_name:'', manager_name:'',
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
-  liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false}}`.
+  liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false,
+  pet_skin:'classic'}}`. `pet_skin` is `'classic'|'cosmic'|'neon'|'gilded'|'legend'`
+  (a look not yet unlocked by the pet's level is drawn as classic).
   `employee_name` / `manager_name` are printed after EMPLOYEE: / MANAGER: (B3 /
   B5) on the Full sheet; `''` leaves the line blank, as before. They are saved
   through `save_settings`, trimmed with inner whitespace collapsed, at most 60

@@ -1,9 +1,7 @@
 """Tests for timer — WorkTimer state machine, session persistence, _is_newer."""
-import json
 import pytest
 from datetime import datetime, timedelta
 
-import timer as tm
 from timer import WorkTimer, load_saved_session, clear_saved_session
 
 

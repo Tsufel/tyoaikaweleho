@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { IGNITE_MS, SHAKE, boostEnvelope, fuseProgress, gust, shakeKeyframes } from '../src/fx/fire/choreo';
 import { createNoise, lehmer } from '../src/fx/fire/noise';

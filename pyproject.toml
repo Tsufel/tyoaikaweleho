@@ -1,0 +1,30 @@
+# Tool settings only; the app is built with PyInstaller (Tyoaikaweleho.spec),
+# not packaged from here.
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["frontend", "build", "dist", "Output"]
+
+[tool.ruff.lint]
+# Pyflakes (unused imports/names, undefined names), syntax errors and unused
+# loop variables. Style is left alone on purpose.
+select = ["F", "E9", "B007"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "network: may reach hosts other than loopback (tests/conftest.py blocks them otherwise)",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["tests/*", "scripts/*", "frontend/*", "build/*", "dist/*"]
+
+[tool.coverage.report]
+# App code only (tests excluded); it measured 82.4% when this was added.
+# Raise it as coverage grows. `pytest --cov` fails below it.
+fail_under = 80
+show_missing = true
+skip_covered = true

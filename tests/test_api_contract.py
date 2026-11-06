@@ -12,7 +12,6 @@ import pytest
 import storage
 from services import dlc
 from timer import WorkTimer
-from webapp import results as R
 from webapp.api import Api
 from webapp.controller import ShiftController
 from webapp.events import CHANNEL, EventBus
@@ -178,7 +177,7 @@ def test_every_method_returns_json(rig):
         _check(getattr(api, name)(*args))
         called.add(name)
     assert called == set(_public(api))
-    for name, payload in bus.events:
+    for _name, payload in bus.events:
         json.dumps(payload, allow_nan=False)
 
 
