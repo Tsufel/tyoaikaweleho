@@ -3,6 +3,7 @@
   import { onFx } from '../../fx/fire/fxBus';
   import { fade, fly } from '../../lib/motion';
   import { lulz } from '../../lib/stores/motion';
+  import { month } from '../../lib/stores/entries';
   import { offerRecovery, pendingRecovery } from '../../lib/stores/recovery';
   import { settings, shifts } from '../../lib/stores/settings';
   import { elapsedSeconds, liveEarnings, timer } from '../../lib/stores/timer';
@@ -41,6 +42,7 @@
     dialDay,
     fireBadge,
     haloHue,
+    recentJobs,
     ringProgress,
     snapStart,
     spokenDuration,
@@ -48,6 +50,8 @@
     stillWorkingDue,
     stillWorkingText,
     targetText,
+    weekMinutesSaved,
+    weekText,
   } from './timerLogic';
 
   const loadFire = () => import('../../fx/fire/FireLayer.svelte');
@@ -135,6 +139,13 @@
   });
   onDestroy(() => clearTimeout(flareTimer));
   const blocked = $derived(!!$pendingRecovery || $timer.recovery_pending);
+  /** One-click chips for the jobs worked most recently (from the loaded month). */
+  const recent = $derived(recentJobs($month?.entries));
+  /** Saved minutes this ISO week (+ the running shift); null when the loaded month can't tell. */
+  const weekSaved = $derived(weekMinutesSaved($month, new Date($wallClock)));
+  const weekLine = $derived(
+    weekSaved == null ? null : weekText(weekSaved + (running ? $elapsedSeconds / 60 : 0), target),
+  );
   /** "Still working?" once the shift runs 2 h past the daily target; dismissed per shift. */
   const stillWorking = $derived(
     running && stillWorkingDue($elapsedSeconds, target) && $stillWorkingDismissed !== $timer.start_iso,
@@ -311,6 +322,7 @@
       {IDLE_TEXT}
     {/if}
   </p>
+  {#if weekLine}<p class="week num">{weekLine}</p>{/if}
 
   {#if stillWorking}
     <div class="still" role="status" transition:fade={{ duration: 200 }}>
@@ -359,6 +371,20 @@
         <div class="job">
           <Combobox id="timer-job" label="Job / shift" bind:value={$jobDraft} options={$shifts} placeholder="Job / shift" />
         </div>
+        {#if recent.length}
+          <div class="recent" role="group" aria-label="Recent jobs">
+            {#each recent as job (job)}
+              <button
+                type="button"
+                class="chip"
+                class:on={job === ($jobDraft || '').trim()}
+                aria-pressed={job === ($jobDraft || '').trim()}
+                disabled={$busy}
+                onclick={() => jobDraft.set(job)}>{job}</button
+              >
+            {/each}
+          </div>
+        {/if}
         <div class="start-row">
           <button class="cta start" type="button" disabled={$busy} onclick={() => void startShift('now')}>
             <span class="cta-bg" aria-hidden="true"></span>
@@ -699,6 +725,39 @@
   }
   .blocked span {
     flex: 1;
+  }
+  .week {
+    margin: -8px 0 0;
+    font-size: var(--fs-xs);
+    color: var(--text-subtle);
+    text-align: center;
+  }
+  .recent {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: -4px;
+  }
+  .chip {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    padding: 3px 10px;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: var(--neutral-fill);
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+  }
+  .chip:hover:not(:disabled),
+  .chip.on {
+    color: var(--text);
+  }
+  .chip.on {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
   .still {
     align-self: stretch;
