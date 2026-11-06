@@ -139,8 +139,9 @@
   .current {
     box-shadow: inset 0 0 0 1.5px var(--accent);
   }
-  .selected,
-  .selected:hover {
+  /* as specific as `.row button`, so the fill isn't reset to transparent */
+  .row button.selected,
+  .row button.selected:hover {
     background: linear-gradient(135deg, var(--accent-strong), var(--accent-strong-2));
     color: var(--on-accent);
   }
