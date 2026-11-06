@@ -336,6 +336,41 @@ describe('liquid glass', () => {
     replies[1]({ ok: true, status: 'saved', settings: { ...S, ui_prefs: { ...S.ui_prefs, zoom: 120 } } });
     expect(await p2).toBe(true);
   });
+
+  it('saveUiPrefs: when every overlapping save fails, nothing unsaved stays on screen', async () => {
+    withPrefs({ zoom: 100 });
+    const replies: ((v: unknown) => void)[] = [];
+    fakeApi.save_ui_prefs.mockImplementation(() => new Promise((r) => replies.push(r)));
+    const fail = { ok: false, status: 'error', error: { code: 'save_failed', message: 'Disk full' } };
+    const p1 = saveUiPrefs({ zoom: 110 });
+    const p2 = saveUiPrefs({ zoom: 120 });
+    replies[0](fail);
+    expect(await p1).toBe(false);
+    replies[1](fail);
+    expect(await p2).toBe(false);
+    expect(get(settings).ui_prefs.zoom).toBe(100);
+  });
+
+  it('saveUiPrefs: out-of-order replies settle on the newest saved state', async () => {
+    withPrefs({ zoom: 100 });
+    const replies: ((v: unknown) => void)[] = [];
+    fakeApi.save_ui_prefs.mockImplementation(() => new Promise((r) => replies.push(r)));
+    const saved = (zoom: number) => ({ ok: true, status: 'saved', settings: { ...S, ui_prefs: { ...S.ui_prefs, zoom } } });
+    const p1 = saveUiPrefs({ zoom: 110 });
+    const p2 = saveUiPrefs({ zoom: 120 });
+    replies[1]({ ok: false, status: 'error', error: { code: 'save_failed', message: 'Disk full' } });
+    expect(await p2).toBe(false);
+    replies[0](saved(110));
+    expect(await p1).toBe(true);
+    expect(get(settings).ui_prefs.zoom).toBe(110);
+
+    const p3 = saveUiPrefs({ zoom: 130 });
+    const p4 = saveUiPrefs({ zoom: 140 });
+    replies[3](saved(140));
+    replies[2](saved(130));
+    await Promise.all([p3, p4]);
+    expect(get(settings).ui_prefs.zoom).toBe(140);
+  });
 });
 
 describe('update check', () => {

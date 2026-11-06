@@ -40,27 +40,50 @@ export const dlc = writable<DlcStatus>({
   ocr_available: false,
 });
 
+let uiPrefsSeq = 0;
+let uiPrefsInFlight = 0;
+/** ui_prefs as Python last confirmed them, and which save that reply belonged to. */
+let confirmedPrefs: UiPrefs | null = null;
+let confirmedSeq = 0;
+
 export function applySettings(s: Settings, sh?: string[]): void {
-  settings.set({ ...s, ui_prefs: { ...DEFAULT_UI_PREFS, ...s.ui_prefs } });
+  const ui_prefs = { ...DEFAULT_UI_PREFS, ...s.ui_prefs };
+  settings.set({ ...s, ui_prefs });
+  confirmedPrefs = ui_prefs;
+  confirmedSeq = uiPrefsSeq;
   if (sh) shifts.set(sh);
 }
-
-let uiPrefsSeq = 0;
 
 /** Instant toggles (Lulz / Lulz sound / Reduce effects / Liquid glass / target hours), outside the Save button. */
 export async function saveUiPrefs(prefs: Partial<UiPrefs>): Promise<boolean> {
   const seq = ++uiPrefsSeq;
   const before = get(settings);
-  settings.set({ ...before, ui_prefs: { ...before.ui_prefs, ...prefs } });
-  const r = await api.save_ui_prefs(prefs);
-  // a newer save is in flight (a held zoom key): its reply carries the final
-  // state, so this older one must not roll the store back under it
-  const latest = seq === uiPrefsSeq;
-  if (r.ok && r.settings) {
-    if (latest) applySettings(r.settings);
-    return true;
+  // with nothing in flight, the store is what Python holds
+  if (uiPrefsInFlight === 0) {
+    confirmedPrefs = before.ui_prefs;
+    confirmedSeq = seq - 1;
   }
-  if (latest) settings.set(before);
+  settings.set({ ...before, ui_prefs: { ...before.ui_prefs, ...prefs } });
+  uiPrefsInFlight++;
+  let r: Awaited<ReturnType<typeof api.save_ui_prefs>>;
+  try {
+    r = await api.save_ui_prefs(prefs);
+  } finally {
+    uiPrefsInFlight--;
+  }
+  const ok = r.ok && !!r.settings;
+  // replies can overlap (a held zoom key) and arrive out of order; only the
+  // newest reply seen so far says what Python holds
+  if (ok && seq >= confirmedSeq) {
+    confirmedPrefs = { ...DEFAULT_UI_PREFS, ...r.settings!.ui_prefs };
+    confirmedSeq = seq;
+  }
+  // once nothing is in flight, show exactly what was saved: a failed save's
+  // optimistic value must not survive, and no older reply may roll back a newer one
+  if (uiPrefsInFlight === 0 && confirmedPrefs) {
+    settings.set({ ...get(settings), ui_prefs: confirmedPrefs });
+  }
+  if (ok) return true;
   toast(r.message ?? (r.status === 'error' ? r.error.message : 'Could not save the setting'), { tone: 'error', ms: 6000 });
   return false;
 }
