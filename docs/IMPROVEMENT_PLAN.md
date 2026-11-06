@@ -45,8 +45,7 @@ palette), 94 (work anniversary).
 
 ## Progress log
 
-- Round 1: done and merged (A, B, C, D, E, F, H; G still running at the time of
-  writing). 80 ideas shipped:
+- Round 1: done and merged (A to H). 85 ideas shipped:
   - A data safety: 1, 68, 34, 66, 35, 48, 67, 77, 39, 71, 73
   - B timer: 5, 7, 8, 6, 2, 3, 11, 12, 13, 113 (119 skipped: it needs this
     week's minutes on the timer side, so it moved to round 2)
@@ -54,15 +53,42 @@ palette), 94 (work anniversary).
   - D Excel: 36, 37, 38, 45, 47, 44, 115
   - E shell / a11y: 50, 52, 51, 53, 63, 54, 123, 55, 57, 59, 61, 65, 64, 58
   - F gamification: 81, 82, 84, 85, 120, 87, 88, 89, 90, 91, 92, 93, 86
+  - G settings / your data (landed late): 43, 116, 78, 70, 42. That covers the
+    Your data card, the backups list with restore (a safety copy is made
+    first) and weekly/monthly snapshot retention. 41, 46, 74 and 75 moved to
+    round 3.
   - H devex: 108, 100, 101, 102, 103, 104, 105, 106, 107, 97, 98, 109
 
   After the merge: 867 pytest, 766 vitest, ruff clean, svelte-check 0 errors,
   and the Vite build passes. ui-overhaul (the owner's chart work) is merged in.
-- Round 2: _in progress_. Five build streams (timer: 10, 14, 4, 15, 119;
-  entries: 18, 114; holidays and fun: 117, 118, 94, 124, 125, 126; devex and
-  perf: 99, 31/72; shell: 62, 56, plus the data-recovery notice), and two
-  reviewers hunting bugs in the round-1 diff (backend, frontend). #69 waits
-  until G lands, since both touch backups.
+- Round 2: done and merged. 17 ideas shipped plus 3 bug fixes:
+  - timer: 14 (the stop time is the minute STOP was pressed), 4 (DST-safe
+    elapsed time), 10 (the "Still working?" banner, in-app part only), 15
+    (recent-job chips), 119 (the "This week" line). The taskbar flash was
+    skipped.
+  - entries: 114 (per-shift notes), 18 (undo for edits and adds, using
+    revert_entry with a stale guard).
+  - holidays: 117 (Finnish public holidays, with Python and TS twins tested
+    against one golden file), 118 (holidays never break a streak), 125
+    (contextual idle greeting). 94, 124 and 126 were skipped for time.
+  - devex: 31/72 (data.json is parsed once per API call; bootstrap went from
+    15 loads to 1), 99 (bump_version.py, plus release notes taken from
+    changelog.py).
+  - shell: 62 (UI zoom with Ctrl +/-/0, 80 to 150 %), 56 (command palette,
+    Ctrl+K).
+  - 69 (done here): a missing data.json is restored from the newest backup
+    and the notice says "was missing".
+  - backend review fixed 3 bugs. timer_adjust now cleans the job name. Excel
+    writes job names as text, so "=Boss" is no longer a formula. Imported
+    shift names are cleaned. The frontend reviewer could not start (its
+    worktree was broken), so it is re-run in round 3.
+
+  After the merge: 1100 pytest, 819 vitest, ruff clean, svelte-check 0 errors,
+  and the build passes.
+- Round 3: _in progress_, 20-minute streams: a frontend bug hunt, auditing
+  positioning under zoom, a Notes column in the Excel export plus a high-pay
+  warning (46), refreshing on focus (41) plus keeping legacy job names on
+  edit, and clearer update-check errors plus a 24 h re-check (74, 75).
 
 ## Idea catalogue
 
