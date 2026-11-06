@@ -43,26 +43,37 @@ class WorkEntry:
     job_shift: str
     time_in: str     # "HH:MM"
     time_out: str    # "HH:MM" or "" if still running
-    # Keys this version doesn't know (written by a newer one, e.g. a break or
-    # a note). Carried through load, save and undo so going back a version
-    # never strips them; never shown or compared.
+    # Optional one-line note. Stored only when not blank, so a plain entry
+    # keeps the five-key 2.1 shape and older versions carry it as an extra.
+    note: str = ""
+    # Keys this version doesn't know (written by a newer one, e.g. a break).
+    # Carried through load, save and undo so going back a version never
+    # strips them; never shown or compared.
     extra: dict = field(default_factory=dict, compare=False, repr=False)
 
     def to_dict(self) -> dict:
         """The stored form: the known fields win over any extra of the same name."""
-        return {**self.extra, **{k: getattr(self, k) for k in ENTRY_FIELDS}}
+        out = {**self.extra, **{k: getattr(self, k) for k in ENTRY_FIELDS}}
+        if self.note:
+            out["note"] = self.note
+        return out
 
     @classmethod
     def from_dict(cls, e: dict) -> "WorkEntry":
         """Tolerant reader: unknown keys go to `extra`, missing text fields
-        are blank (only id and date are required)."""
+        are blank (only id and date are required). A note that isn't text
+        (some newer shape) stays in `extra` untouched."""
         known = {k: e.get(k, "") for k in ENTRY_FIELDS}
         known = {k: "" if v is None else v for k, v in known.items()}
-        extra = {k: v for k, v in e.items() if k not in ENTRY_FIELDS}
-        return cls(**known, extra=extra)
+        note = e.get("note")
+        note = note if isinstance(note, str) else ""
+        extra = {k: v for k, v in e.items()
+                 if k not in ENTRY_FIELDS and not (k == "note" and isinstance(v, str))}
+        return cls(**known, note=note, extra=extra)
 
 
 ENTRY_FIELDS = ("id", "date", "job_shift", "time_in", "time_out")
+NOTE_MAX = 200
 
 
 def _migrate_from_appdata():
@@ -701,6 +712,24 @@ def clean_job_shift(v) -> str:
     if len(name) > JOB_SHIFT_MAX:
         raise ValueError(f"Shift names can be at most {JOB_SHIFT_MAX} characters.")
     return name
+
+
+def clean_note(v) -> str:
+    """A shift note as typed: one line, trimmed, inner whitespace (line
+    breaks and tabs included) made single spaces. None is "". Raises
+    ValueError (worded for the user) for non-text, other control characters
+    or a note over NOTE_MAX characters."""
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise ValueError("The note must be text.")
+    note = " ".join(v.split())
+    if any(unicodedata.category(c) in _BAD_NAME_CATEGORIES or c in _BIDI_CONTROLS
+           for c in note):
+        raise ValueError("Notes can't contain control characters.")
+    if len(note) > NOTE_MAX:
+        raise ValueError(f"Notes can be at most {NOTE_MAX} characters.")
+    return note
 
 
 def _clean_pet_name(v) -> str | None:

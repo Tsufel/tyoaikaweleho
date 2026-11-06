@@ -8,7 +8,7 @@
   import { onMount, tick } from 'svelte';
   import wizard from '../../assets/wizard.webp';
   import { api, runFlow } from '../../lib/api';
-  import type { EntryDraft, EntryRow, OverlapRef, WorkEntry } from '../../lib/api/types';
+  import type { EntryDraft, EntryRow, OverlapRef, SaveUndo, WorkEntry } from '../../lib/api/types';
   import { fade, flip, fly, stagger } from '../../lib/motion';
   import { registerCommand, SHORTCUT_LABELS } from '../../lib/shortcuts';
   import { alert, askYesNo, choose, openSheet, reportError } from '../../lib/stores/confirm';
@@ -27,7 +27,7 @@
   } from '../../lib/stores/entries';
   import { dlc } from '../../lib/stores/settings';
   import { dismiss, toast } from '../../lib/stores/toasts';
-  import { defaultEntryDate, formatHM, formatMoney, monthLabel, toIsoDate } from '../../lib/time';
+  import { defaultEntryDate, describeEntry, formatHM, formatMoney, monthLabel, toIsoDate } from '../../lib/time';
   import Button from '../../lib/ui/Button.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
@@ -61,6 +61,8 @@
     weekTotalText,
     type EditField,
     type EntryFilter,
+    savedMessage,
+    type SavedEntry,
   } from './entriesLogic';
   import EntryModal from './EntryModal.svelte';
   import MonthPicker from './MonthPicker.svelte';
@@ -165,6 +167,7 @@
         return false;
       }
       await refreshMonth({ select: ed.id, commit: false });
+      if (r.status === 'saved' && r.entry && r.token && r.before) offerUndo(r.entry, { token: r.token, before: r.before });
       return true;
     }
     if (r.status === 'error' && r.error.code === 'not_found') {
@@ -299,11 +302,16 @@
 
   async function addEntry() {
     if (!(await closeEditor(true))) return;
-    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
+    const saved = await openSheet<SheetProps, SavedEntry | null>(EntryModal, {
       entry: null,
       defaultDate: defaultEntryDate($viewMonth),
     });
-    if (saved) await showEntry(saved);
+    if (saved) await showSaved(saved);
+  }
+
+  async function showSaved(saved: SavedEntry) {
+    await showEntry(saved.entry);
+    offerUndo(saved.entry, saved.undo);
   }
 
   async function editEntry() {
@@ -311,11 +319,11 @@
     if (!(await closeEditor(true))) return;
     const entry = $month?.entries.find((e) => e.id === $selectedId);
     if (!entry) return;
-    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
+    const saved = await openSheet<SheetProps, SavedEntry | null>(EntryModal, {
       entry,
       defaultDate: entry.date,
     });
-    if (saved) await showEntry(saved);
+    if (saved) await showSaved(saved);
     focusRow($selectedId);
   }
 
@@ -344,12 +352,12 @@
     if (!selected) return;
     if (!(await closeEditor(true))) return;
     const template = duplicateDraft(selected, $month?.entries.map((e) => e.date) ?? []);
-    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
+    const saved = await openSheet<SheetProps, SavedEntry | null>(EntryModal, {
       entry: null,
       defaultDate: template.date,
       template,
     });
-    if (saved) await showEntry(saved);
+    if (saved) await showSaved(saved);
     focusRow($selectedId);
   }
 
@@ -494,6 +502,45 @@
     await reportError(r, 'Could not restore');
     if (r.status === 'error' && r.error.code === 'internal') return;
     toast(`Could not restore ${description}.`, { action: () => restore(entry, description), label: 'Retry', tone: 'error' });
+  }
+
+  /** After a save: a toast whose Undo (or Ctrl+Z) takes the save back. */
+  function offerUndo(entry: EntryRow, undo: SaveUndo | null) {
+    if (!undo) return;
+    const added = undo.before === null;
+    toast(savedMessage(entry, added), { action: () => undoSave(entry, undo), tone: added ? 'success' : 'info' });
+  }
+
+  /** Undo an add (delete it) or an edit (put the old shift back), but only
+   *  while the shift is still exactly as that save left it. */
+  async function undoSave(entry: EntryRow, undo: SaveUndo): Promise<void> {
+    if (!(await closeEditor(true))) return;
+    const r =
+      undo.before === null
+        ? await api.delete_entry(entry.id, [{ kind: 'delete_entry', choice: 'delete', token: undo.token }])
+        : await api.revert_entry(undo.before, undo.token);
+    if (r.ok && (r.status === 'ok' || r.status === 'saved')) {
+      const restored = 'entry' in r ? r.entry : undefined;
+      if (restored) await showEntry(restored);
+      else await refreshMonth({ select: $selectedId === entry.id ? null : $selectedId });
+      toast(undo.before === null ? `Removed the shift ${describeEntry(entry)}.` : `Undid the change to the shift ${describeEntry(restored ?? entry)}.`, {
+        tone: 'success',
+        ms: 4000,
+      });
+      return;
+    }
+    if (r.status === 'error' && r.error.code === 'stale') {
+      toast('That shift was changed again since, so it was not undone.', { tone: 'warning', ms: 6000 });
+      return;
+    }
+    if (r.status === 'error' && r.error.code === 'not_found') {
+      await refreshMonth({ commit: false });
+      toast('That shift no longer exists, so there was nothing to undo.', { tone: 'warning', ms: 6000 });
+      return;
+    }
+    await reportError(r, 'Could not undo');
+    if (r.status === 'error' && r.error.code === 'internal') return;
+    toast('Could not undo the change.', { action: () => undoSave(entry, undo), label: 'Retry', tone: 'error' });
   }
 
   async function exportMonth() {
@@ -801,7 +848,7 @@
                       title="{overlapText(e.overlap_with)} Click to go there."
                       aria-label={overlapText(e.overlap_with)}
                       onclick={(ev) => jumpToOverlap(ev, e.overlap_with)}><Icon name="warning" size={13} /></button
-                    >{/if}
+                    >{/if}{#if e.note}<span class="note-mark" title={e.note} role="img" aria-label="Note: {e.note}"><Icon name="note" size={13} /></span>{/if}
                 </td>
                 <td class="c-job"><span class="job">{e.job_shift || '—'}</span></td>
                 {#each TIME_FIELDS as f (f)}
@@ -1155,6 +1202,14 @@
     to {
       opacity: 0.55;
     }
+  }
+  .note-mark {
+    display: inline-flex;
+    vertical-align: -2px;
+    margin-left: 6px;
+    padding: 1px;
+    color: var(--text-muted);
+    cursor: help;
   }
   .overlap {
     display: inline-flex;

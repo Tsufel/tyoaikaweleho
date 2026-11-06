@@ -693,9 +693,44 @@ def test_unknown_entry_keys_load(tmp_storage):
     _raw_append(_future_row())
     [e] = storage.load_month(2026, 6)
     assert (e.id, e.date, e.time_in, e.time_out) == ("f1", "2026-06-02", "09:00", "17:00")
-    assert e.extra == {"break_minutes": 30, "note": "covered",
-                       "updated_at": "2026-06-02T17:00:00Z"}
-    assert storage.load_all_entries()[0].extra["note"] == "covered"
+    assert e.extra == {"break_minutes": 30, "updated_at": "2026-06-02T17:00:00Z"}
+    assert e.note == "covered"
+    assert storage.load_all_entries()[0].note == "covered"
+
+
+def test_note_stored_only_when_set(tmp_storage):
+    e = _entry()
+    e.note = "Covered for Sam"
+    storage.save_entry(e)
+    [row] = storage._load_raw()["entries"]
+    assert row["note"] == "Covered for Sam"
+    [back] = storage.load_all_entries()
+    back.note = ""
+    storage.save_entry(back)
+    [row] = storage._load_raw()["entries"]
+    assert set(row) == set(storage.ENTRY_FIELDS)
+
+
+def test_non_text_note_kept_as_extra(tmp_storage):
+    _raw_append({**_future_row(), "note": {"text": "x", "by": "manager"}})
+    [e] = storage.load_all_entries()
+    assert e.note == "" and e.extra["note"] == {"text": "x", "by": "manager"}
+    storage.save_entry(e)
+    [row] = storage._load_raw()["entries"]
+    assert row["note"] == {"text": "x", "by": "manager"}
+
+
+@pytest.mark.parametrize("raw, want", [
+    (None, ""), ("", ""), ("  hi  ", "hi"), ("a\n b\t c", "a b c"), ("x" * 200, "x" * 200),
+])
+def test_clean_note(raw, want):
+    assert storage.clean_note(raw) == want
+
+
+@pytest.mark.parametrize("raw", ["x" * 201, 5, "a\x00b", "a‮b"])
+def test_clean_note_rejects(raw):
+    with pytest.raises(ValueError):
+        storage.clean_note(raw)
 
 
 def test_unknown_entry_keys_survive_save(tmp_storage):

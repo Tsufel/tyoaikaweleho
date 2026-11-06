@@ -165,9 +165,22 @@ export interface WorkEntry {
   time_in: HHMM;
   /** "" while the shift has no end. */
   time_out: HHMM | '';
+  /** One-line note (≤ 200 chars); stored only when not blank. */
+  note?: string;
+}
+
+/** What a saved add/edit hands back so the UI can undo it: `token` is the
+ *  saved entry's fingerprint, `before` the entry as it was (null = an add,
+ *  undone with `delete_entry(id, [{kind:'delete_entry', choice:'delete', token}])`;
+ *  else `revert_entry(before, token)`). */
+export interface SaveUndo {
+  token: string;
+  before: WorkEntry | null;
 }
 
 export interface EntryRow extends WorkEntry {
+  /** "" when the entry has none. */
+  note: string;
   /** null when time_out is empty. */
   minutes: number | null;
   overnight: boolean;
@@ -193,6 +206,8 @@ export interface EntryDraft {
   job_shift: string;
   time_in: string;
   time_out: string;
+  /** Absent keeps the stored note on an edit; "" clears it. */
+  note?: string;
 }
 
 export type EditableField = 'time_in' | 'time_out';
@@ -555,18 +570,21 @@ export interface Api {
   // entries
   list_month(year: number, month: number): Promise<Result<{ data: MonthData }>>;
   get_entry(id: string): Promise<Result<{ entry: EntryRow }>>;
-  save_entry(draft: EntryDraft, confirm?: ConfirmList): Promise<Result<{ entry: EntryRow }>>;
+  save_entry(draft: EntryDraft, confirm?: ConfirmList): Promise<Result<{ entry: EntryRow } & SaveUndo>>;
   update_entry_field(
     id: string,
     field: EditableField,
     value: string,
     confirm?: ConfirmList,
-  ): Promise<Result<{ entry?: EntryRow; unchanged?: true }>>;
+  ): Promise<Result<{ entry?: EntryRow; unchanged?: true } & Partial<SaveUndo>>>;
   delete_entry(
     id: string,
     confirm?: ConfirmList,
   ): Promise<Result<{ deleted: WorkEntry; description: string }>>;
   restore_entry(entry: WorkEntry): Promise<Result<{ entry: EntryRow }>>;
+  /** Undo of an edit: puts `before` back only while the entry still matches
+   *  `token`; else error `stale` (or `not_found` when it is gone). */
+  revert_entry(entry: WorkEntry, token: string): Promise<Result<{ entry: EntryRow; description: string }>>;
 
   // shifts & settings
   get_settings(): Promise<SettingsResult>;

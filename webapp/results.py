@@ -120,8 +120,15 @@ def entry_row(entry) -> dict:
         display_date=display_date,
         time_out_display=f"{t_out} +1" if overnight else t_out,
         week_key=wk,
+        note=entry_note(entry),
     )
     return row
+
+
+def entry_note(entry) -> str:
+    """The entry's note ("" when none)."""
+    n = entry.get("note") if isinstance(entry, dict) else getattr(entry, "note", "")
+    return n if isinstance(n, str) else ""
 
 
 def describe(entry) -> str:

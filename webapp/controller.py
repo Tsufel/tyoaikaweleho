@@ -54,7 +54,7 @@ def _wall_minutes(start: datetime, end: datetime) -> int:
 
 
 def _fingerprint(e) -> str:
-    return f"{e.id}|{e.date}|{e.job_shift}|{e.time_in}|{e.time_out}"
+    return f"{e.id}|{e.date}|{e.job_shift}|{e.time_in}|{e.time_out}|{e.note}"
 
 
 def _plural(n: int, one: str, many: str) -> str:
@@ -837,6 +837,10 @@ class ShiftController:
             job_shift = storage.clean_job_shift(draft.get("job_shift"))
         except ValueError as exc:
             return R.invalid("job_shift", str(exc))
+        try:
+            note = storage.clean_note(draft.get("note"))
+        except ValueError as exc:
+            return R.invalid("note", str(exc))
         if t_out:
             minutes = entry_minutes(t_in, t_out)
             if is_long_shift(minutes):
@@ -848,7 +852,7 @@ class ShiftController:
         entry = storage.WorkEntry(
             id=str(draft.get("id") or "") or storage.new_entry_id(), date=d,
             job_shift=job_shift,
-            time_in=t_in, time_out=t_out)
+            time_in=t_in, time_out=t_out, note=note)
         with self._lock:
             choice = answer(confirm, "overlap")
             if choice is not None and choice != "save":
@@ -860,6 +864,8 @@ class ShiftController:
                 stored = self._find(entry.id) if draft.get("id") else None
                 if stored is not None:
                     entry.extra = dict(stored.extra)
+                    if "note" not in draft:   # a draft without the field keeps it
+                        entry.note = stored.note
                 if choice is None:
                     hits = self._overlaps(entry, stored)
                     if hits:
@@ -869,7 +875,9 @@ class ShiftController:
                 return R.error("save_failed",
                                f"The entry could not be saved:\n\n{exc}\n\n"
                                f"{_LOCKED_HINT} and press Save again.")
-        return R.saved(entry=entry_row(entry))
+        # token + before let the UI undo this save (§6.6)
+        return R.saved(entry=entry_row(entry), token=_fingerprint(entry),
+                       before=stored_entry_dict(stored) if stored is not None else None)
 
     def update_entry_field(self, entry_id: str, field: str, value: str,
                            confirm=None) -> dict:
@@ -914,7 +922,8 @@ class ShiftController:
                 storage.update_entry(entry)
             except OSError as exc:
                 return self._field_save_failed(exc)
-            return R.saved(entry=entry_row(entry))
+            return R.saved(entry=entry_row(entry), token=_fingerprint(entry),
+                           before=stored_entry_dict(before))
 
     @staticmethod
     def _field_save_failed(exc) -> dict:
@@ -948,23 +957,31 @@ class ShiftController:
                                f"{_LOCKED_HINT} and try again.")
             return R.ok(f"Deleted {desc}.", deleted=stored_entry_dict(entry), description=desc)
 
-    def restore_entry(self, entry: dict) -> dict:
+    @staticmethod
+    def _restorable(entry):
+        """The WorkEntry a stored entry dict (`deleted` / `before`) stands
+        for, or None when it is not one."""
         if not isinstance(entry, dict) or not all(
                 isinstance(entry.get(k), str) for k in ("id", "date", "time_in")):
-            return R.invalid("entry", "That is not a saved entry.")
+            return None
         # a date nothing can read would hide the entry from every month
         if not entry["id"] or parse_date_input(entry["date"]) is None:
-            return R.invalid("entry", "That is not a saved entry.")
-        # keys a newer version wrote (a break, a note) come back too; a
+            return None
+        # the note and keys a newer version wrote (a break) come back too; a
         # restored entry is never a tombstone
-        extra = {k: v for k, v in entry.items()
-                 if isinstance(k, str) and k not in storage.ENTRY_FIELDS and k != "deleted"}
+        rest = {k: v for k, v in entry.items()
+                if isinstance(k, str) and k not in storage.ENTRY_FIELDS and k != "deleted"}
         try:
-            json.dumps(extra)
+            json.dumps(rest)
         except (TypeError, ValueError):
+            return None
+        return storage.WorkEntry.from_dict(
+            {**rest, **{k: str(entry.get(k) or "") for k in storage.ENTRY_FIELDS}})
+
+    def restore_entry(self, entry: dict) -> dict:
+        restored = self._restorable(entry)
+        if restored is None:
             return R.invalid("entry", "That is not a saved entry.")
-        restored = storage.WorkEntry(**{
-            k: str(entry.get(k) or "") for k in storage.ENTRY_FIELDS}, extra=extra)
         desc = describe(restored)
         with self._lock:
             try:
@@ -973,6 +990,28 @@ class ShiftController:
                 return R.error("save_failed", f"The entry could not be restored:\n\n{exc}",
                                description=desc)
         return R.saved(f"Restored {desc}.", entry=entry_row(restored), description=desc)
+
+    def revert_entry(self, entry: dict, token: str) -> dict:
+        """Undo of an edit: put back *entry* (a save's `before`) only while the
+        saved entry still matches *token* (that save's `token`)."""
+        restored = self._restorable(entry)
+        if restored is None:
+            return R.invalid("entry", "That is not a saved entry.")
+        desc = describe(restored)
+        with self._lock:
+            try:
+                current = self._find(restored.id)
+                if current is None:
+                    return self._not_found()
+                if not isinstance(token, str) or _fingerprint(current) != token:
+                    return R.error("stale", "That shift was changed again since, "
+                                            "so the earlier change was not undone.")
+                storage.save_entry(restored)
+            except OSError as exc:
+                return R.error("save_failed", f"The change could not be undone:\n\n{exc}",
+                               description=desc)
+        return R.saved(f"Undid the change to the shift {desc}.", entry=entry_row(restored),
+                       description=desc)
 
     # ── shifts & settings ────────────────────────────────────────
 

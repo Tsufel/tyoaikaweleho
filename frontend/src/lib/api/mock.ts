@@ -176,12 +176,22 @@ function toRow(e: WorkEntry): EntryRow {
   const overnight = has && isOvernight(e.time_in, e.time_out);
   return {
     ...e,
+    note: e.note ?? '',
     minutes: has ? entryMinutes(e.time_in, e.time_out) : null,
     overnight,
     display_date: strftime(d, '%a %d %b %Y'),
     time_out_display: overnight ? `${e.time_out} +1` : e.time_out,
     week_key: weekKey(d),
   };
+}
+
+/** controller._fingerprint: the undo / delete token of an entry. */
+const fingerprint = (e: WorkEntry) => [e.id, e.date, e.job_shift, e.time_in, e.time_out, e.note ?? ''].join('|');
+
+/** storage.clean_note: one line, trimmed; null when too long. */
+function cleanNote(v: string): string | null {
+  const note = v.split(/\s+/).filter(Boolean).join(' ');
+  return note.length > 200 ? null : note;
 }
 
 const sortEntries = (a: WorkEntry, b: WorkEntry) =>
@@ -901,6 +911,9 @@ ${saveFailMsg()}`, { timer: timerState() });
       const tOut = outRaw ? parseTimeInput(outRaw) : '';
       if (tOut === null) return invalid('time_out', 'Time Out must be a valid time (e.g. 17:00).');
       if (draft.id && !entries.some((e) => e.id === draft.id)) return err('not_found', 'That shift no longer exists.');
+      const stored = entries.find((x) => x.id === draft.id);
+      const note = cleanNote(draft.note ?? stored?.note ?? '');
+      if (note === null) return invalid('note', 'Notes can be at most 200 characters.');
       if (tOut && entryMinutes(tIn, tOut) > LONG_SHIFT_MINUTES) {
         const a = answerFor(confirm, 'long_entry');
         if (!a) return needs(longEntryConfirm(tIn, tOut));
@@ -912,15 +925,16 @@ ${saveFailMsg()}`, { timer: timerState() });
         job_shift: draft.job_shift.trim(),
         time_in: tIn,
         time_out: tOut,
+        ...(note ? { note } : {}),
       };
       const ov = answerFor(confirm, 'overlap');
       if (!ov) {
-        const hits = newOverlaps(e, entries.find((x) => x.id === draft.id));
+        const hits = newOverlaps(e, stored);
         if (hits.length) return needs(overlapConfirm(hits));
       } else if (ov.choice !== 'save') return okR('cancelled');
       const row = persist(e);
       if (!row) return err('save_failed', `The shift could not be saved.\n\n${saveFailMsg()}`);
-      return okR('saved', { entry: row });
+      return okR('saved', { entry: row, token: fingerprint(e), before: stored ? { ...stored } : null });
     },
     async update_entry_field(id, field, value, confirm) {
       await latency();
@@ -946,7 +960,7 @@ ${saveFailMsg()}`, { timer: timerState() });
       } else if (ov.choice !== 'save') return okR('cancelled');
       const row = persist(next);
       if (!row) return err('save_failed', `The change could not be saved.\n\n${saveFailMsg()}`);
-      return okR('saved', { entry: row });
+      return okR('saved', { entry: row, token: fingerprint(next), before: { ...e } });
     },
     async delete_entry(id, confirm) {
       await latency();
@@ -966,9 +980,12 @@ ${saveFailMsg()}`, { timer: timerState() });
           default: 'cancel',
           cancel: 'cancel',
           icon: 'warning',
-          token: id,
+          token: fingerprint(e),
           details: { time_in: e.time_in, time_out: e.time_out, description },
         });
+      }
+      if (a.token !== undefined && a.token !== fingerprint(e)) {
+        return err('stale', 'Things changed in the meantime — please try again.');
       }
       if (a.choice !== 'delete') return okR('cancelled');
       if (controls.failSave) return err('save_failed', `The shift could not be deleted.\n\n${saveFailMsg()}`);
@@ -980,6 +997,18 @@ ${saveFailMsg()}`, { timer: timerState() });
       const row = persist({ ...entry });
       if (!row) return err('save_failed', `Could not restore ${describeEntry(entry)}.`);
       return okR('saved', { entry: row });
+    },
+    async revert_entry(entry, token) {
+      await latency();
+      const current = entries.find((x) => x.id === entry?.id);
+      if (!current) return err('not_found', 'That shift no longer exists.');
+      if (fingerprint(current) !== token) {
+        return err('stale', 'That shift was changed again since, so the earlier change was not undone.');
+      }
+      const description = describeEntry(entry);
+      const row = persist({ ...entry });
+      if (!row) return err('save_failed', `The change could not be undone.\n\n${saveFailMsg()}`);
+      return okR('saved', { entry: row, description }, `Undid the change to the shift ${description}.`);
     },
 
     // ── shifts & settings ──

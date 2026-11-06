@@ -23,6 +23,7 @@ const CALLS: Partial<Record<ApiMethod, unknown[]>> = {
   update_entry_field: ['missing', 'time_in', '09:00', undefined],
   delete_entry: ['missing', undefined],
   restore_entry: [{ id: 'r1', date: '2026-09-02', job_shift: 'Sales', time_in: '08:00', time_out: '12:00' }],
+  revert_entry: [{ id: 'missing', date: '2026-09-02', job_shift: 'Sales', time_in: '08:00', time_out: '12:00' }, 'x'],
   get_settings: [],
   save_settings: [{}],
   save_ui_prefs: [{ lulz: true }],
@@ -129,6 +130,30 @@ describe('mock API', () => {
     );
     expect(r.status).toBe('error');
     if (r.status === 'error') expect(r.error.code).toBe('save_failed');
+  });
+
+  it('saves a trimmed note and undoes an edit only while unchanged', async () => {
+    setFlags('?mock&empty');
+    const api: Api = createMockApi();
+    const draft = { date: '2026-09-01', time_in: '08:00', time_out: '16:00', job_shift: 'Sales' };
+    const long = await settle(api.save_entry({ ...draft, note: 'x'.repeat(201) }));
+    expect(long.status === 'invalid' && long.field).toBe('note');
+    const add = await settle(api.save_entry({ ...draft, note: '  Covered  ' }));
+    if (add.status !== 'saved') throw new Error('not saved');
+    expect(add.entry.note).toBe('Covered');
+    expect(add.before).toBeNull();
+    const id = add.entry.id;
+    const edit = await settle(api.update_entry_field(id, 'time_in', '09:00'));
+    if (edit.status !== 'saved' || !edit.before || !edit.token) throw new Error('no undo');
+    const again = await settle(api.save_entry({ ...draft, id, time_in: '09:00', note: 'Later' }));
+    expect(again.status).toBe('saved');
+    const stale = await settle(api.revert_entry(edit.before, edit.token));
+    expect(stale.status === 'error' && stale.error.code).toBe('stale');
+    if (again.status !== 'saved') return;
+    const undo = await settle(api.revert_entry(again.before!, again.token));
+    expect(undo.status === 'saved' && undo.entry.note).toBe('Covered');
+    const gone = await settle(api.delete_entry(id, [{ kind: 'delete_entry', choice: 'delete', token: add.token }]));
+    expect(gone.status === 'error' && gone.error.code).toBe('stale');
   });
 
   it('&update reports a newer version and announces it', async () => {

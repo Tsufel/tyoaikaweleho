@@ -1837,7 +1837,8 @@ def test_future_entry_in_month_stats_and_export(env, monkeypatch):
     d = ctrl.list_month(2026, 9)["data"]
     assert [e["id"] for e in d["entries"]] == ["fut1"]
     assert d["total_minutes"] == 480 and d["earnings"] == 160.0
-    assert "note" not in d["entries"][0]          # rows stay the 2.1 shape
+    assert "break_minutes" not in d["entries"][0]   # unknown keys stay hidden
+    assert d["entries"][0]["note"] == "covered"     # the note is shown
     r = ctrl.get_stats("2026-09-21", "2026-09-27", "day")
     assert r["data"]["totals"]["minutes"] == 480
     calls = []

@@ -1,6 +1,7 @@
-import type { EntryDraft, EntryRow, MonthData, OverlapRef, WeekGroup } from '../../lib/api/types';
+import type { EntryDraft, EntryRow, MonthData, OverlapRef, SaveUndo, WeekGroup } from '../../lib/api/types';
 import {
   addMonths,
+  describeEntry,
   formatDuration,
   formatHM,
   formatMoney,
@@ -239,7 +240,8 @@ export function draftChanged(init: EntryDraft, now: EntryDraft, today: Date = ne
     date(now.date) !== date(init.date) ||
     now.job_shift.trim() !== init.job_shift.trim() ||
     time(now.time_in) !== time(init.time_in) ||
-    time(now.time_out) !== time(init.time_out)
+    time(now.time_out) !== time(init.time_out) ||
+    (now.note ?? '').trim() !== (init.note ?? '').trim()
   );
 }
 
@@ -291,7 +293,7 @@ export function summaryText(s: MonthSummary): string {
 export interface EntryFilter {
   /** Exact job_shift, or null for every job. */
   job: string | null;
-  /** Case-insensitive text in the date, job or times. */
+  /** Case-insensitive text in the date, job, times or note. */
   text: string;
 }
 
@@ -315,7 +317,7 @@ export function filterMonth(m: MonthData, f: EntryFilter): MonthData {
   const entries = m.entries.filter((e) => {
     if (f.job !== null && e.job_shift !== f.job) return false;
     if (!q) return true;
-    return [e.date, e.display_date, e.job_shift, e.time_in, e.time_out].some((s) => (s ?? '').toLowerCase().includes(q));
+    return [e.date, e.display_date, e.job_shift, e.time_in, e.time_out, e.note].some((s) => (s ?? '').toLowerCase().includes(q));
   });
   const byId = new Map(entries.map((e) => [e.id, e]));
   const weeks = m.weeks
@@ -350,11 +352,25 @@ export function isWeekend(iso: string): boolean {
   return !!d && (d.getDay() === 0 || d.getDay() === 6);
 }
 
-/** "Tue 23 Sep  Kitchen  09:00–17:00  8h 00m" (one shift as plain text). */
+/** "Tue 23 Sep  Kitchen  09:00–17:00  8h 00m" (one shift as plain text),
+ * then "  — note" when the shift has a note. */
 export function entryAsText(e: EntryRow): string {
   const out = e.time_out ? e.time_out_display || e.time_out : '…';
   const dur = e.minutes === null ? '—' : formatDuration(e.minutes);
-  return [shortDate(e.date), e.job_shift || '—', `${e.time_in}–${out}`, dur].join('  ');
+  const line = [shortDate(e.date), e.job_shift || '—', `${e.time_in}–${out}`, dur].join('  ');
+  return e.note ? `${line}  — ${e.note}` : line;
+}
+
+/** What EntryModal hands back: the saved row and what undoes the save
+ * (null when nothing was written, e.g. an unchanged edit). */
+export interface SavedEntry {
+  entry: EntryRow;
+  undo: SaveUndo | null;
+}
+
+/** Toast text after a save: "Added the shift on Tue 23 Sep, 09:00–17:00." */
+export function savedMessage(e: { date: string; time_in: string; time_out: string }, added: boolean): string {
+  return `${added ? 'Added' : 'Changed'} the shift ${describeEntry(e)}.`;
 }
 
 /** The month as plain text for a chat or an email: shifts, week totals and the total. */

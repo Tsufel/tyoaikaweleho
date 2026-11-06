@@ -32,6 +32,7 @@ import {
   parseYear,
   pickerStep,
   rangeExports,
+  savedMessage,
   shortDate,
   stepMonth,
   summaryText,
@@ -50,6 +51,7 @@ const row = (id: string, date: string, week_key: string, minutes = 480): EntryRo
   display_date: date,
   time_out_display: '17:00',
   week_key,
+  note: '',
 });
 
 const month: MonthData = {
@@ -280,6 +282,26 @@ describe('draftChanged', () => {
     expect(draftChanged(init, { ...init, time_in: '9:30' }, today)).toBe(true);
     expect(draftChanged(init, { ...init, time_out: '' }, today)).toBe(true);
     expect(draftChanged(init, { ...init, time_out: '17:0x' }, today)).toBe(true);
+    expect(draftChanged(init, { ...init, note: 'Covered' }, today)).toBe(true);
+  });
+  it('treats a missing note as empty and ignores outer spaces in it', () => {
+    expect(draftChanged(init, { ...init, note: '  ' }, today)).toBe(false);
+    expect(draftChanged({ ...init, note: 'a' }, { ...init, note: ' a ' }, today)).toBe(false);
+  });
+});
+
+describe('shift notes and undo copy', () => {
+  const noted = { ...row('n', '2026-09-23', '2026-W39'), note: 'Covered for Sam' };
+  it('filters by the note text', () => {
+    const m = { ...month, entries: [...month.entries, noted] };
+    expect(filterMonth(m, { job: null, text: 'sam' }).entries.map((e) => e.id)).toEqual(['n']);
+  });
+  it('adds the note to the copied line', () => {
+    expect(entryAsText(noted)).toBe('Wed 23 Sep  Kitchen  09:00–17:00  8h 00m  — Covered for Sam');
+  });
+  it('says what was saved', () => {
+    expect(savedMessage(noted, true)).toBe('Added the shift on Wed 23 Sep, 09:00–17:00.');
+    expect(savedMessage(noted, false)).toBe('Changed the shift on Wed 23 Sep, 09:00–17:00.');
   });
 });
 
