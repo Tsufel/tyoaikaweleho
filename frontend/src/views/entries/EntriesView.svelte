@@ -449,8 +449,7 @@
     { id: 'duplicate', label: 'Duplicate…', icon: 'copy', kbd: SHORTCUT_LABELS['entry.duplicate'] },
     { id: 'copy', label: 'Copy shift as text', icon: 'file', kbd: SHORTCUT_LABELS['entry.copy'] },
     { id: 'copy-month', label: 'Copy month as text', icon: 'list' },
-    { id: 'sep', label: '', separator: true },
-    { id: 'delete', label: 'Delete', icon: 'trash', kbd: SHORTCUT_LABELS['entry.delete'], danger: true },
+    { id: 'delete', label: 'Delete', icon: 'trash', kbd: SHORTCUT_LABELS['entry.delete'], danger: true, separator: true },
   ];
 
   /** Right-click (at the pointer) or Shift+F10 / the menu key (at the row). */
