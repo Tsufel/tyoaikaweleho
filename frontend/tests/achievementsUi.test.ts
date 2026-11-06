@@ -2,9 +2,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Achievement } from '../src/lib/api/types';
+import type { Achievement, EntryRow, RecordsData } from '../src/lib/api/types';
 
-const fakeApi = vi.hoisted(() => ({ get_achievements: vi.fn(), ack_achievements: vi.fn() }));
+const fakeApi = vi.hoisted(() => ({ get_achievements: vi.fn(), ack_achievements: vi.fn(), get_records: vi.fn() }));
 
 vi.mock('../src/lib/api/bridge', () => ({ api: fakeApi, ready: Promise.resolve(), isMock: true }));
 vi.mock('../src/lib/stores/entries', async () => {
@@ -34,10 +34,18 @@ function item(id: string): Achievement {
   };
 }
 const card = () => document.querySelector('.unlock');
+const NO_RECORDS: RecordsData = {
+  total_shifts: 0, first_shift_date: null, days_since_first: null, longest_shift: null, best_day: null,
+  best_week: null, most_shifts_week: null, best_month: null, earliest_start: null, latest_finish: null,
+  streak: { current: 0, best: 0 },
+};
+const row = (date: string, time_in: string, time_out: string) =>
+  ({ id: date, date, job_shift: 'Sales', time_in, time_out }) as EntryRow;
 
 beforeEach(() => {
   fakeApi.get_achievements.mockReset();
   fakeApi.ack_achievements.mockReset().mockResolvedValue({ ok: true, status: 'ok' });
+  fakeApi.get_records.mockReset().mockResolvedValue({ ok: true, status: 'ok', ...NO_RECORDS });
   ach.resetAchievementsSession();
 });
 afterEach(() => {
@@ -174,5 +182,39 @@ describe('AchievementsSheet', () => {
     render(AchievementsSheet, { onclose: () => {} });
     expect(await screen.findByText('Title s_b')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('shows the Hall of fame from get_records, and re-asks with achievements', async () => {
+    ach.achievements.set({ items: [item('h_a')], newly: [], first_run: false });
+    fakeApi.get_records.mockResolvedValueOnce({
+      ok: true, status: 'ok', ...NO_RECORDS, total_shifts: 12, first_shift_date: '2026-03-02', days_since_first: 240,
+      longest_shift: { entry: row('2026-10-07', '18:00', '04:30'), minutes: 630 },
+      best_week: { key: '2026-W41', start: '2026-10-05', minutes: 2580 },
+      latest_finish: { entry: row('2026-10-07', '18:00', '04:30'), time: '04:30', next_day: true },
+      streak: { current: 0, best: 4 },
+    });
+    render(AchievementsSheet, { onclose: () => {} });
+    const panel = await screen.findByRole('region', { name: 'Hall of fame' });
+    expect(panel.textContent).toContain('Longest shift');
+    expect(panel.textContent).toContain('10h 30m');
+    expect(panel.textContent).toContain('7.10.2026 · Sales');
+    expect(panel.textContent).toContain('Week 41, from 5.10.2026');
+    expect(panel.textContent).toContain('04:30 +1');
+    expect(panel.textContent).toContain('4 workdays');
+    expect(panel.textContent).toContain('2.3.2026');
+    expect(panel.textContent).not.toContain('Best month');
+
+    ach.achievements.set({ items: [item('h_a'), item('h_b')], newly: [], first_run: false });
+    await vi.waitFor(() => expect(fakeApi.get_records).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Your records show up here after your first shift.')).toBeTruthy();
+  });
+
+  it('leaves the Hall of fame out when get_records fails', async () => {
+    fakeApi.get_records.mockReset().mockRejectedValue(new Error('bridge gone'));
+    ach.achievements.set({ items: [item('h_c')], newly: [], first_run: false });
+    render(AchievementsSheet, { onclose: () => {} });
+    expect(await screen.findByText('Title h_c')).toBeTruthy();
+    await tick();
+    expect(screen.queryByRole('region', { name: 'Hall of fame' })).toBeNull();
   });
 });

@@ -15,6 +15,7 @@
   import Button from '../../lib/ui/Button.svelte';
   import Modal from '../../lib/ui/Modal.svelte';
   import Spinner from '../../lib/ui/Spinner.svelte';
+  import RecordsPanel from './RecordsPanel.svelte';
   import { TIERS, TIER_LABEL, progressText, shortDate } from './tiers';
 
   let { onclose }: { onclose: (r: void) => void } = $props();
@@ -75,6 +76,7 @@
       ><span style="width: {total ? (got / total) * 100 : 0}%"></span></span>
     </div>
     <div class="scroll">
+      <RecordsPanel />
       {#each groups as g, gi (g.tier)}
         <section class="group tier-{g.tier}" aria-labelledby="ach-{g.tier}">
           <h3 id="ach-{g.tier}">
