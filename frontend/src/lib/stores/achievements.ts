@@ -1,5 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { api } from '../api/bridge';
+import { loadView } from '../lazyView';
 import type { Achievement, AchievementTier, AchievementsData, TimerState } from '../api/types';
 import { openSheet } from './confirm';
 import { month } from './entries';
@@ -60,10 +61,11 @@ export function medalUrl(a: Pick<Achievement, 'icon' | 'tier' | 'hidden' | 'met_
 
 export const unlockedCount = (d: AchievementsData | null) => d?.items.filter((i) => i.met_on).length ?? 0;
 
-export function openAchievements(): Promise<void> {
-  return import('../../views/achievements/AchievementsSheet.svelte').then((m) =>
-    openSheet<Record<string, never>, void>(m.default, {}),
-  );
+/** Open the sheet. A sheet that can't load (a broken install) says so and logs
+ *  why, instead of the click doing nothing. */
+export async function openAchievements(): Promise<void> {
+  const sheet = await loadView('Achievements', 'achievements', () => import('../../views/achievements/AchievementsSheet.svelte'));
+  if (sheet) await openSheet<Record<string, never>, void>(sheet, {});
 }
 
 /** Ask Python now (coalesced). Failures are quiet: achievements never block work. */

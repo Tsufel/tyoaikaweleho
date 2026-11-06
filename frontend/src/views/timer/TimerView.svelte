@@ -3,6 +3,7 @@
   import { onFx } from '../../fx/fire/fxBus';
   import { fade, fly } from '../../lib/motion';
   import { lulz } from '../../lib/stores/motion';
+  import { logChunkFailure } from '../../lib/lazyView';
   import { month } from '../../lib/stores/entries';
   import { offerRecovery, pendingRecovery } from '../../lib/stores/recovery';
   import { settings, shifts } from '../../lib/stores/settings';
@@ -57,7 +58,12 @@
     weekText,
   } from './timerLogic';
 
-  const loadFire = () => import('../../fx/fire/FireLayer.svelte');
+  // The fire is an extra: if its chunk won't load, log it and carry on without.
+  const loadFire = () =>
+    import('../../fx/fire/FireLayer.svelte').catch((err) => {
+      logChunkFailure('fire', err);
+      return null;
+    });
 
   let pickerBtn = $state<HTMLButtonElement>();
   let stage = $state<HTMLDivElement>();
@@ -246,7 +252,7 @@
   {#if $lulz}
     <div class="fire-box" aria-hidden="true">
       {#await loadFire() then m}
-        <m.default {running} elapsedSeconds={$elapsedSeconds} ring={stage} />
+        {#if m}<m.default {running} elapsedSeconds={$elapsedSeconds} ring={stage} />{/if}
       {/await}
     </div>
   {/if}

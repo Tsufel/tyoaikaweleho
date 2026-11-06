@@ -17,6 +17,7 @@
   import { applySettings, dlc, saveUiPrefs, settings } from './lib/stores/settings';
   import { setTimer, timer } from './lib/stores/timer';
   import { runUndo, toast } from './lib/stores/toasts';
+  import { importOrReload } from './lib/lazyView';
   import { startTheme } from './lib/theme/theme';
   import { MONTHS, monthLabel } from './lib/time';
   import { applyZoom, cleanZoom, stepZoom, ZOOM_DEFAULT } from './lib/zoom';
@@ -77,7 +78,9 @@
     }
     return msg;
   }
-  const loadStats = () => import('./views/stats/StatsView.svelte');
+  // A chunk that won't load reloads the page once (a stale UI after an
+  // update); the spinner stays up meanwhile. A second failure shows the error.
+  const loadStats = () => importOrReload('Stats', () => import('./views/stats/StatsView.svelte'));
   // Lulz overlay, sound and milestones: lazy so the fx chunk only loads with Lulz on.
   const loadFx = () =>
     import('./fx/fire/FxDirector.svelte').catch((err) => {

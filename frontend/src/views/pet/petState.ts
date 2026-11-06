@@ -1,6 +1,7 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import type { PetKind, PetStats } from '../../lib/api/types';
 import { toIsoDate } from '../../lib/time';
+import { loadView } from '../../lib/lazyView';
 import { openSheet } from '../../lib/stores/confirm';
 import { saveUiPrefs, settings } from '../../lib/stores/settings';
 import { petStats } from '../../lib/stores/pet';
@@ -213,8 +214,9 @@ export function petSpot(card: Box, ring: Box, controls: Box, size: { w: number; 
   };
 }
 
-export function openPetSheet(): Promise<void> {
-  return import('./PetSheet.svelte').then((m) => openSheet<Record<string, never>, void>(m.default, {}));
+export async function openPetSheet(): Promise<void> {
+  const sheet = await loadView('Pet', "the pet's details", () => import('./PetSheet.svelte'));
+  if (sheet) await openSheet<Record<string, never>, void>(sheet, {});
 }
 
 /** "7.5" under 10 h, whole hours above. */

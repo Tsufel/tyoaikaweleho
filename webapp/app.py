@@ -2,6 +2,7 @@
 ready (or after a watchdog), with the native title bar themed to match."""
 
 import os
+import shutil
 import sys
 import threading
 import traceback
@@ -10,6 +11,7 @@ from datetime import datetime
 import storage
 from services import net
 from utils import get_app_dir
+from version import __version__
 from webapp import win32
 from webapp.api import Api
 from webapp.controller import ShiftController
@@ -75,6 +77,89 @@ def frontend_index() -> str:
     if getattr(sys, "frozen", False):
         return os.path.join(get_app_dir(), "webui", "index.html")
     return os.path.join(get_app_dir(), "frontend", "dist", "index.html")
+
+
+# The built-in web server (bottle) types each file by Python's mimetypes, which on
+# Windows also reads HKEY_CLASSES_ROOT\.<ext>\Content Type: another program can
+# leave .js or .css typed as text/plain (or worse), and WebView2 then refuses the
+# file as a module script / stylesheet. These are what the bundle needs, fixed.
+WEB_MIME_TYPES = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".webp": "image/webp",
+    ".woff2": "font/woff2",
+    ".woff": "font/woff",
+}
+
+
+def register_web_mime_types() -> None:
+    """Override whatever the registry says for the bundle's file types."""
+    import mimetypes
+    mimetypes.init()  # read the registry now, so it can't override these later
+    for ext, mime in WEB_MIME_TYPES.items():
+        mimetypes.add_type(mime, ext)
+
+
+def serve_revalidated() -> None:
+    """Make the built-in web server's files revalidate on every load.
+
+    pywebview sets no-cache headers on bottle.response, but bottle.static_file
+    returns its own response whose headers replace them (HTTPResponse.apply),
+    so only Last-Modified goes out. WebView2 then caches index.html for a while
+    by heuristic, on an origin that is the same every launch
+    (127.0.0.1:42001): after an update it kept running the old UI, whose lazy
+    chunks (Stats, the pet sheet, achievements) the installer had deleted.
+    With no-cache each load asks again; the ETag keeps that a cheap 304."""
+    import bottle
+    if getattr(bottle.static_file, "weleho_revalidate", False):
+        return
+    original = bottle.static_file
+
+    def static_file(*args, **kwargs):
+        resp = original(*args, **kwargs)
+        resp.set_header("Cache-Control", "no-cache")
+        return resp
+
+    static_file.weleho_revalidate = True
+    bottle.static_file = static_file
+
+
+# Which version's UI the WebView2 HTTP cache was filled by (in storage_path).
+UI_VERSION_FILE = "weleho-ui-version.txt"
+
+
+def web_cache_dir(storage_path: str) -> str:
+    """WebView2's HTTP cache. Only this goes: Local Storage etc. are siblings."""
+    return os.path.join(storage_path, "EBWebView", "Default", "Cache")
+
+
+def clear_web_cache_on_update(version: str, storage_path: str) -> bool:
+    """First launch of a new version: drop the HTTP cache, so no UI file an
+    older version left fresh in it is used. Returns True if it was cleared.
+    Tried again next launch if the cache can't be removed (a lingering
+    WebView2 process holds it)."""
+    marker = os.path.join(storage_path, UI_VERSION_FILE)
+    try:
+        with open(marker, encoding="utf-8") as f:
+            if f.read().strip() == version:
+                return False
+    except OSError:
+        pass
+    cache = web_cache_dir(storage_path)
+    shutil.rmtree(cache, ignore_errors=True)
+    if os.path.exists(cache):
+        storage.append_error_log(f"[app] could not clear the web cache: {cache}")
+        return False
+    os.makedirs(storage_path, exist_ok=True)
+    with open(marker, "w", encoding="utf-8") as f:
+        f.write(version)
+    return True
 
 
 def webview_storage_path() -> str:
@@ -332,6 +417,13 @@ def run(dev_url: str | None = None, smoke: bool = False) -> int:
             storage.append_error_log("[app] background checks\n" + traceback.format_exc())
 
     icon = os.path.join(get_app_dir(), "icon.ico")
+    try:
+        register_web_mime_types()
+        serve_revalidated()
+        if not dev_url and not smoke:
+            clear_web_cache_on_update(__version__, webview_storage_path())
+    except Exception:
+        storage.append_error_log("[app] web server setup\n" + traceback.format_exc())
     try:
         webview.start(started, gui="edgechromium", debug=bool(dev_url),
                       http_server=not dev_url, private_mode=False,
