@@ -569,6 +569,20 @@ def test_adjust_when_idle(env):
     assert ctrl.timer_adjust("x", time="09:00")["error"]["code"] == "not_running"
 
 
+def test_adjust_job_follows_the_start_rules(env, tmp_timer):
+    # the job is checked as timer_start checks it: text only, no line
+    # breaks (a newline splits shifts.txt), not over JOB_SHIFT_MAX
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0)
+    for bad in ("Night\nshift", "x" * (storage.JOB_SHIFT_MAX + 1), 5):
+        r = ctrl.timer_adjust(token, job_shift=bad)
+        assert r["status"] == "invalid" and r["field"] == "job_shift"
+    assert ctrl.timer_state()["job_shift"] == "Sales"
+    assert tm.load_saved_session()["job_shift"] == "Sales"
+    r = ctrl.timer_adjust(token, job_shift="  Night   shift ")
+    assert r["timer"]["job_shift"] == "Night shift"
+
+
 # ── recovery ─────────────────────────────────────────────────────────────────
 
 def _crash(start, job="Support"):
