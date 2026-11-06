@@ -40,6 +40,7 @@
     agoText,
     clockGlyphs,
     dialDay,
+    earningsEquivalent,
     fireBadge,
     haloHue,
     recentJobs,
@@ -264,7 +265,9 @@
             <RollingText text={clockGlyphs($elapsedSeconds).join('')} />
           </span>
           <span class="earn" in:fade={{ duration: 200 }}>
-            <span class="money num"><RollingText text={formatMoney($liveEarnings)} /></span>
+            <span class="money num" use:tooltip={$lulz ? earningsEquivalent($liveEarnings) : null}
+              ><RollingText text={formatMoney($liveEarnings)} /></span
+            >
             <span class="earn-note">~{formatMoney($liveEarnings)} earned so far</span>
           </span>
           <span class="target num" in:fade={{ duration: 200 }}>{targetText($elapsedSeconds, target, $wallClock)}</span>

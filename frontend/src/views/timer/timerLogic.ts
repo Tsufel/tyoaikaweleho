@@ -336,3 +336,20 @@ export function agoText(pickedMs: number, nowMs: number): string {
   const h = Math.floor(m / 60);
   return h ? `${h}h ${String(m % 60).padStart(2, '0')}m ago` : `${m}m ago`;
 }
+
+/** #124: what the money earned so far would buy, biggest thing that fits once:
+ *  'That's about 3 coffees'. null below one coffee (or a NaN/negative amount). */
+const EQUIVALENTS = [
+  { price: 250, one: 'weekend at a mökki', many: 'weekends at a mökki' },
+  { price: 60, one: 'concert ticket', many: 'concert tickets' },
+  { price: 13, one: 'lunch buffet', many: 'lunch buffets' },
+  { price: 3.5, one: 'coffee', many: 'coffees' },
+] as const;
+
+export function earningsEquivalent(eur: number): string | null {
+  if (!Number.isFinite(eur)) return null;
+  const item = EQUIVALENTS.find((e) => eur >= e.price);
+  if (!item) return null;
+  const n = Math.floor(eur / item.price);
+  return `That's about ${n} ${n === 1 ? item.one : item.many}`;
+}
