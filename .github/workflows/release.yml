@@ -38,19 +38,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-build.txt
 
-      - name: Verify tag matches version.py and frontend/package.json
+      - name: Verify tag matches the version everywhere it is written
         shell: pwsh
         run: |
           $tagVer = "${{ github.ref_name }}".TrimStart("v")
           $pyVer = (python -c "from version import __version__; print(__version__)").Trim()
           if ($tagVer -ne $pyVer) {
-            Write-Error "Tag v$tagVer does not match version.py ($pyVer) - bump version.py before tagging."
+            Write-Error "Tag v$tagVer does not match version.py ($pyVer) - run scripts/bump_version.py before tagging."
           }
-          $feVer = (Get-Content frontend/package.json -Raw | ConvertFrom-Json).version
-          if ($feVer -ne $pyVer) {
-            Write-Error "frontend/package.json ($feVer) does not match version.py ($pyVer) - bump both."
+          # version.py, frontend/package.json, package-lock.json, changelog.py
+          python scripts/bump_version.py --check
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "The version files disagree - run: python scripts/bump_version.py $pyVer"
           }
           "VERSION=$pyVer" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Release notes from changelog.py
+        run: python scripts/release_notes.py ${{ env.VERSION }} --out release-notes.md
 
       - name: Build frontend
         working-directory: frontend
@@ -100,4 +104,4 @@ jobs:
             "Output/TyoaikawelehoSetup_$env:VERSION.exe" `
             "Output/TyoaikawelehoSetup_$env:VERSION.exe.sha256" `
             --title "Työaikaweleho ${{ github.ref_name }}" `
-            --generate-notes
+            --notes-file release-notes.md

@@ -1,4 +1,5 @@
-"""Release changelog — update this alongside version.py when cutting a release."""
+"""Release changelog — newest first. `python scripts/bump_version.py X.Y.Z` adds the
+next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
     "2.1.4": [
