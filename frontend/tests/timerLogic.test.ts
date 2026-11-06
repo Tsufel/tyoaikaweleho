@@ -135,6 +135,7 @@ describe('texts (v1.3 TimerPanel)', () => {
     // Friday afternoon (6 Nov 2026), but not Friday morning
     expect(at(2026, 11, 6, 14)).toBe('Friday afternoon. Almost there. Press START (F5) to begin tracking');
     expect(at(2026, 11, 6, 9)).toBe('Good morning. Press START (F5) to begin tracking');
+    expect(at(2026, 11, 6, 21)).toBe('Good evening. Press START (F5) to begin tracking');
     // New Year's Eve (Thu 31 Dec 2026)
     expect(at(2026, 12, 31, 10)).toBe('Last shift of the year? Press START (F5) to begin tracking');
     expect(at(2026, 11, 4, 2)).toBe('Up late? Press START (F5) to begin tracking');
