@@ -205,3 +205,91 @@ def test_dlc_install_that_cannot_be_moved_into_place_leaves_no_temp_file(
         dlc.install()
     assert os.listdir(tmp_path) == ["image_ocr.py"]
     assert dest.read_bytes() == b"# previous dlc\n"
+
+
+# ── daily update re-checks while the app stays open ─────────────────
+
+DAY = 24 * 60 * 60
+
+
+def test_auto_recheck_runs_at_most_once_a_day(api_bus, monkeypatch):
+    api, ctrl, bus = api_bus
+    calls = []
+    monkeypatch.setattr(updater, "check_for_update", lambda cur, cb: calls.append(cur))
+    ctrl.note_update_check(now=1000.0)              # the startup check
+    assert not api._recheck_updates_if_due(now=1000.0 + DAY - 1)
+    assert api._recheck_updates_if_due(now=1000.0 + DAY)
+    assert calls == ["2.0.0"]
+    # the re-check itself counts: not again until another day has passed
+    assert not api._recheck_updates_if_due(now=1000.0 + DAY + 60)
+    assert api._recheck_updates_if_due(now=1000.0 + 2 * DAY)
+    assert len(calls) == 2
+
+
+def test_manual_check_postpones_the_auto_recheck(api_bus, monkeypatch):
+    api, ctrl, _ = api_bus
+    _dlc_state(monkeypatch, "missing")
+    monkeypatch.setattr(updater, "fetch_latest_release", lambda: None)
+    monkeypatch.setattr(time, "monotonic", lambda: 5000.0)
+    ctrl.check_updates("2.0.0")
+    assert not ctrl.claim_auto_update_check(now=5000.0 + DAY - 1)
+    assert ctrl.claim_auto_update_check(now=5000.0 + DAY)
+
+
+def test_no_auto_recheck_while_an_update_installs(api_bus, monkeypatch):
+    api, ctrl, _ = api_bus
+    calls = []
+    monkeypatch.setattr(updater, "check_for_update", lambda cur, cb: calls.append(cur))
+    ctrl.remember_update("2.1.0", "https://x/Setup.exe", "https://x/sha")
+    monkeypatch.setattr(storage, "pre_update_copy", lambda cur, new: None)
+    seen = {}
+
+    def apply(url, sha):
+        # mid-download: the daily timer fires and must stand back
+        seen["busy"] = ctrl.update_busy
+        seen["ran"] = api._recheck_updates_if_due(now=10 * DAY)
+        raise updater.UpdateError("cut off")
+
+    monkeypatch.setattr(updater, "apply_update", apply)
+    r = ctrl.install_update(frozen=True, current="2.0.0")
+    assert r["error"]["code"] == "update_failed"
+    assert seen == {"busy": True, "ran": False} and calls == []
+    # a failed install frees the re-check again
+    assert not ctrl.update_busy
+    assert api._recheck_updates_if_due(now=10 * DAY)
+
+
+def test_recheck_announces_only_a_new_version(api_bus, monkeypatch):
+    api, ctrl, bus = api_bus
+    found = [("2.1.0", "u1", None)]
+    monkeypatch.setattr(updater, "check_for_update", lambda cur, cb: cb(*found[0]))
+    assert api._recheck_updates_if_due(now=0.0)
+    assert api._recheck_updates_if_due(now=float(DAY))       # same version again
+    found[0] = ("2.2.0", "u2", "s2")
+    assert api._recheck_updates_if_due(now=float(2 * DAY))
+    assert [p["version"] for n, p in bus.events if n == "update:available"] == ["2.1.0", "2.2.0"]
+    assert ctrl.pending_update == ("2.2.0", "u2", "s2")
+
+
+def test_recheck_thread_starts_once_and_polls(api_bus, monkeypatch):
+    api, ctrl, _ = api_bus
+    _dlc_state(monkeypatch, "missing")
+    _sync_checks(monkeypatch)
+    ticks = threading.Event()
+
+    def due(now=None):
+        ticks.set()
+        return False
+
+    monkeypatch.setattr(api, "_recheck_updates_if_due", due)
+    monkeypatch.setattr(api, "_RECHECK_POLL_SECONDS", 0.01)
+    api._start_background_checks()
+    first = api._recheck_thread
+    api._start_background_checks()
+    try:
+        assert api._recheck_thread is first and first.daemon
+        assert ticks.wait(2)
+    finally:
+        api._recheck_stop.set()
+        first.join(2)
+    assert not first.is_alive()

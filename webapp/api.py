@@ -428,15 +428,50 @@ class Api:
 
     # ── startup background checks (called by webapp.app) ─────────
 
+    # how often the re-check thread wakes to see whether a daily check is due
+    _RECHECK_POLL_SECONDS = 15 * 60
+
+    def _on_update_found(self, version, url, sha_url=None):
+        previous = self._c.pending_update
+        self._c.remember_update(version, url, sha_url)
+        # a daily re-check finding the version already announced stays quiet
+        if previous is None or previous[0] != version:
+            self._emit("update:available", {"version": version, "current": self._version})
+
+    def _recheck_updates_if_due(self, now: float | None = None) -> bool:
+        """Run the background app-update check again when the last one is
+        24 h old and no update is being installed. True when it started."""
+        import updater
+        if not self._c.claim_auto_update_check(now):
+            return False
+        updater.check_for_update(self._version, self._on_update_found)
+        return True
+
+    def _start_update_rechecks(self):
+        """While the app stays open, re-check for updates once a day."""
+        if getattr(self, "_recheck_thread", None) is not None:
+            return
+
+        def loop():
+            while not self._recheck_stop.wait(self._RECHECK_POLL_SECONDS):
+                try:
+                    self._recheck_updates_if_due()
+                except Exception:
+                    storage.append_error_log("[api] update re-check\n"
+                                             + traceback.format_exc())
+
+        self._recheck_stop = threading.Event()
+        self._recheck_thread = threading.Thread(target=loop, daemon=True,
+                                                name="update-recheck")
+        self._recheck_thread.start()
+
     def _start_background_checks(self):
         import updater
         from services import dlc
 
-        def on_update(version, url, sha_url=None):
-            self._c.remember_update(version, url, sha_url)
-            self._emit("update:available", {"version": version, "current": self._version})
-
-        updater.check_for_update(self._version, on_update)
+        self._c.note_update_check()
+        updater.check_for_update(self._version, self._on_update_found)
+        self._start_update_rechecks()
         try:
             st = dlc.load_status()
         except Exception:

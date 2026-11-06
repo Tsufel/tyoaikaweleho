@@ -440,7 +440,11 @@ preview via `set_theme`. Pay rate is shown with `repr`-style shortest text
 
 ### 6.10 Updates / DLC
 Startup: Python checks in the background and emits `update:available`
-(app) and `dlc:update` (DLC). One update prompt at a time (frontend guard).
+(app) and `dlc:update` (DLC). While the app stays open Python re-checks the
+app release once every 24 h (a manual check resets the clock; never while
+`install_update()` is downloading/installing) and emits `update:available`
+again only for a version it hasn't announced yet. One update prompt at a time
+(frontend guard).
 "Version X is available (you have Y). Download and install now? (The app will
 close and relaunch automatically.)" → `install_update()`. A non-frozen run
 returns `error(not_frozen)` → "Updates can only be installed from the
@@ -449,7 +453,10 @@ Manual "Check for updates": `check_updates()`; up to date → "You're up to
 date (vX)." plus the DLC note when a newer DLC exists.
 Update/DLC HTTPS (`services/net.py`) trusts the Windows certificate store plus
 certifi's Mozilla roots. A certificate failure comes back as a plain
-explanation instead of `CERTIFICATE_VERIFY_FAILED`. A failed check shows an
+explanation instead of `CERTIFICATE_VERIFY_FAILED`. `check_updates()`'s
+`error(network)` message names the cause in plain words — no connection/DNS,
+timeout, GitHub rate limit (403/429) or other HTTP error — never the raw
+exception text (that goes to the error log). A failed check shows an
 "Open download page" link and a failed update offers the same
 (`open_download_page()`).
 DLC section states come from `DlcStatus` (§8).
