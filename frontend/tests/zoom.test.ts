@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyZoom, cleanZoom, layoutRect, stepZoom, uiScale, ZOOM_LEVELS } from '../src/lib/zoom';
+import { applyZoom, cleanZoom, layoutPoint, layoutRect, stepZoom, uiScale, ZOOM_LEVELS } from '../src/lib/zoom';
 
 vi.mock('../src/lib/api/bridge', () => ({ api: {}, ready: Promise.resolve(), isMock: () => true }));
 
@@ -45,6 +45,14 @@ describe('applyZoom', () => {
     applyZoom(150, document.createElement('div'));
     const r = layoutRect(new DOMRect(30, 60, 150, 15));
     expect(r).toEqual({ left: 20, top: 40, right: 120, bottom: 50, width: 100, height: 10 });
+  });
+
+  it('layoutPoint turns a pointer position into layout px, optionally relative to a rect', () => {
+    expect(layoutPoint(30, 45)).toEqual({ x: 30, y: 45 }); // 100 %: unchanged
+    applyZoom(150, document.createElement('div'));
+    expect(layoutPoint(30, 45)).toEqual({ x: 20, y: 30 });
+    // 90 visual px into a box at x 60 is 60 layout px in, matching its clientWidth
+    expect(layoutPoint(150, 120, new DOMRect(60, 30, 300, 150))).toEqual({ x: 60, y: 60 });
   });
 });
 
