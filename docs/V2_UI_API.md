@@ -441,6 +441,8 @@ StatsData = { start, end, granularity, pay_rate,
 Bucket keys: day `2026-10-29` (label "Thu 29"), week `2026-W44` (label "W44",
 start = Monday), month `2026-10` (label "Oct 2026"). An entry belongs to its
 start date's bucket. `worked_days` = distinct dates with minutes > 0.
+Zero-length entries (`time_in == time_out`, or unreadable times) are skipped:
+they are neither shifts nor `longest`, as for achievements.
 
 ### 10.1 `get_achievements` payload
 

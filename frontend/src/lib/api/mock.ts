@@ -959,6 +959,7 @@ export function createMockApi(): Api {
         }
         const d = fromIsoDate(e.date)!;
         const min = entryMinutes(e.time_in, e.time_out);
+        if (min <= 0) continue; // zero-length: not a shift (stats.summarize)
         const key =
           granularity === 'day' ? e.date : granularity === 'week' ? weekKey(d) : e.date.slice(0, 7);
         const b = byKey.get(key);

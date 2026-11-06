@@ -51,7 +51,9 @@ def summarize(entries, start: date, end: date, granularity: str,
               pay_rate: float) -> dict:
     """StatsData for entries dated start..end (inclusive). An entry counts
     on its start date; entries without a time_out are only counted in
-    open_entries."""
+    open_entries. Zero-length entries (time_in == time_out, or times that
+    can't be read) add no minutes and are not counted as shifts, as for
+    achievements, so Shifts, Worked days and Longest agree."""
     if granularity not in GRANULARITIES:
         raise ValueError(f"granularity must be one of {GRANULARITIES}")
 
@@ -80,6 +82,8 @@ def summarize(entries, start: date, end: date, granularity: str,
             open_entries += 1
             continue
         minutes = entry_minutes(e.time_in, e.time_out)
+        if minutes <= 0:
+            continue
         total_minutes += minutes
         shifts += 1
         bucket = buckets[index[_key_label(_bucket_start(d, granularity), granularity)[0]]]
