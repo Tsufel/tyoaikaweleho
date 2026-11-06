@@ -39,12 +39,44 @@ def _acquire_single_instance_lock():
     return acquired
 
 
+def _log_crash(where, exc_type, exc, tb):
+    """Write an uncaught exception to error.log (the exe has no console).
+    storage is imported here, not at the top, so it binds DATA_DIR only
+    after main() has applied any data-dir override."""
+    try:
+        import traceback
+        import storage
+        storage.append_error_log(f"[{where}] uncaught exception\n"
+                                 + "".join(traceback.format_exception(exc_type, exc, tb)))
+    except Exception:
+        pass
+
+
+def _install_crash_logging():
+    import threading
+
+    def on_main(exc_type, exc, tb):
+        if not issubclass(exc_type, KeyboardInterrupt):
+            _log_crash("main", exc_type, exc, tb)
+        sys.__excepthook__(exc_type, exc, tb)
+
+    def on_thread(a):
+        if not issubclass(a.exc_type, SystemExit):
+            name = a.thread.name if a.thread is not None else "?"
+            _log_crash(f"thread {name}", a.exc_type, a.exc_value, a.exc_traceback)
+        threading.__excepthook__(a)
+
+    sys.excepthook = on_main
+    threading.excepthook = on_thread
+
+
 def main(argv=None) -> int:
     args = _parse_args(argv)
 
     if args.smoke_test and not os.environ.get(DATA_DIR_ENV, "").strip():
         # a smoke run must never touch the real data
         os.environ[DATA_DIR_ENV] = tempfile.mkdtemp(prefix="weleho-smoke-")
+    _install_crash_logging()
 
     if not args.smoke_test and not _acquire_single_instance_lock():
         from webapp import win32

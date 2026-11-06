@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import sys
+import threading
 import time as _time
 import unicodedata
 import uuid
@@ -856,19 +857,22 @@ def save_settings(values: dict):
 
 ERROR_LOG = os.path.join(DATA_DIR, "error.log")
 _ERROR_LOG_MAX = 256 * 1024
+_ERROR_LOG_LOCK = threading.Lock()
 
 
 def append_error_log(text: str):
     """Append a timestamped traceback to error.log next to data.json (the
     exe has no console). Once over _ERROR_LOG_MAX, the older half is
-    dropped. Never raises."""
+    dropped. Never raises. Serialised, so threads logging at once can't
+    interleave lines or race the trim."""
     try:
-        if os.path.exists(ERROR_LOG) and os.path.getsize(ERROR_LOG) > _ERROR_LOG_MAX:
-            with open(ERROR_LOG, "r", encoding="utf-8", errors="replace") as f:
-                kept = f.read()[-_ERROR_LOG_MAX // 2:]
-            with open(ERROR_LOG, "w", encoding="utf-8") as f:
-                f.write(kept)
-        with open(ERROR_LOG, "a", encoding="utf-8") as f:
-            f.write(f"--- {datetime.now().isoformat(timespec='seconds')}\n{text.rstrip()}\n")
+        with _ERROR_LOG_LOCK:
+            if os.path.exists(ERROR_LOG) and os.path.getsize(ERROR_LOG) > _ERROR_LOG_MAX:
+                with open(ERROR_LOG, "r", encoding="utf-8", errors="replace") as f:
+                    kept = f.read()[-_ERROR_LOG_MAX // 2:]
+                with open(ERROR_LOG, "w", encoding="utf-8") as f:
+                    f.write(kept)
+            with open(ERROR_LOG, "a", encoding="utf-8") as f:
+                f.write(f"--- {datetime.now().isoformat(timespec='seconds')}\n{text.rstrip()}\n")
     except OSError:
         pass
