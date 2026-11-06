@@ -19,6 +19,7 @@ import {
   ringPoint,
   ringProgress,
   runningText,
+  savedToastText,
   sinceText,
   snapStart,
   spokenDuration,
@@ -251,6 +252,12 @@ describe('recovery dialog', () => {
     expect(recoveryEndNote('09:00', '17:30', 20)).toEqual({ text: '8h 30m · €170.00', tone: 'muted' });
     expect(recoveryEndNote('22:00', '06:00', 10)).toEqual({ text: '8h 00m · €80.00 (+1 day)', tone: 'muted' });
     expect(recoveryEndNote('09:00', 'nope', 20)).toBeNull();
+  });
+
+  it('saved toast shows the pay only with a pay rate', () => {
+    expect(savedToastText(480, 20)).toBe('Shift saved — 8h 00m · €160.00 earned');
+    expect(savedToastText(95, 0)).toBe('Shift saved — 1h 35m');
+    expect(savedToastText(null, 20)).toBe('Shift saved');
   });
 
   it('warns about a zero-length or unusually long shift', () => {

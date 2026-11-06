@@ -1,5 +1,6 @@
 import {
   entryMinutes,
+  formatDuration,
   formatMoney,
   fromIsoDateTime,
   hhmm,
@@ -129,6 +130,14 @@ export function recoveryDate(startIso: string): string {
 export function elapsedHM(fromMs: number, nowMs: number = Date.now()): string {
   const m = Math.max(0, Math.floor((nowMs - fromMs) / 60_000));
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** Toast after a saved shift: 'Shift saved — 8h 00m · €160.00 earned' (pay
+ *  only with a pay rate set). */
+export function savedToastText(minutes: number | null | undefined, payRate: number): string {
+  if (minutes == null) return 'Shift saved';
+  const pay = payRate > 0 ? ` · ${formatMoney((minutes / 60) * payRate)} earned` : '';
+  return `Shift saved — ${formatDuration(minutes)}${pay}`;
 }
 
 /** "5 hours ago" / "2 days ago" for how long an unfinished shift has sat. */
