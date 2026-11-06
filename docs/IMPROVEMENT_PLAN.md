@@ -112,6 +112,17 @@ palette), 94 (work anniversary).
   - With Lulz on, the "Shift saved" toast adds the fun equivalent of the pay.
   - The idle greeting has a Friday-afternoon line and a New Year's Eve line
     (31 Dec is a working day, so it isn't in the holiday list).
+- Follow-up after owner review:
+  - Names on the Full sheet are now opt-in. A new "Include names" switch
+    (`export_include_names`, default off) controls them. The names stay
+    saved while it's off.
+  - Checked in the real WebView2 window, not just in tests: Ctrl +/-/0 zoom
+    and its persistence, and popover, combobox, row menu and tooltip
+    alignment at 130 %. All correct.
+  - That check found that the month picker's selected month had lost its
+    fill (a CSS specificity bug from the v2 overhaul). Fixed.
+  - The ideas that are still open, each re-checked against the code, are
+    in `docs/IMPROVEMENT_IDEAS.md`.
 
 ## Idea catalogue
 
