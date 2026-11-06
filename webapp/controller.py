@@ -875,7 +875,17 @@ class ShiftController:
         try:
             job_shift = storage.clean_job_shift(draft.get("job_shift"))
         except ValueError as exc:
-            return R.invalid("job_shift", str(exc))
+            # an entry imported before the name rules can hold a job they
+            # refuse; editing its times must not fail on a job left as is
+            try:
+                kept = self._kept_job(draft)
+            except OSError as os_exc:
+                return R.error("save_failed",
+                               f"The entry could not be saved:\n\n{os_exc}\n\n"
+                               f"{_LOCKED_HINT} and press Save again.")
+            if kept is None:
+                return R.invalid("job_shift", str(exc))
+            job_shift = kept
         try:
             note = storage.clean_note(draft.get("note"))
         except ValueError as exc:
@@ -917,6 +927,23 @@ class ShiftController:
         # token + before let the UI undo this save (§6.6)
         return R.saved(entry=entry_row(entry), token=_fingerprint(entry),
                        before=stored_entry_dict(stored) if stored is not None else None)
+
+    def _kept_job(self, draft: dict) -> str | None:
+        """The stored job of the entry *draft* edits when the draft sends it
+        back unchanged, else None. "Unchanged" allows what the text field
+        does to it on the way: trimmed, and line breaks dropped (a one-line
+        input strips them)."""
+        typed = draft.get("job_shift")
+        entry_id = draft.get("id")
+        if not isinstance(typed, str) or not entry_id:
+            return None
+        with self._lock:
+            stored = self._find(str(entry_id))
+        job = stored.job_shift if stored is not None else None
+        if not isinstance(job, str):
+            return None
+        shown = job.replace("\r", "").replace("\n", "")
+        return job if typed.strip() in (job, job.strip(), shown, shown.strip()) else None
 
     def update_entry_field(self, entry_id: str, field: str, value: str,
                            confirm=None) -> dict:

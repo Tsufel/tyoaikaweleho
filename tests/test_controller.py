@@ -1282,6 +1282,59 @@ def test_save_entry_rejects_a_bad_job_shift(env, tmp_storage):
     assert r["status"] == "saved" and r["entry"]["job_shift"] == "Sales Night"
 
 
+@pytest.mark.parametrize("stored, sent, kept", [
+    ("Night\nshift", "Night\nshift", "Night\nshift"),       # sent back exactly
+    ("Night\r\nshift ", "Night\r\nshift", "Night\r\nshift "),  # trimmed by the modal
+    ("y" * 140, "y" * 140, "y" * 140),                       # from before the length cap
+    # a one-line input drops the break: long names still match the stored one
+    ("z" * 70 + "\n" + "z" * 70, "z" * 140, "z" * 70 + "\n" + "z" * 70),
+    # a short one is now a valid name and is saved as sent
+    ("Night\nshift", "Nightshift", "Nightshift"),
+])
+def test_save_entry_keeps_an_unchanged_old_bad_job(env, stored, sent, kept):
+    # entries imported before the job rules can hold a name they refuse;
+    # editing the times must still save, and the stored job stays as it was
+    ctrl, _ = env
+    e = _add(job=stored)
+    r = ctrl.save_entry({"id": e.id, "date": "2026-09-23", "time_in": "09:00",
+                         "time_out": "18:00", "job_shift": sent})
+    assert r["status"] == "saved"
+    saved = storage.load_all_entries()[0]
+    assert saved.job_shift == kept and saved.time_out == "18:00"
+
+
+def test_save_entry_still_refuses_a_new_bad_job_on_an_old_entry(env):
+    ctrl, _ = env
+    e = _add(job="Night\nshift")
+    draft = {"id": e.id, "date": "2026-09-23", "time_in": "09:00", "time_out": "18:00"}
+    for bad in ("Day\nshift", "z" * 101, "Night\nshift\nagain"):
+        r = ctrl.save_entry({**draft, "job_shift": bad})
+        assert r["status"] == "invalid" and r["field"] == "job_shift"
+    # a draft without an id (a new entry) never borrows another entry's job
+    r = ctrl.save_entry({"date": "2026-09-23", "time_in": "09:00", "time_out": "18:00",
+                         "job_shift": "Night\nshift"})
+    assert r["status"] == "invalid" and r["field"] == "job_shift"
+    assert storage.load_all_entries()[0].time_out == "17:00"
+
+
+def test_save_entry_old_bad_job_read_fails(env, monkeypatch):
+    ctrl, _ = env
+    e = _add(job="Night\nshift")
+    monkeypatch.setattr(storage, "load_all_entries", _fail)
+    r = ctrl.save_entry({"id": e.id, "date": "2026-09-23", "time_in": "09:00",
+                         "time_out": "18:00", "job_shift": "Night\nshift"})
+    assert r["error"]["code"] == "save_failed" and "locked" in r["message"]
+
+
+def test_inline_edit_works_on_an_entry_with_an_old_bad_job(env):
+    ctrl, _ = env
+    e = _add(job="x" * 140)
+    r = ctrl.update_entry_field(e.id, "time_out", "18:00")
+    assert r["status"] == "saved"
+    saved = storage.load_all_entries()[0]
+    assert saved.job_shift == "x" * 140 and saved.time_out == "18:00"
+
+
 def test_timer_start_rejects_a_bad_job_shift(env):
     ctrl, _ = env
     for bad in (5, "A\nB", "z" * 101):

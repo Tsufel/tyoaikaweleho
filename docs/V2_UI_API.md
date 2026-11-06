@@ -377,7 +377,11 @@ Draft fields are raw text. Validation order and messages as `EditEntryDialog._sa
 `invalid(time_out)` "Time Out must be a valid time (e.g. 17:00)." (empty
 time_out allowed), `invalid(note)` "Notes can be at most 200 characters." (the
 note is trimmed and made one line; a draft without `note` keeps the stored
-one, `""` clears it). >14 h → `needs_confirm(long_entry)`, then a new overlap →
+one, `""` clears it), `invalid(job_shift)` for a line break / control
+character or a name over 100 characters — except when an edit sends back the
+stored job unchanged (trimmed, or with its line breaks dropped by the one-line
+input): an entry imported before those rules then keeps its job as stored.
+>14 h → `needs_confirm(long_entry)`, then a new overlap →
 `needs_confirm(overlap)` (an edit that keeps an overlap it already had isn't
 asked again). OSError →
 `error(save_failed)` — modal stays open with everything typed. OK →

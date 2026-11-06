@@ -20,6 +20,7 @@
   import { startTheme } from './lib/theme/theme';
   import { MONTHS, monthLabel } from './lib/time';
   import { applyZoom, cleanZoom, stepZoom, ZOOM_DEFAULT } from './lib/zoom';
+  import { startFocusRefresh } from './lib/focusRefresh';
   import { tooltip } from './lib/ui/actions';
   import Button from './lib/ui/Button.svelte';
   import ConfirmHost from './lib/ui/ConfirmHost.svelte';
@@ -219,6 +220,8 @@
     const introFallback = setTimeout(() => (introPlay = true), 7000);
     const onResize = () => (winWidth = window.innerWidth);
     window.addEventListener('resize', onResize);
+    // edits another process made show up when the window comes back
+    const stopFocusRefresh = startFocusRefresh();
 
     void (async () => {
       await load();
@@ -243,6 +246,7 @@
       offActivate();
       clearTimeout(introFallback);
       window.removeEventListener('resize', onResize);
+      stopFocusRefresh();
     };
   });
 
