@@ -85,10 +85,23 @@ palette), 94 (work anniversary).
 
   After the merge: 1100 pytest, 819 vitest, ruff clean, svelte-check 0 errors,
   and the build passes.
-- Round 3: _in progress_, 20-minute streams: a frontend bug hunt, auditing
-  positioning under zoom, a Notes column in the Excel export plus a high-pay
-  warning (46), refreshing on focus (41) plus keeping legacy job names on
-  edit, and clearer update-check errors plus a 24 h re-check (74, 75).
+- Round 3: _done_. Five 20-minute streams, all merged without conflicts:
+  - Frontend bug hunt: an older ui_prefs reply no longer rolls back a newer
+    change (holding Ctrl+= lost zoom steps).
+  - Zoom audit: the pet, the chart hover and the right-click row menu use
+    layout px (`layoutPoint`).
+  - Notes column (F) in the Full Excel export, written as text, plus a
+    high pay-rate warning above 200 €/h (46).
+  - The shown month reloads on focus, at most every 5 s and never while a
+    modal is open or you're typing (41). Editing a shift with a legacy job
+    name no longer fails when the name wasn't changed.
+  - Clearer update-check errors (offline, timeout, rate limit, server
+    error), and an automatic re-check every 24 h while the app is open
+    (74, 75).
+  - Done inline: a Lulz tooltip on the earnings with a fun equivalent
+    (124).
+  - Gates after the merge: 1128 pytest, 832 vitest, svelte-check, ruff and
+    build all green.
 
 ## Idea catalogue
 
