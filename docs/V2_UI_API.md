@@ -448,7 +448,7 @@ they are neither shifts nor `longest`, as for achievements.
 ### 10.1 `get_achievements` payload
 
 ```ts
-Achievement = { id, title, desc, icon,          // icon = id = medal file in assets/medals
+Achievement = { id, title, desc, icon,          // medal file in assets/medals (the id, or an earlier medal reused)
   tier: 'bronze'|'silver'|'gold'|'legendary',
   hidden,                                       // show "???" + hidden_<tier> medal until met
   progress: {cur, goal, unit},                  // unit: shifts|h|days|weeks|€; cur ≤ goal

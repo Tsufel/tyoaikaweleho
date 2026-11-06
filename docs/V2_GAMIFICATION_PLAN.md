@@ -54,20 +54,28 @@ A new pure module `achievements.py` next to `stats.py`:
 - Open entries (no `time_out`), zero-length shifts and entries dated after today
   are ignored.
 
-### Catalogue v1 (~20, all derivable from entries)
+### Catalogue (28, all derivable from entries)
 
 | Group | Achievements |
 |---|---|
-| Getting started | First shift saved |
-| Total hours | 10 h · 100 h · 500 h · 1000 h |
-| Consistency | 5 workdays in a row at target · 4 weeks in a row with a shift |
+| Getting started | First shift saved · 100 shifts (*Centurion*) |
+| Total hours | 10 h · 100 h · 250 h · 500 h · 1000 h · 2500 h |
+| Consistency | 5 workdays in a row at target · 10 in a row (*Fortnight*) · 4 weeks in a row with a shift · 12 weeks (*Seasoned*) |
 | Daily target | Target hit on 10 days · on 50 days |
 | Shift types | First overnight shift · 12 h marathon · Early bird (start before 06:00) · Night owl (finish after 22:00) |
 | Earnings | €1 000 earned · €10 000 earned |
 | Lulz | Reach the *inferno* tier (`fireBadge`, ≥ 125 % of target) · Clock out in blue overtime fire (past the target, as `FxDirector` colours the blast) |
+| Calendar | Friday the 13th · *Joulutonttu* (24–26 December) · *1337* (start at exactly 13:37) · *Double header* (two shifts on one day) · *No days off* (all 7 days of one ISO week) · *One year in* (a shift 365+ days after the first) |
 
 Hidden until met ("???" with the `hidden_<tier>` medal): first overnight,
-early bird, night owl, marathon and both Lulz ones.
+early bird, night owl, marathon, both Lulz ones and all the calendar ones.
+Calendar ones go by the shift's start date, like everything else, so an
+overnight shift from Thursday the 12th is not a Friday the 13th one.
+
+- **Medal art:** `icon` defaults to the id. The milestones added later (250 h,
+  2500 h, Centurion, Fortnight, Seasoned and the calendar ones) set `icon` to
+  an earlier medal in the catalogue (e.g. 250 h shows the 100 h medal) until
+  they get art of their own; the hidden ones still show `hidden_<tier>` until met.
 
 - Earnings achievements are flagged: `pay_rate` is global and rewrites past
   earnings, so they are only unlocked, never revoked (see *Persistence*).
@@ -120,10 +128,13 @@ backfill is acked with its toast, and what the shift itself earned gets cards.
 
 - **Medals:** one Gemini-made medal per achievement plus a `hidden_<tier>`
   medal, cut out to `frontend/src/assets/medals/<icon>.webp`.
-- **Stats:** a 🏆 *11 / 17* KPI tile in `StatsView.svelte` with the three
+- **Stats:** a 🏆 *11 / 28* KPI tile in `StatsView.svelte` with the three
   latest medals opens `AchievementsSheet` via `openSheet`: grouped by tier,
   unlocked ones with dates, locked ones greyed with a progress bar, hidden ones
-  as "???".
+  as "???". At the top, a *Hall of fame* (`RecordsPanel.svelte`, from
+  `get_records`, [V2_UI_API.md](V2_UI_API.md) §10.3) lists personal records:
+  longest shift, best day, week and month, busiest week, earliest start,
+  latest finish, best workday streak and the first shift's date.
 - **Unlock:** `AchievementUnlock.svelte` (mounted in `App.svelte`) shows a card
   under the title bar: the medal flips in, glows, gets a shine sweep and a
   spark burst in the tier colour; with Lulz on, also a `milestone` flare via
