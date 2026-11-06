@@ -59,7 +59,7 @@
     role="combobox"
     aria-label="Find a command"
     aria-autocomplete="list"
-    aria-expanded="true"
+    aria-expanded={shown.length > 0}
     aria-controls={listId}
     aria-activedescendant={shown.length ? optId(active) : undefined}
     placeholder="Type a command…"
