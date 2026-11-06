@@ -10,8 +10,22 @@ import {
   strftime,
   toIsoDate,
 } from '../../lib/time';
+import { holidayName } from '../../lib/holidays';
 
 export const IDLE_TEXT = 'Press START (F5) to begin tracking';
+
+/** The idle line under the ring: a greeting for the day and time, F5 hint kept. */
+export function idleGreeting(now: Date = new Date()): string {
+  const holiday = holidayName(now);
+  if (holiday) return `${holiday} today. Working anyway? ${IDLE_TEXT}`;
+  const day = now.getDay();
+  if (day === 0 || day === 6) return `Weekend shift? ${IDLE_TEXT}`;
+  const h = now.getHours();
+  if (h < 5) return `Up late? ${IDLE_TEXT}`;
+  if (h < 12) return `Good morning. ${IDLE_TEXT}`;
+  if (h < 18) return `Good afternoon. ${IDLE_TEXT}`;
+  return `Good evening. ${IDLE_TEXT}`;
+}
 
 /** SVG ring geometry (viewBox units), shared with the fire layer. */
 export const RING = { size: 240, r: 100, stroke: 14 } as const;

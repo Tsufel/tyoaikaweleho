@@ -34,7 +34,7 @@
   } from './timerActions';
   import {
     DIAL_RESET_MS,
-    IDLE_TEXT,
+    idleGreeting,
     agoText,
     clockGlyphs,
     dialDay,
@@ -301,7 +301,7 @@
         onclick={() => (dialStart = null)}>Back to now{#if dialResetIn <= 10 && !dialDragging}<span class="num" aria-hidden="true"> ({dialResetIn}s)</span>{/if}</button
       >
     {:else}
-      {IDLE_TEXT}
+      {idleGreeting(new Date($wallClock))}
     {/if}
   </p>
 
