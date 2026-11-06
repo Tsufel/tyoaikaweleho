@@ -7,7 +7,7 @@
   import { api, onEvent } from './lib/api';
   import type { ChangelogBlock, RecoveryResult } from './lib/api/types';
   import { fade, fly } from './lib/motion';
-  import { registerCommand, runCommand } from './lib/shortcuts';
+  import { registerCommand, runCommand, SHORTCUT_LABELS } from './lib/shortcuts';
   import { animationsActive, bootstrap, lulz, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
   import { goToCurrentMonth, refreshMonth, setViewMonth, shiftMonth, viewMonth } from './lib/stores/entries';
   import { applyRecoveryResult, pendingRecovery } from './lib/stores/recovery';
@@ -35,6 +35,9 @@
   import ChangelogModal from './views/modals/ChangelogModal.svelte';
   import { handleCloseRequest } from './views/modals/closeFlow';
   import RecoverShiftModal from './views/modals/RecoverShiftModal.svelte';
+  import ShortcutsModal from './views/modals/ShortcutsModal.svelte';
+  import { emitFx } from './fx/fire/fxBus';
+  import { rollBazooka } from './views/pet/petState';
   import EntriesView from './views/entries/EntriesView.svelte';
   import SettingsView from './views/settings/SettingsView.svelte';
   import UpdateFlow from './views/settings/UpdateFlow.svelte';
@@ -51,9 +54,35 @@
   let monthBtn = $state<HTMLButtonElement>();
   let monthOpen = $state(false);
   let wide = $state(true);
+  let shortcutsOpen = $state(false);
+  // Bumped by Retry when a lazy chunk failed to load.
+  let statsTry = $state(0);
+  let contentEl = $state<HTMLElement>();
+  let routeMsg = $state('');
+  /** Log a failed chunk import once per kind (a broken install, a locked file). */
+  const chunkLogged = new Set<string>();
+  function chunkFailed(what: string, err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!chunkLogged.has(what)) {
+      chunkLogged.add(what);
+      void api.log_client_error(`Could not load the ${what} chunk: ${msg}`.slice(0, 2000));
+    }
+    return msg;
+  }
   const loadStats = () => import('./views/stats/StatsView.svelte');
   // Lulz overlay, sound and milestones: lazy so the fx chunk only loads with Lulz on.
-  const loadFx = () => import('./fx/fire/FxDirector.svelte');
+  const loadFx = () =>
+    import('./fx/fire/FxDirector.svelte').catch((err) => {
+      chunkFailed('effects', err); // the effects are extras: carry on without them
+      return null;
+    });
+
+  /** The Konami code: a little show, nothing saved. */
+  function wizardSecret() {
+    toast('🧙 The wizard approves of your hours.', { tone: 'success', ms: 5000 });
+    if ($lulz && $motion !== 'reduced') emitFx({ kind: 'blast', minutes: null });
+    if ($settings.ui_prefs.pet !== 'off') rollBazooka(0);
+  }
 
   // App-level fallbacks, registered before child views so theirs win.
   const offs = [
@@ -62,6 +91,15 @@
     registerCommand('month.prev', () => void shiftMonth(-1)),
     registerCommand('month.next', () => void shiftMonth(1)),
     registerCommand('month.current', () => void goToCurrentMonth()),
+    // shell shortcuts: views, the cheat sheet and one secret
+    registerCommand('view.timer', () => void pickSection('timer')),
+    registerCommand('view.shifts', () => void pickSection('shifts')),
+    registerCommand('view.stats', () => void pickSection('stats')),
+    registerCommand('stats.back', () => void navigate('main')),
+    registerCommand('help.shortcuts', () => {
+      shortcutsOpen = true;
+    }),
+    registerCommand('wizard.secret', wizardSecret),
   ];
   onDestroy(() => offs.forEach((f) => f()));
 
@@ -76,6 +114,9 @@
       if (!(await navigate('stats'))) {
         section.set($route === 'stats' ? 'stats' : 'timer');
         segReset++; // Segmented already shows 'stats'
+        await tick();
+        // the remount dropped the focused radio
+        if (focusLost()) document.querySelector<HTMLElement>('.topbar [role="radio"][aria-checked="true"]')?.focus();
       }
       return;
     }
@@ -116,6 +157,23 @@
   async function onRecoveryResolved(r: RecoveryResult) {
     await applyRecoveryResult(r);
   }
+
+  const focusLost = () => !document.activeElement || document.activeElement === document.body;
+
+  // Route change: say where we are, and catch focus the old page took with it.
+  const ROUTE_NAMES = { main: 'Timer and shifts', stats: 'Stats', settings: 'Settings' } as const;
+  let lastRoute = $route;
+  $effect(() => {
+    const r = $route;
+    if (r === lastRoute) return;
+    lastRoute = r;
+    routeMsg = ROUTE_NAMES[r] ?? '';
+    void tick().then(() => {
+      if (!focusLost()) return;
+      const heading = contentEl?.querySelector<HTMLElement>('[data-route-heading]');
+      (heading ?? contentEl)?.focus({ preventScroll: true });
+    });
+  });
 
   // html[data-motion], html[data-paused]
   $effect(() => {
@@ -196,7 +254,7 @@
     <div class="right">
       {#if $route === 'main'}
         <div class="month-nav" role="group" aria-label="Month">
-          <button type="button" class="nav lg-gel" aria-label="Previous month" use:tooltip={{ text: 'Previous month', kbd: 'PgUp' }} onclick={() => shiftMonth(-1)}>
+          <button type="button" class="nav lg-gel" aria-label="Previous month" use:tooltip={{ text: 'Previous month', kbd: SHORTCUT_LABELS['month.prev'] }} onclick={() => shiftMonth(-1)}>
             <Icon name="chevron-left" size={16} />
           </button>
           <button
@@ -209,17 +267,25 @@
           >
             {monthLabel($viewMonth.year, $viewMonth.month)}
           </button>
-          <button type="button" class="nav lg-gel" aria-label="Next month" use:tooltip={{ text: 'Next month', kbd: 'PgDn' }} onclick={() => shiftMonth(1)}>
+          <button type="button" class="nav lg-gel" aria-label="Next month" use:tooltip={{ text: 'Next month', kbd: SHORTCUT_LABELS['month.next'] }} onclick={() => shiftMonth(1)}>
             <Icon name="chevron-right" size={16} />
           </button>
         </div>
       {/if}
       <Button
+        variant="ghost"
+        square
+        icon="keyboard"
+        label="Keyboard shortcuts"
+        tooltip={{ text: 'Keyboard shortcuts', kbd: SHORTCUT_LABELS['help.shortcuts'] }}
+        onclick={() => (shortcutsOpen = true)}
+      />
+      <Button
         variant={$route === 'settings' ? 'primary' : 'ghost'}
         square
         icon="settings"
         label="Settings"
-        tooltip={{ text: 'Settings', kbd: 'Ctrl+,' }}
+        tooltip={{ text: 'Settings', kbd: SHORTCUT_LABELS['settings.open'] }}
         aria-pressed={$route === 'settings'}
         onclick={() => {
           // settings.back asks about unsaved changes before leaving
@@ -230,7 +296,7 @@
     </div>
   </header>
 
-  <main class="content">
+  <main class="content" tabindex="-1" bind:this={contentEl}>
     {#if phase === 'loading'}
       <div class="center-state" in:fade><Spinner size={28} label="Loading" /></div>
     {:else if phase === 'error'}
@@ -243,11 +309,19 @@
       <div class="page" in:fly={{ y: 10 }}><SettingsView /></div>
     {:else if $route === 'stats'}
       <div class="page" in:fly={{ y: 10 }}>
-        {#await loadStats()}
-          <div class="center-state"><Spinner size={28} label="Loading stats" /></div>
-        {:then m}
-          <m.default />
-        {/await}
+        {#key statsTry}
+          {#await loadStats()}
+            <div class="center-state"><Spinner size={28} label="Loading stats" /></div>
+          {:then m}
+            <m.default />
+          {:catch err}
+            <div class="center-state glass" role="alert">
+              <Icon name="error" size={28} />
+              <p>Could not load Stats. {chunkFailed('Stats', err)}</p>
+              <Button variant="primary" icon="refresh" onclick={() => statsTry++}>Try again</Button>
+            </div>
+          {/await}
+        {/key}
       </div>
     {:else}
       <div class="main-grid" class:wide>
@@ -294,7 +368,7 @@
 <Toasts />
 {#if $lulz}
   {#await loadFx() then m}
-    <m.default />
+    {#if m}<m.default />{/if}
   {/await}
 {/if}
 
@@ -303,6 +377,11 @@
 {/if}
 
 <span class="sr-only" aria-live="polite">{$route === 'main' ? `${MONTHS[$viewMonth.month - 1]} ${$viewMonth.year}` : ''}</span>
+<span class="sr-only" aria-live="polite">{routeMsg}</span>
+
+{#if shortcutsOpen}
+  <ShortcutsModal onclose={() => (shortcutsOpen = false)} />
+{/if}
 
 <style>
   .shell {
@@ -409,6 +488,7 @@
     transition-duration: var(--dur-fast), var(--dur-fast), 90ms;
   }
   .content {
+    outline: none;
     flex: 1;
     min-height: 0;
     display: flex;

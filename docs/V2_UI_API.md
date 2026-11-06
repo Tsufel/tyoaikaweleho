@@ -585,7 +585,12 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   `setViewMonth(y, m)`, `shiftMonth(delta)`, `goToCurrentMonth()` (all commit
   edits first; resolve false if blocked).
 - `stores/toasts.ts`: `toast(msg, {action?, label?, ms=8000}) → id`, `dismiss(id)`,
-  `undoAvailable`, `runUndo()` (runs the newest toast action).
+  `undoAvailable`, `runUndo()` (runs the newest toast action). At most 4
+  show; trimming drops the oldest timed toast first, so sticky (`ms: 0`)
+  ones stay. A repeat of a showing plain toast (same text and tone, no
+  action) bumps its `count` (×N) and restarts its time. Countdowns pause
+  while the stack is hovered or focused and while the window is hidden or
+  in the background (at least 3 s left on resume).
 - `stores/editGuard.ts`: `registerEditGuard(fn: () => Promise<boolean>)`,
   `commitEdits()`.
 - `shortcuts.ts`: `registerCommand(name, fn)`; foundation binds keys. Names:
@@ -593,7 +598,14 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   `entry.delete` (Delete), `undo` (Ctrl+Z), `export` (Ctrl+E), `import.menu`
   (Ctrl+I), `settings.open` (Ctrl+,), `month.prev` (Ctrl+←/PgUp),
   `month.next` (Ctrl+→/PgDn), `month.current` (Ctrl+Home), `settings.save`
-  (Ctrl+S), `settings.back` (Esc). Gating as v1.3: nothing while a modal is
+  (Ctrl+S), `settings.back` (Esc). Shell shortcuts: `view.timer` /
+  `view.shifts` / `view.stats` (Ctrl+1/2/3, main and stats), `stats.back`
+  (Esc on Stats), `help.shortcuts` (? or F1 on every route; ? not while
+  typing) opens the cheat sheet, and `wizard.secret` runs on the Konami code
+  (↑↑↓↓←→←→BA, not while typing; a toast and some fx, nothing saved). The
+  key list lives once in `lib/shortcutList.ts` (`SHORTCUT_GROUPS`, with
+  `SHORTCUT_LABELS` derived for tooltips); Settings and the cheat sheet both
+  render it. Gating as v1.3: nothing while a modal is
   open; month keys not while typing; F5/timer keys not while Settings shows.
   The last registered handler wins (stack); unregister restores the previous.
   App registers fallbacks for `settings.open`, `undo` (`runUndo`),

@@ -4,9 +4,11 @@
   const parts = $derived(keys.length > 1 ? keys.split(/\+(?!$)/) : [keys]);
 </script>
 
-<span class="kbd" aria-label={keys}>
+<!-- aria-label is not allowed on a plain span: read the combo as text -->
+<span class="kbd">
+  <span class="sr-only">{keys}</span>
   {#each parts as k, i (i)}
-    <kbd>{k}</kbd>
+    <kbd aria-hidden="true">{k}</kbd>
   {/each}
 </span>
 

@@ -65,12 +65,20 @@ interface Binding {
   alwaysPrevent?: boolean;
 }
 
-function bindingFor(e: KeyboardEvent): Binding | null {
+const ALL_ROUTES = ['main', 'stats', 'settings'];
+
+/** The command a key press maps to, with its gates (exported for tests). */
+export function bindingFor(e: KeyboardEvent): Binding | null {
   const ctrl = e.ctrlKey || e.metaKey;
   if (e.altKey) return null;
   const k = e.key;
   if (!ctrl && !e.shiftKey && k === 'F5') {
     return { cmd: 'timer.toggle', typing: true, routes: ['main', 'stats'], alwaysPrevent: true };
+  }
+  // the cheat sheet: '?' is Shift+/ (or Shift++ on a Finnish keyboard)
+  if (!ctrl && k === '?') return { cmd: 'help.shortcuts', routes: ALL_ROUTES };
+  if (!ctrl && !e.shiftKey && k === 'F1') {
+    return { cmd: 'help.shortcuts', typing: true, routes: ALL_ROUTES, alwaysPrevent: true };
   }
   if (ctrl && !e.shiftKey) {
     switch (k.toLowerCase()) {
@@ -85,6 +93,9 @@ function bindingFor(e: KeyboardEvent): Binding | null {
       case 'arrowright':
       case 'pagedown': return { cmd: 'month.next' };
       case 'home': return { cmd: 'month.current' };
+      case '1': return { cmd: 'view.timer', routes: ['main', 'stats'] };
+      case '2': return { cmd: 'view.shifts', routes: ['main', 'stats'] };
+      case '3': return { cmd: 'view.stats', routes: ['main', 'stats'] };
     }
     return null;
   }
@@ -92,7 +103,10 @@ function bindingFor(e: KeyboardEvent): Binding | null {
   switch (k) {
     case 'PageUp': return { cmd: 'month.prev' };
     case 'PageDown': return { cmd: 'month.next' };
-    case 'Escape': return { cmd: 'settings.back', typing: true, routes: ['settings'] };
+    case 'Escape':
+      return get(route) === 'stats'
+        ? { cmd: 'stats.back', routes: ['stats'] }
+        : { cmd: 'settings.back', typing: true, routes: ['settings'] };
     case 'Enter': return { cmd: 'entry.edit', notOnActivator: true, inTable: true };
     case 'F2': return { cmd: 'entry.edit', inTable: true };
     case 'Delete': return { cmd: 'entry.delete', inTable: true };
@@ -100,8 +114,35 @@ function bindingFor(e: KeyboardEvent): Binding | null {
   return null;
 }
 
+// ── Konami code ─────────────────────────────────────────────────
+
+export const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
+
+/** Add a key to the rolling buffer (the last KONAMI.length keys). True in
+ *  `hit` when the buffer now ends with the code; the buffer then restarts. */
+export function feedKonami(buf: string[], key: string): { buf: string[]; hit: boolean } {
+  const k = key.length === 1 ? key.toLowerCase() : key;
+  const next = [...buf, k].slice(-KONAMI.length);
+  const hit = next.length === KONAMI.length && next.every((x, i) => x === KONAMI[i]);
+  return { buf: hit ? [] : next, hit };
+}
+
+let konami: string[] = [];
+
+function trackKonami(e: KeyboardEvent): void {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || isModalOpen() || isTyping(e.target)) {
+    konami = [];
+    return;
+  }
+  if (e.key === 'Shift') return;
+  const r = feedKonami(konami, e.key);
+  konami = r.buf;
+  if (r.hit) runCommand('wizard.secret');
+}
+
 function onKeyDown(e: KeyboardEvent): void {
   if (e.isComposing) return;
+  trackKonami(e);
   const b = bindingFor(e);
   if (!b) return;
   // a focused component already handled the key
@@ -130,19 +171,5 @@ export function startShortcuts(): () => void {
   };
 }
 
-/** Labels for tooltips / Kbd. */
-export const SHORTCUT_LABELS: Partial<Record<CommandName, string>> = {
-  'timer.toggle': 'F5',
-  'entry.add': 'Ctrl+N',
-  'entry.edit': 'Enter',
-  'entry.delete': 'Del',
-  undo: 'Ctrl+Z',
-  export: 'Ctrl+E',
-  'import.menu': 'Ctrl+I',
-  'settings.open': 'Ctrl+,',
-  'settings.save': 'Ctrl+S',
-  'settings.back': 'Esc',
-  'month.prev': 'Ctrl+←',
-  'month.next': 'Ctrl+→',
-  'month.current': 'Ctrl+Home',
-};
+/** The shortcut table (cheat sheet, Settings, tooltip labels). */
+export { SHORTCUT_GROUPS, SHORTCUT_LABELS, type ShortcutGroup, type ShortcutRow } from './shortcutList';

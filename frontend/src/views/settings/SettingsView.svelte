@@ -6,7 +6,7 @@
   import { api } from '../../lib/api';
   import type { Appearance, ExportFormat, PetKind } from '../../lib/api/types';
   import { fly, stagger } from '../../lib/motion';
-  import { registerCommand } from '../../lib/shortcuts';
+  import { registerCommand, runCommand } from '../../lib/shortcuts';
   import { bootstrap, navigate } from '../../lib/stores/app';
   import { alert, askYesNoCancel, reportError } from '../../lib/stores/confirm';
   import { refreshMonth } from '../../lib/stores/entries';
@@ -539,7 +539,12 @@
     <!-- Shortcuts -->
     <GlassCard tag="section" class="card wide" aria-labelledby="s-keys" padding="20px" radius="lg">
       <div class="card-in" in:fly={{ y: 12, delay: stagger(6, 50) }}>
-        <h3 id="s-keys"><Icon name="keyboard" size={16} /> Keyboard shortcuts</h3>
+        <div class="keys-head">
+          <h3 id="s-keys"><Icon name="keyboard" size={16} /> Keyboard shortcuts</h3>
+          <Button variant="ghost" size="sm" onclick={() => runCommand('help.shortcuts')} tooltip={{ text: 'Open the cheat sheet', kbd: '?' }}>
+            Cheat sheet
+          </Button>
+        </div>
         <table class="keys">
           <tbody>
             {#each SHORTCUTS as s (s.what)}
@@ -561,6 +566,12 @@
 </section>
 
 <style>
+  .keys-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
   .settings {
     display: flex;
     flex-direction: column;
