@@ -787,7 +787,12 @@ class ShiftController:
         rows = []
         for e in entries:
             row = entry_row(e)
-            row["overlap"] = bool(overlapping(e, nearby))
+            hits = overlapping(e, nearby)
+            row["overlap"] = bool(hits)
+            # which shifts it clashes with, so the list can name and jump to them
+            row["overlap_with"] = [{"id": o.id, "date": o.date, "job_shift": o.job_shift,
+                                    "time_in": o.time_in, "time_out": o.time_out}
+                                   for o in hits]
             rows.append(row)
         weeks: dict[tuple[int, int], dict] = {}
         for row in rows:

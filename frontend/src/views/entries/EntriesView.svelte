@@ -8,7 +8,7 @@
   import { onMount, tick } from 'svelte';
   import wizard from '../../assets/wizard.webp';
   import { api, runFlow } from '../../lib/api';
-  import type { EntryRow, WorkEntry } from '../../lib/api/types';
+  import type { EntryDraft, EntryRow, OverlapRef, WorkEntry } from '../../lib/api/types';
   import { fade, flip, fly, stagger } from '../../lib/motion';
   import { registerCommand, SHORTCUT_LABELS } from '../../lib/shortcuts';
   import { alert, askYesNo, choose, openSheet, reportError } from '../../lib/stores/confirm';
@@ -27,7 +27,7 @@
   } from '../../lib/stores/entries';
   import { dlc } from '../../lib/stores/settings';
   import { dismiss, toast } from '../../lib/stores/toasts';
-  import { defaultEntryDate, formatHM, formatMoney, monthLabel } from '../../lib/time';
+  import { defaultEntryDate, formatHM, formatMoney, monthLabel, toIsoDate } from '../../lib/time';
   import Button from '../../lib/ui/Button.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
   import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
@@ -37,15 +37,30 @@
   import {
     buildRows,
     decideClose,
+    duplicateDraft,
     earlyExportMonth,
     EMPTY_HINT,
     emptyText,
+    entryAsText,
+    filterMonth,
+    filterTotalLabel,
     importSummary,
+    isFiltering,
+    isSameMonth,
+    isWeekend,
+    jobsInMonth,
+    monthAsText,
+    monthSummary,
     moveSelection,
+    NO_FILTER,
+    overlapText,
     parseEditor,
     rangeExports,
+    shortDate,
+    summaryText,
     weekTotalText,
     type EditField,
+    type EntryFilter,
   } from './entriesLogic';
   import EntryModal from './EntryModal.svelte';
   import MonthPicker from './MonthPicker.svelte';
@@ -58,10 +73,28 @@
     invalid: boolean;
   }
 
-  const rows = $derived(buildRows($month));
-  const ids = $derived($month?.entries.map((e) => e.id) ?? []);
-  const selected = $derived($month?.entries.find((e) => e.id === $selectedId) ?? null);
+  /** Job chip / search box under the header; the table, totals and keys use the filtered month. */
+  let filter = $state<EntryFilter>(NO_FILTER);
+  let filterEl = $state<HTMLInputElement>();
+  const filtering = $derived(isFiltering(filter));
+  const view = $derived($month && filtering ? filterMonth($month, filter) : $month);
+  const jobs = $derived.by(() => {
+    const j = jobsInMonth($month);
+    return filter.job !== null && !j.includes(filter.job) ? [...j, filter.job] : j;
+  });
+
+  const rows = $derived(buildRows(view));
+  const ids = $derived(view?.entries.map((e) => e.id) ?? []);
+  const selected = $derived(view?.entries.find((e) => e.id === $selectedId) ?? null);
+  /** The row Tab lands on (roving tabindex): the selection, else the first row. */
+  const focusId = $derived(selected ? selected.id : (ids[0] ?? null));
   const label = $derived($month?.label ?? monthLabel($viewMonth.year, $viewMonth.month));
+  const summary = $derived(summaryText(monthSummary(view?.entries ?? [])));
+  /** Re-read with each month load, so the today mark follows midnight. */
+  const todayIso = $derived.by(() => {
+    void $month;
+    return toIsoDate(new Date());
+  });
 
   let editor = $state<Editor | null>(null);
   let editorEl = $state<HTMLInputElement>();
@@ -213,6 +246,11 @@
   }
 
   function onRowKey(e: KeyboardEvent, id: string) {
+    if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      e.preventDefault();
+      void openRowMenu(id, e.currentTarget as HTMLElement, null);
+      return;
+    }
     let next: string | null = null;
     if (e.key === 'ArrowDown') next = moveSelection(ids, id, 1);
     else if (e.key === 'ArrowUp') next = moveSelection(ids, id, -1);
@@ -257,9 +295,11 @@
 
   // ── actions ──────────────────────────────────────────────────────
 
+  type SheetProps = { entry: EntryRow | null; defaultDate: string; template?: EntryDraft | null };
+
   async function addEntry() {
     if (!(await closeEditor(true))) return;
-    const saved = await openSheet<{ entry: EntryRow | null; defaultDate: string }, EntryRow | null>(EntryModal, {
+    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
       entry: null,
       defaultDate: defaultEntryDate($viewMonth),
     });
@@ -267,11 +307,11 @@
   }
 
   async function editEntry() {
-    if (!$selectedId) return;
+    if (!selected) return;
     if (!(await closeEditor(true))) return;
     const entry = $month?.entries.find((e) => e.id === $selectedId);
     if (!entry) return;
-    const saved = await openSheet<{ entry: EntryRow | null; defaultDate: string }, EntryRow | null>(EntryModal, {
+    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
       entry,
       defaultDate: entry.date,
     });
@@ -280,7 +320,8 @@
   }
 
   async function deleteEntry() {
-    const id = $selectedId;
+    // a row hidden by the filter is never deleted from the keyboard
+    const id = selected?.id;
     if (!id) return;
     if (!(await closeEditor(true))) return;
     const after = moveSelection(ids, id, 1) === id ? moveSelection(ids, id, -1) : moveSelection(ids, id, 1);
@@ -296,6 +337,151 @@
     }
     if (r.status === 'error' && r.error.code === 'not_found') await refreshMonth();
     await reportError(r, 'Could not delete');
+  }
+
+  /** Ctrl+D: a new shift prefilled from the selected one, on the next free day. */
+  async function duplicateEntry() {
+    if (!selected) return;
+    if (!(await closeEditor(true))) return;
+    const template = duplicateDraft(selected, $month?.entries.map((e) => e.date) ?? []);
+    const saved = await openSheet<SheetProps, EntryRow | null>(EntryModal, {
+      entry: null,
+      defaultDate: template.date,
+      template,
+    });
+    if (saved) await showEntry(saved);
+    focusRow($selectedId);
+  }
+
+  // ── copy as text / filter / row menu ─────────────────────────────
+
+  async function writeClipboard(text: string): Promise<boolean> {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // the webview may block the async clipboard; the old route still works there
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+      const back = document.activeElement as HTMLElement | null;
+      document.body.append(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      ta.remove();
+      back?.focus({ preventScroll: true });
+      return ok;
+    }
+  }
+
+  async function copyText(text: string, what: string) {
+    if (await writeClipboard(text)) toast(`Copied ${what}.`, { tone: 'success', ms: 2500, undo: false });
+    else toast('Could not copy to the clipboard.', { tone: 'error', ms: 4000, undo: false });
+  }
+
+  function copyEntry() {
+    if (selected) void copyText(entryAsText(selected), 'the shift');
+  }
+
+  function copyMonth() {
+    if (view?.entries.length) void copyText(monthAsText(view, filter), filtering ? 'the filtered shifts' : label);
+  }
+
+  async function focusFilter() {
+    if (!$month?.entries.length) return;
+    await tick();
+    filterEl?.focus();
+    filterEl?.select();
+  }
+
+  function setJob(job: string) {
+    filter = { ...filter, job: filter.job === job ? null : job };
+  }
+
+  function clearFilter() {
+    filter = NO_FILTER;
+    void tick().then(() => focusRow(focusId));
+  }
+
+  function onFilterKey(e: KeyboardEvent) {
+    if (e.key === 'Escape' && filtering) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearFilter();
+    } else if (e.key === 'ArrowDown' && focusId) {
+      e.preventDefault();
+      selectedId.set(focusId);
+      focusRow(focusId);
+    }
+  }
+
+  /** The overlap mark: go to the shift it overlaps (in this list, else its month). */
+  async function jumpToOverlap(ev: MouseEvent, others: OverlapRef[] | undefined) {
+    ev.stopPropagation();
+    const o = others?.[0];
+    if (!o) return;
+    if (!(await closeEditor(true))) return;
+    if (!ids.includes(o.id)) {
+      if ($month?.entries.some((x) => x.id === o.id)) filter = NO_FILTER;
+      else {
+        const r = await api.get_entry(o.id);
+        if (!(r.ok && r.status === 'ok' && r.entry)) return;
+        await showEntry(r.entry);
+      }
+    }
+    selectedId.set(o.id);
+    await tick();
+    focusRow(o.id);
+  }
+
+  let rowMenu = $state<{ id: string; anchor: HTMLElement } | null>(null);
+  let menuPoint = $state<HTMLElement>();
+  let menuAt = $state<{ x: number; y: number } | null>(null);
+
+  const rowMenuItems: MenuItem[] = [
+    { id: 'edit', label: 'Edit…', icon: 'edit', kbd: SHORTCUT_LABELS['entry.edit'] },
+    { id: 'duplicate', label: 'Duplicate…', icon: 'copy', kbd: SHORTCUT_LABELS['entry.duplicate'] },
+    { id: 'copy', label: 'Copy shift as text', icon: 'file', kbd: SHORTCUT_LABELS['entry.copy'] },
+    { id: 'copy-month', label: 'Copy month as text', icon: 'list' },
+    { id: 'sep', label: '', separator: true },
+    { id: 'delete', label: 'Delete', icon: 'trash', kbd: SHORTCUT_LABELS['entry.delete'], danger: true },
+  ];
+
+  /** Right-click (at the pointer) or Shift+F10 / the menu key (at the row). */
+  async function openRowMenu(id: string, tr: HTMLElement, at: { x: number; y: number } | null) {
+    if (editor && !(await closeEditor(true))) return;
+    selectedId.set(id);
+    menuAt = at;
+    await tick();
+    rowMenu = { id, anchor: at && menuPoint ? menuPoint : tr };
+  }
+
+  function onRowContext(e: MouseEvent, id: string) {
+    if ((e.target as HTMLElement).closest('input')) return; // keep the text field's own menu
+    e.preventDefault();
+    void openRowMenu(id, e.currentTarget as HTMLElement, { x: e.clientX, y: e.clientY });
+  }
+
+  function onRowMenuPick(action: string) {
+    if (action === 'edit') void editEntry();
+    else if (action === 'duplicate') void duplicateEntry();
+    else if (action === 'copy') copyEntry();
+    else if (action === 'copy-month') copyMonth();
+    else if (action === 'delete') void deleteEntry();
+  }
+
+  /** Menu closes before it runs the pick, so a sheet opened by it still gets focus. */
+  function closeRowMenu() {
+    const id = rowMenu?.id ?? null;
+    rowMenu = null;
+    menuAt = null;
+    focusRow(id);
   }
 
   async function restore(entry: WorkEntry, description: string): Promise<void> {
@@ -464,6 +650,9 @@
       registerCommand('entry.add', addEntry),
       registerCommand('entry.edit', editEntry),
       registerCommand('entry.delete', deleteEntry),
+      registerCommand('entry.duplicate', duplicateEntry),
+      registerCommand('entry.copy', copyEntry),
+      registerCommand('entry.filter', focusFilter),
       registerCommand('export', exportMonth),
       registerCommand('import.menu', () => {
         importOpen = true;
@@ -513,6 +702,33 @@
     </div>
   </header>
 
+  {#if $month?.entries.length}
+    <div class="filter-bar" role="search" aria-label="Filter shifts">
+      {#if jobs.length > 1}
+        <div class="chips" role="group" aria-label="Show one job">
+          {#each jobs as j (j)}
+            <button type="button" class="chip" aria-pressed={filter.job === j} onclick={() => setJob(j)}>{j || 'No job'}</button>
+          {/each}
+        </div>
+      {/if}
+      <label class="search">
+        <Icon name="search" size={15} />
+        <input
+          bind:this={filterEl}
+          type="search"
+          placeholder="Filter shifts ({SHORTCUT_LABELS['entry.filter']})"
+          aria-label="Filter shifts by job or date"
+          value={filter.text}
+          oninput={(e) => (filter = { ...filter, text: e.currentTarget.value })}
+          onkeydown={onFilterKey}
+        />
+      </label>
+      {#if filtering}
+        <Button variant="ghost" size="sm" icon="x" onclick={clearFilter}>Clear</Button>
+      {/if}
+    </div>
+  {/if}
+
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="scroller" onwheel={onWheel}>
     {#if $monthError && !$month}
@@ -529,11 +745,25 @@
           <span class="empty-glow"></span>
           <img src={wizard} alt="" width="512" height="512" />
         </span>
-        <p>{emptyText($month.label)}</p>
+        <p>{emptyText($month.label, isSameMonth($viewMonth, new Date()))}</p>
         <p class="hint">{EMPTY_HINT}</p>
+        <div class="empty-actions">
+          <Button variant="primary" icon="plus" onclick={addEntry}>Add entry</Button>
+          {#if !isSameMonth($viewMonth, new Date())}
+            <Button variant="secondary" icon="calendar" onclick={() => goToCurrentMonth()}>
+              Back to {monthLabel(new Date().getFullYear(), new Date().getMonth() + 1)}
+            </Button>
+          {/if}
+        </div>
+      </div>
+    {:else if !rows.length}
+      <div class="state" in:fade>
+        <Icon name="search" size={26} />
+        <p>No shifts match the filter.</p>
+        <Button variant="secondary" icon="x" onclick={clearFilter}>Clear filter</Button>
       </div>
     {:else}
-      <table data-entries-table aria-label="Shifts in {label}" aria-describedby="entries-total">
+      <table data-entries-table role="grid" aria-multiselectable="false" aria-label="Shifts in {label}" aria-describedby="entries-total">
         <thead>
           <tr>
             <th scope="col" class="c-date">Date</th>
@@ -550,9 +780,12 @@
               data-id={e?.id}
               class={e ? 'entry' : 'week'}
               class:selected={!!e && e.id === $selectedId}
+              class:today={!!e && e.date === todayIso}
+              class:weekend={!!e && isWeekend(e.date)}
               aria-selected={e ? e.id === $selectedId : undefined}
-              tabindex={e ? (e.id === $selectedId || (!$selectedId && e.id === ids[0]) ? 0 : -1) : undefined}
+              tabindex={e ? (e.id === focusId ? 0 : -1) : undefined}
               onclick={() => e && onRowClick(e.id)}
+              oncontextmenu={(ev) => e && onRowContext(ev, e.id)}
               ondblclick={(ev) => e && onRowDblClick(ev, e.id)}
               onkeydown={(ev) => e && onRowKey(ev, e.id)}
               animate:flip={{ duration: 260 }}
@@ -560,8 +793,15 @@
               out:fade={{ duration: 140 }}
             >
               {#if e}
-                <td class="c-date num">
-                  {e.display_date}{#if e.overlap}<span class="overlap" title="Overlaps another entry — both count on the timesheet"><Icon name="warning" size={13} label="Overlaps another entry" /></span>{/if}
+                <td class="c-date num" title={e.display_date}>
+                  {#if e.date === todayIso}<span class="today-dot" aria-hidden="true"></span>{/if}{shortDate(e.date)}{#if e.date === todayIso}<span class="sr-only">, today</span>{/if}{#if e.overlap}<button
+                      type="button"
+                      class="overlap"
+                      tabindex="-1"
+                      title="{overlapText(e.overlap_with)} Click to go there."
+                      aria-label={overlapText(e.overlap_with)}
+                      onclick={(ev) => jumpToOverlap(ev, e.overlap_with)}><Icon name="warning" size={13} /></button
+                    >{/if}
                 </td>
                 <td class="c-job"><span class="job">{e.job_shift || '—'}</span></td>
                 {#each TIME_FIELDS as f (f)}
@@ -602,7 +842,7 @@
                 <td colspan="5">
                   <span class="week-line">
                     <span class="week-pill num" aria-hidden="true">W{row.week.week}</span>
-                    <span class="week-text num">{weekTotalText(row.week)}</span>
+                    <span class="week-text num">{weekTotalText(row.week, $viewMonth)}</span>
                   </span>
                 </td>
               {/if}
@@ -635,12 +875,25 @@
       >
         Delete
       </Button>
+      <Button
+        variant="secondary"
+        size="sm"
+        icon="copy"
+        disabled={!selected}
+        tooltip={{ text: 'Duplicate the selected shift', kbd: SHORTCUT_LABELS['entry.duplicate'] }}
+        onclick={duplicateEntry}
+      >
+        Duplicate
+      </Button>
     </div>
-    <p id="entries-total" class="total num" aria-live="polite">
-      <span class="total-label">Total:</span>
-      <span class="total-hm">{formatHM($month?.total_minutes ?? 0)}</span>
-      <span class="total-money">({formatMoney($month?.earnings ?? 0)})</span>
-    </p>
+    <div class="totals">
+      <p id="entries-total" class="total num" aria-live="polite">
+        <span class="total-label">{filterTotalLabel(filter)}</span>
+        <span class="total-hm">{formatHM(view?.total_minutes ?? 0)}</span>
+        <span class="total-money">({formatMoney(view?.earnings ?? 0)})</span>
+      </p>
+      {#if summary}<p class="summary num">{summary}</p>{/if}
+    </div>
     <Button
       variant="success"
       size="sm"
@@ -679,6 +932,21 @@
     placement="top-end"
     onselect={(id) => void onMoreExportPick(id)}
     onclose={() => (moreExportOpen = false)}
+  />
+{/if}
+
+{#if menuAt}
+  <span class="menu-point" bind:this={menuPoint} style="left: {menuAt.x}px; top: {menuAt.y}px" aria-hidden="true"></span>
+{/if}
+
+{#if rowMenu}
+  <Menu
+    anchor={rowMenu.anchor}
+    items={rowMenuItems}
+    label="Shift actions"
+    placement="bottom-start"
+    onselect={onRowMenuPick}
+    onclose={closeRowMenu}
   />
 {/if}
 
@@ -892,7 +1160,131 @@
     display: inline-flex;
     vertical-align: -2px;
     margin-left: 6px;
+    padding: 1px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
     color: var(--warning-text);
+    cursor: pointer;
+  }
+  .overlap:hover {
+    background: color-mix(in srgb, var(--amber) 16%, transparent);
+  }
+  tr.entry.weekend td {
+    background: color-mix(in srgb, var(--accent) 4%, transparent);
+  }
+  .today-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-right: 6px;
+    vertical-align: 2px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
+  }
+  tr.entry.today .c-date {
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .menu-point {
+    position: fixed;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  .filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0 18px 10px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    padding: 3px 10px;
+    border: 1px solid var(--field-border);
+    border-radius: var(--radius-pill);
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: var(--fs-xs);
+    cursor: pointer;
+    transition:
+      background var(--dur-fast) var(--ease-out),
+      color var(--dur-fast) var(--ease-out);
+  }
+  .chip:hover {
+    background: var(--neutral-fill-hover);
+    color: var(--text);
+  }
+  .chip[aria-pressed='true'] {
+    color: var(--accent-text);
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  .chip:focus-visible,
+  .overlap:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 160px;
+    max-width: 260px;
+    margin-left: auto;
+    padding: 0 10px;
+    min-height: 30px;
+    border: 1px solid var(--field-border);
+    border-radius: var(--radius-pill);
+    background: var(--field-bg);
+    color: var(--text-muted);
+  }
+  .search:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  .search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-sm);
+    outline: none;
+  }
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+  .totals {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    margin-left: auto;
+  }
+  .summary {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--fs-xs);
   }
   .plus1 {
     font-size: 0.72em;

@@ -2,9 +2,10 @@
   import { api, runFlow } from '../../lib/api';
   import type { EntryDraft, EntryRow } from '../../lib/api/types';
   import { fade } from '../../lib/motion';
-  import { reportError } from '../../lib/stores/confirm';
+  import { askYesNo, reportError } from '../../lib/stores/confirm';
+  import { viewMonth } from '../../lib/stores/entries';
   import { settings, shifts } from '../../lib/stores/settings';
-  import { addHours, durationNote, parseDateInput, parseTimeInput } from '../../lib/time';
+  import { durationNote, parseDateInput } from '../../lib/time';
   import Button from '../../lib/ui/Button.svelte';
   import CalendarPopover from '../../lib/ui/CalendarPopover.svelte';
   import Combobox from '../../lib/ui/Combobox.svelte';
@@ -13,13 +14,21 @@
   import Modal from '../../lib/ui/Modal.svelte';
   import TextInput from '../../lib/ui/TextInput.svelte';
   import TimeInput from '../../lib/ui/TimeInput.svelte';
+  import { dateHint, draftChanged, newEntryDraft } from './entriesLogic';
 
-  /** Add / edit an entry (v1.3 EditEntryDialog). Enter saves, Esc cancels. */
+  /** Add / edit an entry (v1.3 EditEntryDialog). Enter saves, Esc cancels.
+   *  `template` prefills a new entry (Duplicate). */
   let {
     entry,
     defaultDate,
+    template = null,
     onclose,
-  }: { entry: EntryRow | null; defaultDate: string; onclose: (saved: EntryRow | null) => void } = $props();
+  }: {
+    entry: EntryRow | null;
+    defaultDate: string;
+    template?: EntryDraft | null;
+    onclose: (saved: EntryRow | null) => void;
+  } = $props();
 
   type FieldName = 'date' | 'job_shift' | 'time_in' | 'time_out';
 
@@ -27,13 +36,15 @@
     if (entry) {
       return { id: entry.id, date: entry.date, job_shift: entry.job_shift, time_in: entry.time_in, time_out: entry.time_out };
     }
-    const start = $settings.default_start_time;
-    return {
+    if (template) {
+      return { date: template.date, job_shift: template.job_shift, time_in: template.time_in, time_out: template.time_out };
+    }
+    return newEntryDraft({
       date: defaultDate,
-      job_shift: $settings.default_job_shift || $shifts[0] || '',
-      time_in: start,
-      time_out: parseTimeInput(start) ? addHours(parseTimeInput(start)!, 8) : '',
-    };
+      startTime: $settings.default_start_time,
+      targetHours: $settings.ui_prefs.target_hours,
+      job: $settings.default_job_shift || $shifts[0] || '',
+    });
   }
 
   const init = initial();
@@ -45,9 +56,29 @@
   let saveError = $state<string | null>(null);
   let saving = $state(false);
 
-  /** Esc / × / Cancel; ignored while a save is in flight. */
-  function dismiss() {
-    if (!saving) onclose(null);
+  const current = (): EntryDraft => ({ date, job_shift: job, time_in: timeIn, time_out: timeOut });
+  let asking = false;
+
+  /** Esc / × / Cancel; ignored while a save is in flight. Typed changes
+   *  are only thrown away after a yes. */
+  async function dismiss() {
+    if (saving || asking) return;
+    if (draftChanged(init, current())) {
+      asking = true;
+      try {
+        const discard = await askYesNo('Discard changes?', 'What you typed in this shift will be lost.', {
+          icon: 'warning',
+          yes: 'Discard',
+          no: 'Keep editing',
+          default: 'no',
+          danger: true,
+        });
+        if (!discard) return;
+      } finally {
+        asking = false;
+      }
+    }
+    onclose(null);
   }
   let calOpen = $state(false);
   let calBtn = $state<HTMLButtonElement>();
@@ -55,6 +86,7 @@
 
   const note = $derived(durationNote(timeIn, timeOut));
   const dateIso = $derived(parseDateInput(date));
+  const hint = $derived(dateHint(dateIso, new Date(), $viewMonth));
 
   function clear(f: FieldName) {
     if (errors[f]) errors = { ...errors, [f]: undefined };
@@ -63,6 +95,11 @@
   async function save(e?: Event) {
     e?.preventDefault();
     if (saving) return;
+    // an unchanged edit needs no write (and no backup rotation)
+    if (entry && !draftChanged(init, current())) {
+      onclose(entry);
+      return;
+    }
     saving = true;
     saveError = null;
     const draft: EntryDraft = { date, job_shift: job.trim(), time_in: timeIn, time_out: timeOut };
@@ -90,7 +127,7 @@
   }
 </script>
 
-<Modal title={entry ? 'Edit shift' : 'Add shift'} icon={entry ? 'info' : 'success'} onclose={dismiss} closeButton initialFocus="#em-date">
+<Modal title={entry ? 'Edit shift' : template ? 'Duplicate shift' : 'Add shift'} icon={entry ? 'info' : 'success'} onclose={dismiss} closeButton initialFocus="#em-date">
   <form id="entry-form" class="form" onsubmit={save} novalidate>
     <Field label="Date" forId="em-date" error={errors.date} hint="e.g. 2026-09-23 or 23.9.">
       <TextInput
@@ -99,7 +136,7 @@
         bind:el={els.date}
         mono
         invalid={!!errors.date}
-        aria-describedby="em-date-note"
+        aria-describedby="em-date-note em-date-hint"
         oninput={() => clear('date')}
       >
         {#snippet trailing()}
@@ -116,6 +153,9 @@
           </button>
         {/snippet}
       </TextInput>
+      {#if hint && !errors.date}
+        <p id="em-date-hint" class="date-hint" role="status"><Icon name="info" size={14} /><span>{hint}</span></p>
+      {/if}
     </Field>
 
     <Field label="Job / Shift" forId="em-job" error={errors.job_shift}>
@@ -232,6 +272,14 @@
     font-size: var(--fs-sm);
     font-variant-numeric: tabular-nums;
     white-space: pre-wrap;
+  }
+  .date-hint {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: var(--accent-text);
+    font-size: var(--fs-xs);
   }
   .duration.warning {
     color: var(--warning-text);

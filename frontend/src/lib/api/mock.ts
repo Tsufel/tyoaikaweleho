@@ -334,7 +334,10 @@ export function createMockApi(): Api {
     const rows = entries
       .filter((e) => e.date.startsWith(prefix))
       .sort(sortEntries)
-      .map((e) => ({ ...toRow(e), overlap: overlapsOf(e, entries).length > 0 }));
+      .map((e) => {
+        const hits = overlapsOf(e, entries).map(({ id, date, job_shift, time_in, time_out }) => ({ id, date, job_shift, time_in, time_out }));
+        return { ...toRow(e), overlap: hits.length > 0, overlap_with: hits };
+      });
     const weeks = new Map<string, { iso_year: number; week: number; ids: string[]; minutes: number }>();
     for (const r of rows) {
       const [iy, w] = isoWeek(fromIsoDate(r.date)!);
