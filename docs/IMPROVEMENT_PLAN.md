@@ -109,6 +109,7 @@ palette), 94 (work anniversary).
 - Round 4 (inline, in the last minutes):
   - The palette's `aria-expanded` follows whether anything matches.
   - "Filter the month" is offered only when there is a filter box.
+  - With Lulz on, the "Shift saved" toast adds the fun equivalent of the pay.
 
 ## Idea catalogue
 
