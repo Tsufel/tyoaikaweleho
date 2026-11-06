@@ -1,0 +1,4 @@
+# Release build toolchain, pinned so a new PyInstaller can't change a tagged
+# build unnoticed. Used by build.bat and .github/workflows/release.yml;
+# Dependabot proposes bumps as PRs that run the tests.
+pyinstaller==6.22.3

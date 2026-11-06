@@ -9,7 +9,7 @@ echo.
 
 :: ── Install build dependencies ───────────────────────────────────────────────
 echo [1/4] Installing build dependencies...
-python -m pip install -r requirements.txt pyinstaller --quiet
+python -m pip install -r requirements.txt -r requirements-build.txt --quiet
 if errorlevel 1 (
     echo ERROR: pip install failed.
     pause & exit /b 1

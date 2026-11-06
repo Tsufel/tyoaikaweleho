@@ -36,7 +36,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: pip install -r requirements.txt pyinstaller
+        run: pip install -r requirements.txt -r requirements-build.txt
 
       - name: Verify tag matches version.py and frontend/package.json
         shell: pwsh
