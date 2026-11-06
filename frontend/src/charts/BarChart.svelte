@@ -3,16 +3,17 @@
   import { untrack } from 'svelte';
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import type { StatsBucket } from '../lib/api/types';
+  import type { Granularity, StatsBucket } from '../lib/api/types';
   import { reduced } from '../lib/motion';
   import { formatDuration, formatMoney } from '../lib/time';
   import ChartTooltip from './ChartTooltip.svelte';
-  import { axisHours, barPath, hourScale, labelStep, resize, stepIndex } from './chartUtils';
+  import { axisHours, axisLabels, barPath, hourScale, resize, shownLabels, stepIndex } from './chartUtils';
 
   let {
     buckets,
     targets,
     label,
+    granularity,
     onopen,
     height = 260,
   }: {
@@ -20,6 +21,8 @@
     /** Target hours per bucket (same length as buckets). */
     targets: number[];
     label: string;
+    /** Months get short axis labels ("Jan", the year only where it changes). */
+    granularity?: Granularity;
     onopen?: (b: StatsBucket) => void;
     height?: number;
   } = $props();
@@ -43,7 +46,7 @@
       .paddingInner(buckets.length > 40 ? 0.18 : 0.28)
       .paddingOuter(0.12),
   );
-  const step = $derived(labelStep(buckets.length, plotW, 46));
+  const axis = $derived(axisLabels(buckets, granularity, x.step()));
   const flatTarget = $derived(targets.length > 0 && targets.every((t) => t === targets[0]) ? targets[0] : null);
 
   // Grow from the previous values with a left-to-right stagger.
@@ -190,14 +193,14 @@
 
           <line class="baseline" x1="0" x2={plotW} y1={plotH} y2={plotH} />
 
-          {#each buckets as b, i (b.key)}
-            {#if i % step === 0 || i === active}
+          {#each shownLabels(buckets, axis.labels, active, x.step()) as text, i (buckets[i].key)}
+            {#if text}
               <text
                 class="axis"
                 class:axis-on={i === active}
                 x={(x(i) ?? 0) + x.bandwidth() / 2}
                 y={plotH + 19}
-                text-anchor="middle">{b.label}</text
+                text-anchor="middle">{text}</text
               >
             {/if}
           {/each}

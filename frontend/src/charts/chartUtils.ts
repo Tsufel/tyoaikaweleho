@@ -19,10 +19,76 @@ export function moneyScale(max: number, height: number) {
   return { y, ticks: y.ticks(4) };
 }
 
-/** Show every `step`th category label so labels never collide. */
-export function labelStep(count: number, plotWidth: number, minLabelPx = 44): number {
-  if (count <= 0 || plotWidth <= 0) return 1;
-  return Math.max(1, Math.ceil((count * minLabelPx) / plotWidth));
+/** Advance of one character in the 11px mono axis font (0.6em, with room to spare). */
+export const AXIS_CHAR_PX = 6.8;
+/** Clear space between two neighbouring axis labels. */
+export const AXIS_LABEL_GAP = 10;
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** Two centred labels `dist` px apart do not touch. */
+function labelsFit(a: string, b: string, dist: number, charPx: number): boolean {
+  return ((a.length + b.length) * charPx) / 2 + AXIS_LABEL_GAP <= dist;
+}
+
+/**
+ * Category-axis labels thinned so they never collide: every `step`th one is shown, the rest are ''.
+ * Months read "Jan", with the year on the first shown label and wherever it changes.
+ * `slot` is the distance between neighbouring category centres in px.
+ */
+export function axisLabels(
+  buckets: StatsBucket[],
+  granularity: Granularity | undefined,
+  slot: number,
+  charPx = AXIS_CHAR_PX,
+): { step: number; labels: string[] } {
+  const n = buckets.length;
+  if (!n) return { step: 1, labels: [] };
+  const text = (s: number): string[] => {
+    const out = buckets.map(() => '');
+    let year: number | null = null;
+    for (let i = 0; i < n; i += s) {
+      const d = granularity === 'month' ? fromIsoDate(buckets[i].start) : null;
+      if (!d) {
+        out[i] = buckets[i].label;
+        continue;
+      }
+      const m = MONTH_SHORT[d.getMonth()];
+      out[i] = d.getFullYear() === year ? m : `${m} ${d.getFullYear()}`;
+      year = d.getFullYear();
+    }
+    return out;
+  };
+  if (!(slot > 0)) return { step: n, labels: text(n) };
+  // no step below what the shortest labels need
+  const shortest = Math.min(...buckets.map((b) => (granularity === 'month' ? 3 : b.label.length)));
+  const s0 = Math.max(1, Math.floor((shortest * charPx + AXIS_LABEL_GAP) / slot));
+  for (let s = s0; s < n; s++) {
+    const labels = text(s);
+    let fits = true;
+    for (let i = s; i < n && fits; i += s) fits = labelsFit(labels[i - s], labels[i], s * slot, charPx);
+    if (fits) return { step: s, labels };
+  }
+  return { step: n, labels: text(n) };
+}
+
+/**
+ * The labels to draw: the thinned set, plus the hovered category in full, with any shown
+ * label it would run into hidden.
+ */
+export function shownLabels(
+  buckets: StatsBucket[],
+  labels: string[],
+  active: number | null,
+  slot: number,
+  charPx = AXIS_CHAR_PX,
+): string[] {
+  if (active === null || active < 0 || active >= buckets.length) return labels;
+  const on = buckets[active].label;
+  return labels.map((l, i) => {
+    if (i === active) return on;
+    if (!l) return '';
+    return labelsFit(l, on, Math.abs(i - active) * slot, charPx) ? l : '';
+  });
 }
 
 /** Bar outline: rounded data end (top), square at the baseline. */
@@ -83,12 +149,15 @@ export interface Slice {
 }
 
 /**
- * Donut slices: the biggest `SERIES_SLOTS` jobs, the rest folded into "Other".
+ * Donut slices: the biggest `SERIES_SLOTS` jobs by `metric`, the rest folded into "Other".
  * Colour follows the job (its place in the saved job list), not its rank.
  */
-export function shiftSlices(rows: ShiftTotal[], knownShifts: string[]): Slice[] {
-  const total = rows.reduce((s, r) => s + r.minutes, 0);
-  const sorted = rows.filter((r) => r.minutes > 0).sort((a, b) => b.minutes - a.minutes || a.job_shift.localeCompare(b.job_shift));
+export function shiftSlices(rows: ShiftTotal[], knownShifts: string[], metric: 'hours' | 'shifts' = 'hours'): Slice[] {
+  const value = (r: { minutes: number; shifts: number }) => (metric === 'shifts' ? r.shifts : r.minutes);
+  const total = rows.reduce((s, r) => s + value(r), 0);
+  const sorted = rows
+    .filter((r) => value(r) > 0)
+    .sort((a, b) => value(b) - value(a) || b.minutes - a.minutes || a.job_shift.localeCompare(b.job_shift));
   const tooMany = sorted.length > SERIES_SLOTS;
   const shown = tooMany ? sorted.slice(0, SERIES_SLOTS - 1) : sorted;
   const rest = tooMany ? sorted.slice(SERIES_SLOTS - 1) : [];
@@ -118,18 +187,19 @@ export function shiftSlices(rows: ShiftTotal[], knownShifts: string[]): Slice[] 
     earnings: r.earnings,
     shifts: r.shifts,
     slot: slotOf.get(r.job_shift)!,
-    share: share(r.minutes),
+    share: share(value(r)),
   }));
   if (rest.length) {
     const m = rest.reduce((s, r) => s + r.minutes, 0);
+    const n = rest.reduce((s, r) => s + r.shifts, 0);
     out.push({
       key: 'other',
       label: `${OTHER_LABEL} (${rest.length})`,
       minutes: m,
       earnings: Math.round(rest.reduce((s, r) => s + r.earnings, 0) * 100) / 100,
-      shifts: rest.reduce((s, r) => s + r.shifts, 0),
+      shifts: n,
       slot: -1,
-      share: share(m),
+      share: share(metric === 'shifts' ? n : m),
     });
   }
   return out;
@@ -315,4 +385,71 @@ export function earningsModel(
 export function paceAt(i: number, elapsed: number, n: number, from: number, to: number): number {
   if (i <= elapsed || n - 1 <= elapsed) return from;
   return from + ((to - from) * (i - elapsed)) / (n - 1 - elapsed);
+}
+
+// ── KPI comparison ────────────────────────────────────────────────
+
+export interface PeriodTotals {
+  minutes: number;
+  earnings: number;
+  shifts: number;
+  worked_days: number;
+}
+
+/**
+ * The previous period's totals at the same point as this one, the way the earnings card
+ * compares: all of them once this period is over, else up to the same day of the period as
+ * today (or the latest shift dated ahead of it). `daily` holds day-level buckets of both
+ * periods. Null before the period starts, or when a running period has no day-level data.
+ */
+export function previousTotalsAt(
+  start: string,
+  end: string,
+  today: string,
+  daily: DailyEarnings | null,
+  previousTotals: PeriodTotals,
+): PeriodTotals | null {
+  if (today > end) return previousTotals;
+  if (today < start) return null;
+  const first = dayNumber(start);
+  const t = dayNumber(today);
+  if (first === null || t === null || !daily?.previous?.length) return null;
+  let cut = t;
+  for (const b of daily.current) {
+    const d = dayNumber(b.start);
+    if (d !== null && d > cut && (b.shifts > 0 || b.minutes > 0 || b.earnings > 0)) cut = d;
+  }
+  const p0 = dayNumber(daily.previous[0].start);
+  if (p0 === null) return null;
+  const out: PeriodTotals = { minutes: 0, earnings: 0, shifts: 0, worked_days: 0 };
+  for (const b of daily.previous) {
+    const d = dayNumber(b.start);
+    if (d === null || d - p0 > cut - first) continue;
+    out.minutes += b.minutes;
+    out.earnings += b.earnings;
+    out.shifts += b.shifts;
+    if (b.minutes > 0) out.worked_days += 1;
+  }
+  out.earnings = Math.round(out.earnings * 100) / 100;
+  return out;
+}
+
+export interface KpiDelta {
+  tone: 'up' | 'down' | 'even';
+  /** Short, unsigned: "6h 30m". */
+  text: string;
+  /** Full sentence for the tooltip and screen readers. */
+  hint: string;
+}
+
+/** Change from `before` to `now`, written with `fmt`; `who` is "October", `when` " at this point" or "". */
+export function kpiDelta(now: number, before: number, fmt: (n: number) => string, who: string, when: string): KpiDelta {
+  const diff = Math.round((now - before) * 100) / 100;
+  if (diff === 0) return { tone: 'even', text: 'Same', hint: `Same as ${who}${when}` };
+  const text = fmt(Math.abs(diff));
+  return {
+    tone: diff > 0 ? 'up' : 'down',
+    text,
+    hint: `${diff > 0 ? '+' : '−'}${text} vs ${who}${when}`,
+  };
 }

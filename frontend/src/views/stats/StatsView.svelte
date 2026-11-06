@@ -3,11 +3,18 @@
   import type { DateRange, Preset } from './ranges';
 
   // Remembered while the app runs (the view is remounted on every visit).
-  const memory: { preset: Preset; offset: number; granularity: Granularity | null; custom: DateRange | null } = {
+  const memory: {
+    preset: Preset;
+    offset: number;
+    granularity: Granularity | null;
+    custom: DateRange | null;
+    jobMetric: 'hours' | 'shifts';
+  } = {
     preset: 'month',
     offset: 0,
     granularity: null,
     custom: null,
+    jobMetric: 'hours',
   };
 </script>
 
@@ -26,7 +33,16 @@
   import AreaChart from '../../charts/AreaChart.svelte';
   import BarChart from '../../charts/BarChart.svelte';
   import DonutChart from '../../charts/DonutChart.svelte';
-  import { bucketTargets, cumulative, earningsModel, shiftSlices, type DailyEarnings } from '../../charts/chartUtils';
+  import {
+    bucketTargets,
+    cumulative,
+    earningsModel,
+    kpiDelta,
+    previousTotalsAt,
+    shiftSlices,
+    type DailyEarnings,
+    type KpiDelta,
+  } from '../../charts/chartUtils';
   import KpiTile from './KpiTile.svelte';
   import {
     GRANULARITIES,
@@ -76,6 +92,7 @@
     memory.offset = offset;
     memory.granularity = granularity;
     memory.custom = custom;
+    memory.jobMetric = jobMetric;
   });
 
   function pickPreset(p: Preset) {
@@ -178,7 +195,6 @@
   // ── derived view model ─────────────────────────────────────────
   const targetHours = $derived($settings.ui_prefs.target_hours);
   const targets = $derived(data ? bucketTargets(data.buckets, data.granularity, data.start, data.end, targetHours) : []);
-  const slices = $derived(data ? shiftSlices(data.by_shift, $shifts) : []);
   const achTotal = $derived($achievements?.items.length || 17);
   // all-time, newest first: the tile ignores the picked range
   const latestAch = $derived(
@@ -199,8 +215,18 @@
   );
 
   let showTable = $state(false);
+  let jobMetric = $state<'hours' | 'shifts'>(memory.jobMetric);
+  const slices = $derived(data ? shiftSlices(data.by_shift, $shifts, jobMetric) : []);
+  const JOB_METRICS: { value: 'hours' | 'shifts'; label: string }[] = [
+    { value: 'hours', label: 'Hours' },
+    { value: 'shifts', label: 'Shifts' },
+  ];
 
   // ── earnings running total ─────────────────────────────────────
+  /** Day-level buckets of both periods: the chart's own when it groups by day. */
+  const dayLevel = $derived<DailyEarnings | null>(
+    data?.granularity === 'day' ? { current: data.buckets, previous: prev?.data.buckets ?? null } : daily,
+  );
   const earn = $derived(
     data ? earningsModel(
           data.buckets,
@@ -209,7 +235,7 @@
           toIsoDate(new Date()),
           prev?.data.buckets ?? null,
           span?.first ?? null,
-          data.granularity === 'day' ? { current: data.buckets, previous: prev?.data.buckets ?? null } : daily,
+          dayLevel,
         )
       : null,
   );
@@ -225,6 +251,30 @@
     return { tone: diff > 0 ? 'up' : 'down', amount: formatMoney(Math.abs(diff)), text: `${diff > 0 ? 'ahead of' : 'behind'} ${who}${when}` };
   });
   const runningTotals = $derived(data ? cumulative(data.buckets.map((b) => b.earnings)) : []);
+
+  // ── change from the previous period, at the same point ─────────
+  const deltas = $derived.by((): Record<'minutes' | 'earnings' | 'avg' | 'days', KpiDelta | null> | null => {
+    // nothing to compare against before the first shift of the period before
+    if (!data || !prev || prev.data.totals.shifts === 0) return null;
+    const before = previousTotalsAt(data.start, data.end, toIsoDate(new Date()), dayLevel, prev.data.totals);
+    if (!before) return null;
+    const who = prev.period.phrase;
+    const when = toIsoDate(new Date()) > data.end ? '' : ' at this point';
+    const t = data.totals;
+    // Earnings and the average are compared from whole minutes, not from figures the backend
+    // rounded on different bases: the same hours in both periods always read "Same".
+    const earnDiff = ((t.minutes - before.minutes) / 60) * data.pay_rate;
+    const avgDiff =
+      t.worked_days > 0 && before.worked_days > 0
+        ? Math.round(t.minutes / t.worked_days - before.minutes / before.worked_days)
+        : null;
+    return {
+      minutes: kpiDelta(t.minutes, before.minutes, formatDuration, who, when),
+      earnings: kpiDelta(earnDiff, 0, formatMoney, who, when),
+      avg: avgDiff !== null ? kpiDelta(avgDiff, 0, formatDuration, who, when) : null,
+      days: kpiDelta(t.worked_days, before.worked_days, (n) => `${n} ${n === 1 ? 'day' : 'days'}`, who, when),
+    };
+  });
 
   // ── pickers ────────────────────────────────────────────────────
   let startBtn = $state<HTMLButtonElement>();
@@ -355,12 +405,27 @@
 
     <section class="kpis" aria-label="Summary" class:busy={loading}>
       <div in:fly={{ y: 14, delay: stagger(0, 50) }}>
-        <KpiTile icon="clock" label="Total hours" value={data.totals.minutes} format={formatDuration} tone="violet">
+        <KpiTile
+          icon="clock"
+          label="Total hours"
+          value={data.totals.minutes}
+          format={formatDuration}
+          tone="violet"
+          delta={deltas?.minutes}
+        >
           {#snippet sub()}{shiftsWord(data!.totals.shifts)}{/snippet}
         </KpiTile>
       </div>
       <div in:fly={{ y: 14, delay: stagger(1, 50) }}>
-        <KpiTile icon="euro" label="Earnings" value={data.totals.earnings} format={formatMoney} tone="cyan" delay={60}>
+        <KpiTile
+          icon="euro"
+          label="Earnings"
+          value={data.totals.earnings}
+          format={formatMoney}
+          tone="cyan"
+          delay={60}
+          delta={deltas?.earnings}
+        >
           {#snippet sub()}at {formatMoney(data!.pay_rate)}/h{/snippet}
         </KpiTile>
       </div>
@@ -372,6 +437,7 @@
           format={formatDuration}
           tone="magenta"
           delay={120}
+          delta={deltas?.avg}
         >
           {#snippet sub()}{formatMoney(data!.avg_per_worked_day.earnings)} per day{/snippet}
         </KpiTile>
@@ -402,6 +468,7 @@
           format={(n) => String(Math.round(n))}
           tone="teal"
           delay={240}
+          delta={deltas?.days}
         >
           {#snippet sub()}
             {#if targetBuckets > 0 && !empty}
@@ -503,6 +570,7 @@
                 buckets={data.buckets}
                 {targets}
                 label="Hours per {unitWord}, {formatRange(range)}"
+                granularity={data.granularity}
                 onopen={openBucket}
               />
             {/if}
@@ -541,6 +609,7 @@
                 buckets={data.buckets}
                 model={earn}
                 previousName={prev?.period.name}
+                granularity={data.granularity}
                 label="Running total of earnings, {formatRange(range)}"
               />
             {/if}
@@ -551,8 +620,13 @@
           <GlassCard tag="section" padding="18px 20px" aria-labelledby="stats-jobs">
             <div class="card-head">
               <h3 id="stats-jobs">By job / shift</h3>
+              <Segmented bind:value={jobMetric} options={JOB_METRICS} label="Measure jobs by" size="sm" />
             </div>
-            <DonutChart {slices} label="Hours by job or shift" />
+            <DonutChart
+              {slices}
+              metric={jobMetric}
+              label="{jobMetric === 'shifts' ? 'Shifts' : 'Hours'} by job or shift"
+            />
           </GlassCard>
         </div>
       </div>

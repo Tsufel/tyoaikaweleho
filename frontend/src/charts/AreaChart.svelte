@@ -4,11 +4,11 @@
   import { area, curveMonotoneX, line } from 'd3-shape';
   import { Tween } from 'svelte/motion';
   import { cubicOut } from 'svelte/easing';
-  import type { StatsBucket } from '../lib/api/types';
+  import type { Granularity, StatsBucket } from '../lib/api/types';
   import { reduced } from '../lib/motion';
   import { formatDuration, formatMoney } from '../lib/time';
   import ChartTooltip from './ChartTooltip.svelte';
-  import { axisMoney, labelStep, moneyScale, paceAt, resize, stepIndex, type EarningsModel } from './chartUtils';
+  import { axisLabels, axisMoney, moneyScale, paceAt, resize, shownLabels, stepIndex, type EarningsModel } from './chartUtils';
 
   /**
    * Running total of earnings across the range. The line stops at
@@ -20,9 +20,17 @@
     model,
     previousName = 'Before',
     label,
+    granularity,
     height = 220,
-  }: { buckets: StatsBucket[]; model: EarningsModel; previousName?: string; label: string; height?: number } =
-    $props();
+  }: {
+    buckets: StatsBucket[];
+    model: EarningsModel;
+    previousName?: string;
+    label: string;
+    /** Months get short axis labels ("Jan", the year only where it changes). */
+    granularity?: Granularity;
+    height?: number;
+  } = $props();
 
   const uid = $props.id();
   const M = { top: 18, right: 18, bottom: 30, left: 54 };
@@ -42,7 +50,8 @@
   const plotH = $derived(height - M.top - M.bottom);
   const target = $derived(Math.max(sofar, projected ?? 0, previous ? Math.max(...previous) : 0));
   const xAt = $derived((i: number) => (n <= 1 ? plotW / 2 : scaleLinear().domain([0, n - 1]).range([0, plotW])(i)));
-  const step = $derived(labelStep(n, plotW, 52));
+  const slot = $derived(n <= 1 ? plotW : plotW / (n - 1));
+  const axis = $derived(axisLabels(buckets, granularity, slot));
 
   // one tween for every series: [running total × n, previous × n, projection]
   const tween = new Tween<number[]>([], { easing: cubicOut });
@@ -205,9 +214,9 @@
             {/if}
           {/if}
 
-          {#each buckets as b, i (b.key)}
-            {#if i % step === 0 || i === active}
-              <text class="axis" class:axis-on={i === active} x={xAt(i)} y={plotH + 19} text-anchor="middle">{b.label}</text>
+          {#each shownLabels(buckets, axis.labels, active, slot) as text, i (buckets[i].key)}
+            {#if text}
+              <text class="axis" class:axis-on={i === active} x={xAt(i)} y={plotH + 19} text-anchor="middle">{text}</text>
             {/if}
           {/each}
         </g>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import { Icon, type IconName } from '../../lib/ui';
+  import { Icon, tooltip, type IconName } from '../../lib/ui';
   import RollingNumber from '../../charts/RollingNumber.svelte';
+  import type { KpiDelta } from '../../charts/chartUtils';
 
   let {
     icon,
@@ -10,6 +11,7 @@
     format,
     tone = 'violet',
     delay = 0,
+    delta = null,
     sub,
   }: {
     icon: IconName;
@@ -18,6 +20,8 @@
     format: (n: number) => string;
     tone?: 'violet' | 'cyan' | 'magenta' | 'amber' | 'teal';
     delay?: number;
+    /** Change from the previous period, shown beside the value. */
+    delta?: KpiDelta | null;
     sub?: Snippet;
   } = $props();
 </script>
@@ -27,7 +31,18 @@
     <span class="badge" aria-hidden="true"><Icon name={icon} size={16} /></span>
     <h3>{label}</h3>
   </div>
-  <p class="value"><RollingNumber {value} {format} {delay} /></p>
+  <div class="value-row">
+    <p class="value"><RollingNumber {value} {format} {delay} /></p>
+    {#if delta}
+      <span class="delta {delta.tone}" use:tooltip={delta.hint}>
+        <span class="delta-text" aria-hidden="true">
+          {#if delta.tone !== 'even'}<Icon name={delta.tone === 'up' ? 'chevron-up' : 'chevron-down'} size={12} />{/if}
+          <span class="num">{delta.text}</span>
+        </span>
+        <span class="sr-only">{delta.hint}</span>
+      </span>
+    {/if}
+  </div>
   {#if sub}<div class="sub">{@render sub()}</div>{/if}
 </article>
 
@@ -112,6 +127,32 @@
     letter-spacing: -0.02em;
     color: var(--text);
     line-height: 1.15;
+  }
+  .value-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    min-width: 0;
+  }
+  .delta {
+    display: inline-flex;
+    flex: none;
+    font-size: var(--fs-xs);
+    font-weight: 650;
+    color: var(--text-subtle);
+    cursor: default;
+  }
+  .delta-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+  .delta.up {
+    color: var(--success-text);
+  }
+  .delta.down {
+    color: var(--danger-text);
   }
   .sub {
     font-size: var(--fs-xs);
