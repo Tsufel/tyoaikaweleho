@@ -41,8 +41,8 @@ Small ideas not committed to yet, good filler between releases. Most fall out
 of the achievements engine for free. Do the hour-based ones **after 2.2** so
 they count net hours (after breaks) from the start:
 
-- **Personal records in Stats** — longest shift, best week, best month.
-- **Weekly recap** — a short "this week" card on the first open of a new week.
+- **Personal records in Stats** — longest shift, best week, best month
+  (done in the Achievements sheet's Hall of fame; a Stats tile is still open).
 - **Streaks on the Stats KPI tiles** — current run of workdays at target.
 - **Tool achievements** — first Excel export, first OCR import (need event
   counters; v2 of achievements).

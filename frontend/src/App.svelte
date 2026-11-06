@@ -31,6 +31,7 @@
   import { onShift, startAchievements } from './lib/stores/achievements';
   import AchievementUnlock from './views/achievements/AchievementUnlock.svelte';
   import PetFlyby from './views/pet/PetFlyby.svelte';
+  import WeeklyRecap from './views/recap/WeeklyRecap.svelte';
   import { petFlyby } from './views/pet/petState';
   import ChangelogModal from './views/modals/ChangelogModal.svelte';
   import { handleCloseRequest } from './views/modals/closeFlow';
@@ -290,6 +291,7 @@
 {#if phase === 'ready' && introDone}
   {#if $settings.ui_prefs.pet !== 'off'}<PetFlyby />{/if}
   <AchievementUnlock held={$modalOpen > 0} waiting={onShift($timer) || !!$petFlyby} />
+  <WeeklyRecap held={$modalOpen > 0} waiting={onShift($timer) || !!$petFlyby} />
 {/if}
 <Toasts />
 {#if $lulz}

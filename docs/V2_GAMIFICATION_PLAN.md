@@ -145,6 +145,12 @@ backfill is acked with its toast, and what the shift itself earned gets cards.
 - **Batches:** more than 3 new unlocks at once (e.g. an import) animate only
   the 3 rarest; the rest are summed up in one *"…and N more achievements
   unlocked"* toast. The first-run backfill is one toast instead.
+- **Weekly recap:** `views/recap/WeeklyRecap.svelte` (mounted next to the
+  unlock card) sums up last week once per ISO week, on the first open of the
+  new one: hours, shifts, days, earnings (with a pay rate) and the longest
+  shift, from `get_stats`. Empty weeks are skipped. The week shown is kept in
+  `localStorage` (`weleho.recapWeek`), so a cleared store only means one more
+  recap. It waits like the unlock card does, and also gives way to it.
 
 ## Work pet
 
