@@ -384,15 +384,30 @@ export function createMockApi(): Api {
     };
   }
 
+  /** §6.1 — a stop's confirms carry `start_iso@press_iso`, so the shift
+   *  ends at the minute STOP was pressed, not when the question was answered. */
+  function pressToken(confirm: ConfirmList | undefined, s: Session): { token: string; pressed: Date } {
+    const base = toIsoDateTime(s.start);
+    const now = new Date();
+    for (const a of [...(confirm ?? [])].reverse()) {
+      if (typeof a.token !== 'string' || !a.token.startsWith(`${base}@`)) continue;
+      const pressed = new Date(a.token.slice(base.length + 1));
+      if (!Number.isNaN(pressed.getTime()) && pressed >= s.start && pressed <= now) return { token: a.token, pressed };
+    }
+    if ((confirm ?? []).some((a) => a.token === base)) return { token: base, pressed: now };
+    return { token: `${base}@${toIsoDateTime(now)}`, pressed: now };
+  }
+
   /** §6.1 — shared by timer_stop and close_app(stop_close). */
   function stopFlow(source: 'button' | 'shortcut' | 'close', confirm: ConfirmList | undefined): any {
     if (!session) return okR('ok', { timer: timerState() });
     const s = session;
-    const token = toIsoDateTime(s.start);
+    const startIso = toIsoDateTime(s.start);
+    const { token, pressed } = pressToken(confirm, s);
     const stale = (confirm ?? []).some((a) => a.token !== undefined && a.token !== token);
     if (stale) return err('stale', 'The shift changed in the meantime.', { timer: timerState() });
-    const elapsedSec = (Date.now() - s.start.getTime()) / 1000;
-    const minutes = wallMinutes(s.start, new Date());
+    const elapsedSec = (pressed.getTime() - s.start.getTime()) / 1000;
+    const minutes = wallMinutes(s.start, pressed);
     const long = minutes > LONG_SHIFT_MINUTES;
 
     let skipLong = source === 'close';
@@ -411,7 +426,7 @@ export function createMockApi(): Api {
           cancel: 'keep',
           icon: long ? 'warning' : 'question',
           token,
-          details: { start_iso: token, elapsed_minutes: minutes },
+          details: { start_iso: startIso, elapsed_minutes: minutes },
         });
       }
       if (a.choice === 'keep') return okR('cancelled', { timer: timerState() });
@@ -423,7 +438,7 @@ export function createMockApi(): Api {
       return okR('discarded', { timer: timerState() }, 'Shift under a minute — not saved');
     }
 
-    let timeOut = hhmm(new Date());
+    let timeOut = hhmm(pressed);
     if (minutes >= 24 * 60) {
       const capped = hhmm(new Date(s.start.getTime() + 8 * HOUR));
       const a = answerFor(confirm, 'over_24h');
@@ -444,7 +459,7 @@ export function createMockApi(): Api {
           cancel: 'keep',
           icon: 'warning',
           token,
-          details: { start_iso: token, elapsed_minutes: minutes, capped_end: capped },
+          details: { start_iso: startIso, elapsed_minutes: minutes, capped_end: capped },
         });
       }
       if (a.choice === 'keep') return okR('cancelled', { timer: timerState() });
@@ -473,7 +488,7 @@ export function createMockApi(): Api {
           cancel: 'keep',
           icon: 'warning',
           token,
-          details: { start_iso: token, elapsed_minutes: minutes },
+          details: { start_iso: startIso, elapsed_minutes: minutes },
         });
       }
       if (a.choice === 'keep') return okR('cancelled', { timer: timerState() });
@@ -654,6 +669,10 @@ export function createMockApi(): Api {
         console.info('[mock] window would close now (close guard %s)', closeGuard ? 'on' : 'off');
         return okR('ok', { timer: timerState() });
       }
+      const { token } = pressToken(confirm, session);
+      if ((confirm ?? []).some((c) => c.token !== undefined && c.token !== token)) {
+        return err('stale', 'The shift changed in the meantime.', { timer: timerState() });
+      }
       const a = answerFor(confirm, 'close_running');
       if (!a) {
         return needs<'close_running'>({
@@ -670,7 +689,7 @@ export function createMockApi(): Api {
           default: 'stop_close',
           cancel: 'cancel',
           icon: 'warning',
-          token: toIsoDateTime(session.start),
+          token,
           details: { start_iso: toIsoDateTime(session.start), elapsed_minutes: elapsedMin(session) },
         });
       }

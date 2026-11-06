@@ -18,6 +18,8 @@ export const jobDraft = writable('');
 export const busy = writable(false);
 /** Bumped after every saved shift (fire burst / ring flourish). */
 export const burst = writable(0);
+/** start_iso of the shift whose "Still working?" banner was dismissed. */
+export const stillWorkingDismissed = writable<string | null>(null);
 /** The entry the last saved shift wrote, set just before burst is bumped. */
 export const savedEntry = writable<EntryRow | null>(null);
 /** Wall-clock ms, ticking on each second boundary (idle start dial). */

@@ -9,7 +9,9 @@ import {
   parseTimeInput,
   strftime,
   toIsoDate,
+  weekKey,
 } from '../../lib/time';
+import type { MonthData, WorkEntry } from '../../lib/api/types';
 
 export const IDLE_TEXT = 'Press START (F5) to begin tracking';
 
@@ -22,6 +24,54 @@ export const RING_INNER = RING.r - RING.stroke / 2 - 9;
 export function ringProgress(elapsedSeconds: number, targetHours: number): number {
   const target = Math.max(1, targetHours || 8) * 3600;
   return Math.max(0, elapsedSeconds) / target;
+}
+
+/** Up to *n* most recently worked jobs, newest first (by date, then start). */
+export function recentJobs(entries: readonly WorkEntry[] | null | undefined, n = 4): string[] {
+  const sorted = [...(entries ?? [])].sort((a, b) =>
+    a.date === b.date ? b.time_in.localeCompare(a.time_in) : b.date.localeCompare(a.date),
+  );
+  const out: string[] = [];
+  for (const e of sorted) {
+    const job = (e.job_shift || '').trim();
+    if (!job || job === '—' || out.includes(job)) continue;
+    out.push(job);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
+/** Minutes saved so far this ISO week, from the month already loaded. null
+ *  when that month isn't the current one or the week began last month (its
+ *  rows aren't loaded then, so the sum would come out short). */
+export function weekMinutesSaved(month: MonthData | null | undefined, today: Date): number | null {
+  if (!month || month.year !== today.getFullYear() || month.month !== today.getMonth() + 1) return null;
+  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - ((today.getDay() + 6) % 7));
+  if (monday.getMonth() !== today.getMonth()) return null;
+  const key = weekKey(today);
+  return month.entries.reduce((sum, e) => sum + (e.week_key === key ? (e.minutes ?? 0) : 0), 0);
+}
+
+/** "This week 31h 20m of 40h" (the daily target × 5 days). */
+export function weekText(minutes: number, targetHours: number): string {
+  const week = Math.max(1, targetHours || 8) * 5;
+  return `This week ${formatDuration(Math.max(0, Math.floor(minutes)))} of ${week}h`;
+}
+
+/** Hours past the daily target before the "Still working?" banner shows. */
+export const STILL_WORKING_AFTER_H = 2;
+
+/** True once a running shift is STILL_WORKING_AFTER_H past the daily target. */
+export function stillWorkingDue(elapsedSeconds: number, targetHours: number): boolean {
+  const hours = Math.max(1, targetHours || 8);
+  return elapsedSeconds >= (hours + STILL_WORKING_AFTER_H) * 3600;
+}
+
+/** Banner text: "10h 05m on the clock, 2h 05m past your 8h target." */
+export function stillWorkingText(elapsedSeconds: number, targetHours: number): string {
+  const hours = Math.max(1, targetHours || 8);
+  const mins = Math.floor(Math.max(0, elapsedSeconds) / 60);
+  return `${formatDuration(mins)} on the clock, ${formatDuration(Math.max(0, mins - hours * 60))} past your ${hours}h target.`;
 }
 
 /** Line under the running clock: "62% of 8h · done 16:30" while short of the

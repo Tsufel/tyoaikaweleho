@@ -11,6 +11,22 @@ _DATA_DIR = (os.path.abspath(os.environ["WELEHO_DATA_DIR"].strip())
 _SESSION_FILE = os.path.join(_DATA_DIR, "session.json")
 
 
+def _epoch(dt: datetime) -> float:
+    """Seconds since the epoch for a naive local time (its fold picks the
+    first or second pass of a repeated DST hour)."""
+    return dt.timestamp()
+
+
+def elapsed_between(start: datetime, end: datetime) -> float:
+    """Real seconds from *start* to *end*, both naive local times. Goes by
+    the epoch, so the night the clocks go back (or forward) doesn't lose
+    or add an hour the way plain wall-clock subtraction does."""
+    try:
+        return _epoch(end) - _epoch(start)
+    except (OverflowError, OSError, ValueError):
+        return (end - start).total_seconds()
+
+
 class TimerState(Enum):
     IDLE = "idle"
     RUNNING = "running"
@@ -63,8 +79,7 @@ class WorkTimer:
     def elapsed_str(self) -> str:
         if self.state != TimerState.RUNNING or self._start_dt is None:
             return "00:00"
-        delta = datetime.now() - self._start_dt
-        total = int(delta.total_seconds())
+        total = max(0, int(elapsed_between(self._start_dt, datetime.now())))
         h = total // 3600
         m = (total % 3600) // 60
         return f"{h:02d}:{m:02d}"
@@ -72,7 +87,7 @@ class WorkTimer:
     def elapsed_seconds(self) -> float:
         if self.state != TimerState.RUNNING or self._start_dt is None:
             return 0.0
-        return (datetime.now() - self._start_dt).total_seconds()
+        return elapsed_between(self._start_dt, datetime.now())
 
     @property
     def start_dt(self) -> datetime | None:
@@ -98,11 +113,13 @@ class WorkTimer:
         # session.json (which would lose the running shift)
         os.makedirs(_DATA_DIR, exist_ok=True)
         tmp = _SESSION_FILE + ".tmp"
+        session = {"job_shift": self._job_shift, "start": self._start_dt.isoformat()}
+        if self._start_dt.fold:
+            # isoformat() drops the fold: without this a start in the second
+            # pass of the repeated DST hour would come back an hour early
+            session["start_fold"] = 1
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({
-                "job_shift": self._job_shift,
-                "start": self._start_dt.isoformat(),
-            }, f)
+            json.dump(session, f)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, _SESSION_FILE)

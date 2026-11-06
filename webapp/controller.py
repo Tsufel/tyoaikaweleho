@@ -30,7 +30,10 @@ def _session_start(session: dict) -> datetime | None:
     except (TypeError, ValueError, KeyError):
         return None
     if start.tzinfo is not None:
-        start = start.astimezone().replace(tzinfo=None)
+        # via the epoch, so a start in a repeated DST hour keeps its fold
+        return datetime.fromtimestamp(start.timestamp())
+    if session.get("start_fold") == 1:
+        start = start.replace(fold=1)
     return start
 MAX_STATS_DAYS = 3700
 
@@ -42,7 +45,12 @@ def _iso(dt: datetime) -> str:
 
 
 def _epoch_ms(dt: datetime) -> int:
-    return int(dt.timestamp() * 1000)
+    return int(timer_module._epoch(dt) * 1000)
+
+
+def _elapsed_minutes(start: datetime, end: datetime) -> int:
+    """Whole real minutes from start to end, right across a DST change."""
+    return max(0, int(timer_module.elapsed_between(start, end) // 60))
 
 
 def _wall_minutes(start: datetime, end: datetime) -> int:
@@ -220,7 +228,7 @@ class ShiftController:
                      "elapsed_minutes": minutes}, **payload)
 
     def _backdate_confirm(self, t: str, earlier: datetime, now: datetime) -> dict:
-        minutes = int((now - earlier).total_seconds() // 60)
+        minutes = _elapsed_minutes(earlier, now)
         day = "today" if earlier.date() == now.date() else "yesterday"
         return R.needs_confirm(
             "start_backdate", "Start that far back?",
@@ -332,13 +340,13 @@ class ShiftController:
             t = self._timer
             if not t.is_running:
                 return R.ok(quit=True)
-            token = _iso(t.start_dt)
+            token, pressed = self._press_token(confirm, t.start_dt, self._now())
             try:
                 choice = answer(confirm, "close_running", token)
             except Stale:
                 return R.stale(timer=self.timer_state())
             if choice is None:
-                minutes = int((self._now() - t.start_dt).total_seconds() // 60)
+                minutes = _elapsed_minutes(t.start_dt, pressed)
                 return R.needs_confirm(
                     "close_running", "Shift still running",
                     f"A shift is running (started {t.start_dt:%H:%M}, "
@@ -350,7 +358,7 @@ class ShiftController:
                      opt("close", "Close anyway", "neutral"),
                      opt("cancel", "Stay open", "neutral")],
                     default="stop_close", cancel="cancel", icon="warning", token=token,
-                    details={"start_iso": token, "elapsed_minutes": minutes})
+                    details={"start_iso": _iso(t.start_dt), "elapsed_minutes": minutes})
             if choice == "close":
                 return R.ok(quit=True)
             if choice != "stop_close":
@@ -436,14 +444,35 @@ class ShiftController:
             except Stale:
                 return R.stale(timer=self.timer_state())
 
+    @staticmethod
+    def _press_token(confirm, start: datetime, now: datetime) -> tuple[str, datetime]:
+        """The token for a stop's confirms and the moment STOP was pressed.
+        The token is `start_iso@press_iso`, so the press time comes back with
+        the answers and the shift ends at the press minute, not when the
+        question was answered. A plain `start_iso` answer (older callers)
+        stops at *now*; a token naming another start doesn't match (stale)."""
+        base = _iso(start)
+        answers = [a for a in confirm if isinstance(a, dict)] if isinstance(confirm, (list, tuple)) else []
+        for a in reversed(answers):
+            tok = a.get("token")
+            if isinstance(tok, str) and tok.startswith(base + "@"):
+                try:
+                    pressed = datetime.fromisoformat(tok[len(base) + 1:])
+                except ValueError:
+                    continue
+                if pressed.tzinfo is None and start <= pressed <= now:
+                    return tok, pressed
+        if any(a.get("token") == base for a in answers):
+            return base, now
+        return f"{base}@{_iso(now)}", now
+
     def _stop(self, source: str, confirm) -> dict:
         t = self._timer
         start, job_shift = t.start_dt, t.job_shift
-        token = _iso(start)
-        now = self._now()
-        elapsed = (now - start).total_seconds()
+        token, now = self._press_token(confirm, start, self._now())
+        elapsed = timer_module.elapsed_between(start, now)
         minutes = max(0, int(elapsed // 60))
-        details = {"start_iso": token, "elapsed_minutes": minutes}
+        details = {"start_iso": _iso(start), "elapsed_minutes": minutes}
         # the entry keeps HH:MM only, so the limits go by whole clock minutes:
         # 09:00:30 → 09:00:10 next day is 1439 elapsed but 1440 on the sheet
         wall = _wall_minutes(start, now)
@@ -685,12 +714,13 @@ class ShiftController:
                 self._clear_session()
                 return None
             now = self._now()
-            over_limit = now - start >= RECOVERY_LIMIT
+            over_limit = (timer_module.elapsed_between(start, now)
+                          >= RECOVERY_LIMIT.total_seconds())
             suggested = start + RECOVERY_LIMIT if over_limit else now
             return {
                 "start_iso": _iso(start), "start_epoch_ms": _epoch_ms(start),
                 "job_shift": job_shift if isinstance(job_shift, str) else "?",
-                "elapsed_minutes": max(0, int((now - start).total_seconds() // 60)),
+                "elapsed_minutes": _elapsed_minutes(start, now),
                 "over_limit": over_limit, "suggested_end": suggested.strftime("%H:%M"),
             }
 
@@ -707,7 +737,10 @@ class ShiftController:
             rec = self.recovery()
             if rec is None:
                 return R.ok(timer=self.timer_state(), recovery=None)
-            start = datetime.fromisoformat(rec["start_iso"])
+            # session.json again: rec's start_iso has no fold for a start in
+            # the repeated DST hour
+            start = (_session_start(self._read_session() or {})
+                     or datetime.fromisoformat(rec["start_iso"]))
             token = rec["start_iso"]
 
             if action == "resume":
