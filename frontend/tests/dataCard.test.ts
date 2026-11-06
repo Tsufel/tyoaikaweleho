@@ -56,7 +56,7 @@ const S: Settings = {
   export_include_pay: false,
   employee_name: '',
   manager_name: '',
-  ui_prefs: { lulz: false, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '', pet_hint_seen: false, pet_skin: 'classic' },
+  ui_prefs: { lulz: false, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '', pet_hint_seen: false, pet_skin: 'classic', zoom: 100 },
 };
 const TIMER = { running: false } as never;
 

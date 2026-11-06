@@ -15,6 +15,7 @@ function row(date: string, job: string, time_in = '09:00', minutes: number | nul
     display_date: date,
     time_out_display: '17:00',
     week_key,
+    note: '',
   };
 }
 
