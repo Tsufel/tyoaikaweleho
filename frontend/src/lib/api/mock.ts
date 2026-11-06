@@ -1059,6 +1059,21 @@ export function createMockApi(): Api {
       entries.sort(sortEntries);
       return okR('ok', { imported: added.length, skipped: 1, files: 1, errors: [], notes: [] });
     },
+    // export a date range (CSV or Simple workbook)
+    async export_range(start, end, kind) {
+      await wait(400);
+      if (kind !== 'xlsx' && kind !== 'csv') return invalid('kind', 'Export as xlsx or csv.');
+      const a = fromIsoDate(start);
+      const b = fromIsoDate(end);
+      if (!a || !b || b < a) return invalid('range', 'Pick a valid date range.');
+      const dm = (d: Date) => `${d.getDate()}.${d.getMonth() + 1}.`;
+      const label =
+        a.getFullYear() === b.getFullYear()
+          ? `${dm(a)}–${dm(b)}${b.getFullYear()}`
+          : `${dm(a)}${a.getFullYear()}–${dm(b)}${b.getFullYear()}`;
+      lastExport = `C:\\Users\\you\\Documents\\Hours ${label}.${kind}`;
+      return okR('saved', { path: lastExport }, 'Exported (mock)');
+    },
     async ocr_pick_and_extract() {
       await wait(700);
       if (!dlc.ocr_available) return err('dlc_unavailable', 'Install the DLC to import from images.');

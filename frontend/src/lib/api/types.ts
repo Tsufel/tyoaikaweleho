@@ -407,6 +407,7 @@ export interface ChangelogBlock {
 // ── Import / export / OCR ────────────────────────────────────────
 
 export type ExportResult = Result<{ path: string }>;
+export type ExportRangeKind = 'xlsx' | 'csv';
 
 export type ImportResult = Result<{
   imported: number;
@@ -544,6 +545,10 @@ export interface Api {
   import_excel(): Promise<ImportResult>;
   ocr_pick_and_extract(): Promise<OcrExtractResult>;
   ocr_save(rows: OcrRow[]): Promise<OcrSaveResult>;
+
+  // export a date range (CSV or Simple workbook)
+  /** Save dialog named "Hours 1.1.–31.12.2026.csv"; invalid(field: 'range' | 'kind'). */
+  export_range(start: IsoDate, end: IsoDate, kind: ExportRangeKind): Promise<ExportResult>;
 
   // updates & DLC
   check_updates(): Promise<CheckUpdatesResult>;

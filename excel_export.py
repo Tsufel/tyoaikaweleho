@@ -3,7 +3,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from storage import WorkEntry
-from utils import is_overnight, week_key
+from utils import entry_minutes, is_overnight, week_key
 
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
@@ -52,10 +52,61 @@ def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str
         _export_simple(entries, year, month, save_path, include_pay, pay_rate)
 
 
+# ── any date range (Simple workbook or CSV) ────────────────────────────────────
+
+def range_label(start: date, end: date) -> str:
+    """'1.1.–31.12.2026', or '1.12.2025–31.1.2026' across a year."""
+    if start.year == end.year:
+        return f"{start.day}.{start.month}.–{end.day}.{end.month}.{end.year}"
+    return (f"{start.day}.{start.month}.{start.year}–"
+            f"{end.day}.{end.month}.{end.year}")
+
+
+def export_range(entries: list[WorkEntry], start: date, end: date, save_path: str,
+                 kind: str = "xlsx", include_pay: bool = False, pay_rate: float = 20.0):
+    """Export the entries dated *start*..*end* (inclusive) as a Simple
+    workbook (kind 'xlsx') or a CSV (kind 'csv')."""
+    lo, hi = start.isoformat(), end.isoformat()
+    picked = [e for e in entries if lo <= e.date <= hi]
+    if kind == "csv":
+        export_csv(picked, save_path, include_pay, pay_rate)
+    else:
+        _export_simple(picked, start.year, start.month, save_path, include_pay,
+                       pay_rate, title=f"Hours {range_label(start, end)}")
+
+
+def _decimal_comma(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def export_csv(entries: list[WorkEntry], save_path: str, include_pay: bool = False,
+               pay_rate: float = 20.0):
+    """A CSV that Finnish Excel opens straight into columns: ';' separator,
+    decimal comma, UTF-8 with a BOM and CRLF line ends. Hours are decimal
+    (7,50); a shift still in progress has no end, hours or earnings."""
+    import csv
+    header = ["Date", "Shift", "Start", "End", "Hours"]
+    if include_pay:
+        header.append("Earnings")
+    with open(save_path, "w", encoding="utf-8-sig", newline="") as f:
+        out = csv.writer(f, delimiter=";", lineterminator="\r\n")
+        out.writerow(header)
+        for e in sorted(entries, key=lambda x: (x.date, x.time_in)):
+            d = date.fromisoformat(e.date)
+            done = bool(e.time_in and e.time_out)
+            hours = entry_minutes(e.time_in, e.time_out) / 60 if done else None
+            row = [f"{d.day}.{d.month}.{d.year}", e.job_shift, e.time_in, e.time_out,
+                   _decimal_comma(hours) if hours is not None else ""]
+            if include_pay:
+                row.append(_decimal_comma(hours * pay_rate) if hours is not None else "")
+            out.writerow(row)
+
+
 # ── Simple layout ──────────────────────────────────────────────────────────────
 
 def _export_simple(entries: list[WorkEntry], year: int, month: int,
-                   save_path: str, include_pay: bool, pay_rate: float):
+                   save_path: str, include_pay: bool, pay_rate: float,
+                   title: str | None = None):
     wb = Workbook()
     wb.calculation.fullCalcOnLoad = True
     ws = wb.active
@@ -90,7 +141,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
     ws["G1"].font = bold
     ws.freeze_panes = "A2"
     wb.properties.creator = "Työaikaweleho"
-    wb.properties.title = f"Hours {date(year, month, 1):%B %Y}"
+    wb.properties.title = title or f"Hours {date(year, month, 1):%B %Y}"
 
     # Data rows — sorted by (date, time_in), starting at row 2
     sorted_entries = sorted(entries, key=lambda e: (e.date, e.time_in))

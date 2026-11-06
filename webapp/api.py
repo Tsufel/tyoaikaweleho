@@ -19,6 +19,7 @@ from webapp.controller import ShiftController
 # no *.xls: openpyxl can't read the old binary format
 _EXCEL_TYPES = ("Excel workbooks (*.xlsx;*.xlsm)", "All files (*.*)")
 _EXPORT_TYPES = ("Excel workbook (*.xlsx)",)
+_CSV_TYPES = ("CSV for Excel (*.csv)",)
 _IMAGE_TYPES = ("Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tiff;*.tif;*.webp)",
                 "All files (*.*)")
 _DIALOG_OPEN = 10
@@ -253,6 +254,22 @@ class Api:
         if not path.lower().endswith(".xlsx"):
             path += ".xlsx"
         return self._c.export_month(year, month, path)
+
+    # export a date range (CSV or Simple workbook)
+    @_guarded
+    def export_range(self, start, end, kind="xlsx"):
+        kind = kind or "xlsx"
+        name = self._c.export_range_filename(start, end, kind)
+        if name is None:  # bad range or kind: no dialog, just the invalid result
+            return self._c.export_range(start, end, kind, None)
+        types = _CSV_TYPES if kind == "csv" else _EXPORT_TYPES
+        picked = self._dialog(_DIALOG_SAVE, types, save_filename=name)
+        if not picked:
+            return R.cancelled()
+        path = picked[0]
+        if not path.lower().endswith("." + kind):
+            path += "." + kind
+        return self._c.export_range(start, end, kind, path)
 
     @_guarded
     def reveal_export(self):

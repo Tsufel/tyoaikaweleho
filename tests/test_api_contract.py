@@ -168,6 +168,8 @@ def test_every_method_returns_json(rig):
         ("install_update", ()),
         ("get_dlc_status", ()), ("dlc_install", ()), ("dlc_remove", (None,)),
         ("close_app", (None,)),
+        # export a date range
+        ("export_range", ("2026-09-01", "2026-09-30", "csv")),
     ]
     called = set()
     for name, args in calls:
@@ -232,6 +234,33 @@ def test_export_appends_xlsx_and_saves(rig):
     kind, _dir, multiple, name, types = window.dialog_calls[0]
     assert kind == 30 and not multiple
     assert name == "Hours September 2026.xlsx"
+
+
+@pytest.mark.parametrize("kind, types", [("csv", ("CSV for Excel (*.csv)",)),
+                                         ("xlsx", ("Excel workbook (*.xlsx)",))])
+def test_export_range_names_the_file_and_adds_the_extension(rig, kind, types):
+    api, window, _s, _b, tmp = rig
+    window.dialogs.append((str(tmp / "year"),))
+    res = _check(api.export_range("2026-01-01", "2026-12-31", kind))
+    assert res["status"] == "saved"
+    assert res["path"].endswith(f"year.{kind}")
+    assert os.path.isfile(res["path"])
+    dkind, _dir, multiple, name, dtypes = window.dialog_calls[0]
+    assert dkind == 30 and not multiple
+    assert name == f"Hours 1.1.–31.12.2026.{kind}"
+    assert dtypes == types
+    # Show in folder finds it
+    assert api._c.last_export() == res["path"]
+
+
+def test_export_range_rejects_a_bad_range_without_a_dialog(rig):
+    api, window, *_ = rig
+    assert _check(api.export_range("2026-02-01", "2026-01-01", "csv"))["status"] == "invalid"
+    assert _check(api.export_range("nope", "2026-01-01", "csv"))["status"] == "invalid"
+    res = _check(api.export_range("2026-01-01", "2026-01-31", "pdf"))
+    assert res["status"] == "invalid" and res["field"] == "kind"
+    assert window.dialog_calls == []
+    assert _check(api.export_range("2026-01-01", "2026-01-31", "csv"))["status"] == "cancelled"
 
 
 def test_reveal_export_before_any_export(rig):

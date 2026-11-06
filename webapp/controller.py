@@ -1006,6 +1006,58 @@ class ShiftController:
         self._last_export = path
         return R.saved(f"Timesheet saved to:\n{path}", path=path)
 
+    # ── export a date range (CSV or Simple workbook) ──
+
+    EXPORT_RANGE_KINDS = ("xlsx", "csv")
+
+    @staticmethod
+    def _export_range_args(start_iso, end_iso, kind) -> tuple[date, date, str] | dict:
+        if kind not in ShiftController.EXPORT_RANGE_KINDS:
+            return R.invalid("kind", "Export as xlsx or csv.")
+        try:
+            start = date.fromisoformat(str(start_iso))
+            end = date.fromisoformat(str(end_iso))
+        except ValueError:
+            return R.invalid("range", "Pick a valid date range.")
+        if end < start or (end - start).days > MAX_STATS_DAYS:
+            return R.invalid("range", "Pick a range of at most about ten years, "
+                                      "with the end after the start.")
+        return start, end, kind
+
+    @staticmethod
+    def export_range_filename(start_iso, end_iso, kind) -> str | None:
+        """'Hours 1.1.–31.12.2026.csv', or None when the arguments are invalid."""
+        import excel_export
+        args = ShiftController._export_range_args(start_iso, end_iso, kind)
+        if isinstance(args, dict):
+            return None
+        start, end, kind = args
+        return f"Hours {excel_export.range_label(start, end)}.{kind}"
+
+    def export_range(self, start_iso, end_iso, kind, path: str | None) -> dict:
+        args = self._export_range_args(start_iso, end_iso, kind)
+        if isinstance(args, dict):
+            return args
+        if not path:
+            return R.cancelled()
+        start, end, kind = args
+        import excel_export
+        with self._lock:
+            entries = storage.load_all_entries()
+            include_pay = storage.get_export_include_pay()
+            rate = storage.get_pay_rate()
+        try:
+            excel_export.export_range(entries, start, end, path, kind=kind,
+                                      include_pay=include_pay, pay_rate=rate)
+        except PermissionError:
+            return R.error("file_locked",
+                           f"Could not write:\n{path}\n\n"
+                           "The file is probably open in Excel — close it and try again.")
+        except Exception as exc:
+            return R.error("internal", f"Could not export:\n\n{exc}")
+        self._last_export = path
+        return R.saved(f"Hours saved to:\n{path}", path=path)
+
     def last_export(self) -> str | None:
         """The file the last successful export wrote (for "Show in folder";
         the UI never passes a path of its own)."""

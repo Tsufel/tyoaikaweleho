@@ -250,6 +250,59 @@ def test_full_in_progress_shift_marked(tmp_path):
     assert ws["E17"].value is None
 
 
+def _range_entries():
+    return [
+        WorkEntry(id="1", date="2026-02-28", job_shift="Sales", time_in="09:00", time_out="17:00"),
+        WorkEntry(id="2", date="2026-03-02", job_shift="Support", time_in="09:00", time_out="16:30"),
+        WorkEntry(id="3", date="2026-03-31", job_shift="Sales", time_in="22:00", time_out="02:15"),
+        WorkEntry(id="4", date="2026-03-31", job_shift="Sales", time_in="08:00", time_out=""),
+        WorkEntry(id="5", date="2026-04-01", job_shift="Sales", time_in="09:00", time_out="17:00"),
+    ]
+
+
+def test_range_label():
+    from datetime import date
+    from excel_export import range_label
+    assert range_label(date(2026, 1, 1), date(2026, 12, 31)) == "1.1.–31.12.2026"
+    assert range_label(date(2025, 12, 1), date(2026, 1, 31)) == "1.12.2025–31.1.2026"
+
+
+def test_csv_range_bytes(tmp_path):
+    from datetime import date
+    from excel_export import export_range
+    out = tmp_path / "out.csv"
+    export_range(_range_entries(), date(2026, 3, 1), date(2026, 3, 31), str(out),
+                 kind="csv", include_pay=True, pay_rate=20.0)
+    raw = out.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert raw.decode("utf-8-sig").split("\r\n") == [
+        "Date;Shift;Start;End;Hours;Earnings",
+        "2.3.2026;Support;09:00;16:30;7,50;150,00",
+        "31.3.2026;Sales;08:00;;;",
+        "31.3.2026;Sales;22:00;02:15;4,25;85,00",
+        "",
+    ]
+
+
+def test_csv_without_pay_has_no_earnings(tmp_path):
+    from excel_export import export_csv
+    out = tmp_path / "out.csv"
+    export_csv(_range_entries()[:1], str(out))
+    assert out.read_text(encoding="utf-8-sig").splitlines() == [
+        "Date;Shift;Start;End;Hours", "28.2.2026;Sales;09:00;17:00;8,00"]
+
+
+def test_xlsx_range_is_a_simple_sheet_of_the_range(tmp_path):
+    from datetime import date
+    from excel_export import export_range
+    out = tmp_path / "out.xlsx"
+    export_range(_range_entries(), date(2026, 2, 28), date(2026, 3, 2), str(out), kind="xlsx")
+    wb = load_workbook(str(out))
+    ws = wb.active
+    assert wb.properties.title == "Hours 28.2.–2.3.2026"
+    assert [ws[f"B{r}"].value for r in (2, 3, 4)] == ["Sales", "Support", None]
+
+
 def _full_dates(ws) -> list[str]:
     return [ws[f"A{r}"].value for r in range(13, ws.max_row + 1)
             if isinstance(ws[f"A{r}"].value, str) and ws[f"A{r}"].value[:3].isalpha()]

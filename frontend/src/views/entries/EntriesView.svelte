@@ -43,6 +43,7 @@
     importSummary,
     moveSelection,
     parseEditor,
+    rangeExports,
     weekTotalText,
     type EditField,
   } from './entriesLogic';
@@ -75,6 +76,8 @@
   let importOpen = $state(false);
   let pickerOpen = $state(false);
   let exporting = $state(false);
+  let moreExportBtn = $state<HTMLButtonElement>();
+  let moreExportOpen = $state(false);
   let importing = $state(false);
 
   // ── inline edit (v1.3 EntriesTable) ──────────────────────────────
@@ -314,23 +317,41 @@
     try {
       const target = await pickExportMonth();
       if (!target) return;
-      const r = await api.export_month(target.year, target.month);
-      if (r.ok) {
-        if (r.status === 'saved' && r.path) {
-          if (exportToast !== null) dismiss(exportToast);
-          exportToast = toast(`Timesheet saved to:\n${r.path}`, {
-            tone: 'success',
-            ms: 10000,
-            action: revealExport,
-            label: 'Show in folder',
-            undo: false,
-          });
-        }
-      } else if (r.status === 'error' && r.error.code === 'file_locked') {
-        toast(r.error.message, { tone: 'error', ms: 12000 });
-      } else {
-        await reportError(r, 'Export failed');
+      await showExport(await api.export_month(target.year, target.month), 'Timesheet');
+    } finally {
+      exporting = false;
+    }
+  }
+
+  async function showExport(r: Awaited<ReturnType<typeof api.export_month>>, what: string) {
+    if (r.ok) {
+      if (r.status === 'saved' && r.path) {
+        if (exportToast !== null) dismiss(exportToast);
+        exportToast = toast(`${what} saved to:\n${r.path}`, {
+          tone: 'success',
+          ms: 10000,
+          action: revealExport,
+          label: 'Show in folder',
+          undo: false,
+        });
       }
+    } else if (r.status === 'error' && r.error.code === 'file_locked') {
+      toast(r.error.message, { tone: 'error', ms: 12000 });
+    } else {
+      await reportError(r, 'Export failed');
+    }
+  }
+
+  // more exports: a date range as CSV or one Simple sheet (api.export_range)
+  const moreExports = $derived(rangeExports({ year: $viewMonth.year, month: $viewMonth.month }));
+
+  async function onMoreExportPick(id: string) {
+    const pick = moreExports.find((x) => x.id === id);
+    if (!pick || exporting) return;
+    if (!(await closeEditor(true))) return;
+    exporting = true;
+    try {
+      await showExport(await api.export_range(pick.start, pick.end, pick.kind), 'Hours');
     } finally {
       exporting = false;
     }
@@ -630,11 +651,35 @@
     >
       Export to Excel
     </Button>
+    <Button
+      variant="secondary"
+      size="sm"
+      square
+      icon="chevron-up"
+      label="More exports"
+      bind:el={moreExportBtn}
+      disabled={exporting}
+      aria-haspopup="menu"
+      aria-expanded={moreExportOpen}
+      tooltip="More exports: CSV, a whole year"
+      onclick={() => (moreExportOpen = !moreExportOpen)}
+    />
   </footer>
 </section>
 
 {#if importOpen}
   <Menu anchor={importBtn} items={importItems} label="Import" onselect={onImportPick} onclose={() => (importOpen = false)} />
+{/if}
+
+{#if moreExportOpen}
+  <Menu
+    anchor={moreExportBtn}
+    items={moreExports.map((x) => ({ id: x.id, label: x.label, icon: x.kind === 'csv' ? 'file' : 'upload' }))}
+    label="More exports"
+    placement="top-end"
+    onselect={(id) => void onMoreExportPick(id)}
+    onclose={() => (moreExportOpen = false)}
+  />
 {/if}
 
 {#if pickerOpen}
