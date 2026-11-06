@@ -45,16 +45,22 @@ export function applySettings(s: Settings, sh?: string[]): void {
   if (sh) shifts.set(sh);
 }
 
+let uiPrefsSeq = 0;
+
 /** Instant toggles (Lulz / Lulz sound / Reduce effects / Liquid glass / target hours), outside the Save button. */
 export async function saveUiPrefs(prefs: Partial<UiPrefs>): Promise<boolean> {
+  const seq = ++uiPrefsSeq;
   const before = get(settings);
   settings.set({ ...before, ui_prefs: { ...before.ui_prefs, ...prefs } });
   const r = await api.save_ui_prefs(prefs);
+  // a newer save is in flight (a held zoom key): its reply carries the final
+  // state, so this older one must not roll the store back under it
+  const latest = seq === uiPrefsSeq;
   if (r.ok && r.settings) {
-    applySettings(r.settings);
+    if (latest) applySettings(r.settings);
     return true;
   }
-  settings.set(before);
+  if (latest) settings.set(before);
   toast(r.message ?? (r.status === 'error' ? r.error.message : 'Could not save the setting'), { tone: 'error', ms: 6000 });
   return false;
 }
