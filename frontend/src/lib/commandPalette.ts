@@ -3,6 +3,7 @@ import type { CommandName } from './api/types';
 import { hasCommand } from './shortcuts';
 import { SHORTCUT_LABELS } from './shortcutList';
 import { route } from './stores/app';
+import { month } from './stores/entries';
 import { undoAvailable } from './stores/toasts';
 
 // ── The command palette (Ctrl+K) ────────────────────────────────
@@ -28,7 +29,8 @@ const MAIN_STATS: Route[] = ['main', 'stats'];
 export const PALETTE_ITEMS: PaletteItem[] = [
   { cmd: 'timer.toggle', label: 'Start or stop the timer', keywords: 'clock shift', routes: MAIN_STATS },
   { cmd: 'entry.add', label: 'Add a shift', keywords: 'new entry hours', routes: MAIN },
-  { cmd: 'entry.filter', label: 'Filter the month', keywords: 'search find', routes: MAIN },
+  // the filter box only shows when the month has shifts
+  { cmd: 'entry.filter', label: 'Filter the month', keywords: 'search find', routes: MAIN, when: () => (get(month)?.entries.length ?? 0) > 0 },
   { cmd: 'undo', label: 'Undo', keywords: 'revert', routes: MAIN_STATS, when: () => get(undoAvailable) },
   { cmd: 'export', label: 'Export to Excel', keywords: 'xlsx spreadsheet save', routes: MAIN },
   { cmd: 'import.menu', label: 'Import shifts', keywords: 'excel image open', routes: MAIN },

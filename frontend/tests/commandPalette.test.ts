@@ -83,6 +83,22 @@ describe('availableItems', () => {
     toast('Shift deleted', { action: () => {}, label: 'Undo' });
     expect(availableItems(PALETTE_ITEMS, 'main').map((i) => i.cmd)).toContain('undo');
   });
+
+  it('offers Filter only when the month has shifts to filter', async () => {
+    const { month } = await import('../src/lib/stores/entries');
+    bindAll();
+    const has = () => availableItems(PALETTE_ITEMS, 'main').map((i) => i.cmd).includes('entry.filter');
+    month.set(null);
+    expect(has()).toBe(false);
+    month.set({ year: 2026, month: 11, label: '', pay_rate: 0, entries: [], weeks: [], total_minutes: 0, earnings: 0 });
+    expect(has()).toBe(false);
+    month.set({
+      year: 2026, month: 11, label: '', pay_rate: 0, weeks: [], total_minutes: 480, earnings: 0,
+      entries: [{ id: 'a', date: '2026-11-02', job_shift: 'Sales', time_in: '09:00', time_out: '17:00', minutes: 480, overnight: false, display_date: '', time_out_display: '17:00', week_key: '2026-W45', note: '' }],
+    });
+    expect(has()).toBe(true);
+    month.set(null);
+  });
 });
 
 describe('the palette list', () => {
