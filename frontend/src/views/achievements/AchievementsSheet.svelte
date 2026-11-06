@@ -12,10 +12,12 @@
     medalUrl,
     unlockedCount,
   } from '../../lib/stores/achievements';
+  import { settings } from '../../lib/stores/settings';
   import Button from '../../lib/ui/Button.svelte';
   import Modal from '../../lib/ui/Modal.svelte';
   import Spinner from '../../lib/ui/Spinner.svelte';
-  import { TIERS, TIER_LABEL, progressText, shortDate } from './tiers';
+  import RecordsPanel from './RecordsPanel.svelte';
+  import { TIERS, TIER_LABEL, nextUp, progressText, shortDate } from './tiers';
 
   let { onclose }: { onclose: (r: void) => void } = $props();
 
@@ -26,7 +28,12 @@
     TIERS.map((tier) => ({ tier, list: items.filter((a) => a.tier === tier) })).filter((g) => g.list.length),
   );
 
+  const payRate = $derived($settings.pay_rate);
+  const next = $derived(nextUp(items, payRate));
+
   const secret = (a: Achievement) => a.hidden && !a.met_on;
+  /** Earnings can't move without a pay rate: say how to start them. */
+  const noRate = (a: Achievement) => a.progress.unit === '€' && !(payRate > 0);
   const pct = (a: Achievement) => (a.progress.goal > 0 ? Math.min(100, (a.progress.cur / a.progress.goal) * 100) : 0);
 
   onMount(() => {
@@ -72,9 +79,21 @@
         aria-valuemin={0}
         aria-valuemax={total}
         aria-valuenow={got}
+        aria-valuetext="{got} of {total} unlocked"
       ><span style="width: {total ? (got / total) * 100 : 0}%"></span></span>
     </div>
+    {#if next}
+      <div class="next tier-{next.tier}">
+        <img class="medal" src={medalUrl(next)} alt="" draggable="false" />
+        <div class="info">
+          <span class="label">Next up</span>
+          <span><strong>{next.title}</strong>: {progressText(next.progress.cur, next.progress.goal, next.progress.unit)}</span>
+          <span class="desc">{next.desc}</span>
+        </div>
+      </div>
+    {/if}
     <div class="scroll">
+      <RecordsPanel />
       {#each groups as g, gi (g.tier)}
         <section class="group tier-{g.tier}" aria-labelledby="ach-{g.tier}">
           <h3 id="ach-{g.tier}">
@@ -91,13 +110,16 @@
               >
                 <img class="medal" src={medalUrl(a)} alt="" draggable="false" />
                 <div class="info">
+                  <span class="sr-only">{a.met_on ? 'Unlocked:' : 'Locked:'}</span>
                   <span class="title">{secret(a) ? '???' : a.title}</span>
                   <span class="desc">{secret(a) ? 'Hidden achievement. Keep working to find it.' : a.desc}</span>
                   {#if a.met_on}
                     <span class="date">Unlocked {shortDate(a.met_on)}</span>
+                  {:else if noRate(a)}
+                    <span class="hint">Set your pay rate in Settings to start counting earnings.</span>
                   {:else if !secret(a) && a.progress.goal > 1}
                     <span class="prog">
-                      <span class="track"><span style="width: {pct(a)}%"></span></span>
+                      <span class="track" aria-hidden="true"><span style="width: {pct(a)}%"></span></span>
                       <span class="num">{progressText(a.progress.cur, a.progress.goal, a.progress.unit)}</span>
                     </span>
                   {/if}
@@ -159,6 +181,34 @@
     transition: width var(--dur-slow) var(--ease-out);
   }
 
+  .next {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    border: 1px dashed color-mix(in srgb, var(--tier) 45%, transparent);
+  }
+  .next .medal {
+    width: 40px;
+    height: 40px;
+    filter: grayscale(0.6);
+    opacity: 0.8;
+  }
+  .label {
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--tier) 75%, var(--text));
+  }
+  .hint {
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
   .scroll {
     max-height: min(60vh, 560px);
     overflow: auto;
@@ -167,7 +217,8 @@
     flex-direction: column;
     gap: 18px;
   }
-  .group {
+  .group,
+  .next {
     --tier: #d08a4a;
   }
   .tier-silver {

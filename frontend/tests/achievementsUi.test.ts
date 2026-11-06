@@ -2,9 +2,9 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { get } from 'svelte/store';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Achievement } from '../src/lib/api/types';
+import type { Achievement, EntryRow, RecordsData } from '../src/lib/api/types';
 
-const fakeApi = vi.hoisted(() => ({ get_achievements: vi.fn(), ack_achievements: vi.fn() }));
+const fakeApi = vi.hoisted(() => ({ get_achievements: vi.fn(), ack_achievements: vi.fn(), get_records: vi.fn() }));
 
 vi.mock('../src/lib/api/bridge', () => ({ api: fakeApi, ready: Promise.resolve(), isMock: true }));
 vi.mock('../src/lib/stores/entries', async () => {
@@ -20,6 +20,8 @@ vi.mock('../src/lib/stores/settings', async () => {
 const ach = await import('../src/lib/stores/achievements');
 const AchievementUnlock = (await import('../src/views/achievements/AchievementUnlock.svelte')).default;
 const AchievementsSheet = (await import('../src/views/achievements/AchievementsSheet.svelte')).default;
+const { settings } = await import('../src/lib/stores/settings');
+const { nextUp } = await import('../src/views/achievements/tiers');
 
 function item(id: string): Achievement {
   return {
@@ -34,11 +36,20 @@ function item(id: string): Achievement {
   };
 }
 const card = () => document.querySelector('.unlock');
+const NO_RECORDS: RecordsData = {
+  total_shifts: 0, first_shift_date: null, days_since_first: null, longest_shift: null, best_day: null,
+  best_week: null, most_shifts_week: null, best_month: null, earliest_start: null, latest_finish: null,
+  streak: { current: 0, best: 0 },
+};
+const row = (date: string, time_in: string, time_out: string) =>
+  ({ id: date, date, job_shift: 'Sales', time_in, time_out }) as EntryRow;
 
 beforeEach(() => {
   fakeApi.get_achievements.mockReset();
   fakeApi.ack_achievements.mockReset().mockResolvedValue({ ok: true, status: 'ok' });
+  fakeApi.get_records.mockReset().mockResolvedValue({ ok: true, status: 'ok', ...NO_RECORDS });
   ach.resetAchievementsSession();
+  settings.update((st) => ({ ...st, pay_rate: 20 }));
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -174,5 +185,99 @@ describe('AchievementsSheet', () => {
     render(AchievementsSheet, { onclose: () => {} });
     expect(await screen.findByText('Title s_b')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  });
+
+  it('shows the Hall of fame from get_records, and re-asks with achievements', async () => {
+    ach.achievements.set({ items: [item('h_a')], newly: [], first_run: false });
+    fakeApi.get_records.mockResolvedValueOnce({
+      ok: true, status: 'ok', ...NO_RECORDS, total_shifts: 12, first_shift_date: '2026-03-02', days_since_first: 240,
+      longest_shift: { entry: row('2026-10-07', '18:00', '04:30'), minutes: 630 },
+      best_week: { key: '2026-W41', start: '2026-10-05', minutes: 2580 },
+      latest_finish: { entry: row('2026-10-07', '18:00', '04:30'), time: '04:30', next_day: true },
+      streak: { current: 0, best: 4 },
+    });
+    render(AchievementsSheet, { onclose: () => {} });
+    const panel = await screen.findByRole('region', { name: 'Hall of fame' });
+    expect(panel.textContent).toContain('Longest shift');
+    expect(panel.textContent).toContain('10h 30m');
+    expect(panel.textContent).toContain('7.10.2026 · Sales');
+    expect(panel.textContent).toContain('Week 41, from 5.10.2026');
+    expect(panel.textContent).toContain('04:30 +1');
+    expect(panel.textContent).toContain('4 workdays');
+    expect(panel.textContent).toContain('2.3.2026');
+    expect(panel.textContent).not.toContain('Best month');
+
+    ach.achievements.set({ items: [item('h_a'), item('h_b')], newly: [], first_run: false });
+    await vi.waitFor(() => expect(fakeApi.get_records).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Your records show up here after your first shift.')).toBeTruthy();
+  });
+
+  it('leaves the Hall of fame out when get_records fails', async () => {
+    fakeApi.get_records.mockReset().mockRejectedValue(new Error('bridge gone'));
+    ach.achievements.set({ items: [item('h_c')], newly: [], first_run: false });
+    render(AchievementsSheet, { onclose: () => {} });
+    expect(await screen.findByText('Title h_c')).toBeTruthy();
+    await tick();
+    expect(screen.queryByRole('region', { name: 'Hall of fame' })).toBeNull();
+  });
+});
+
+const locked = (id: string, cur: number, goal: number, more: Partial<Achievement> = {}): Achievement => ({
+  ...item(id),
+  met_on: null,
+  progress: { cur, goal, unit: 'h' },
+  ...more,
+});
+
+describe('nextUp', () => {
+  it('picks the locked badge closest to its goal, the lower tier on a tie', () => {
+    const items = [
+      item('done'),
+      locked('far', 10, 100),
+      locked('near_gold', 80, 100),
+      locked('near_silver', 8, 10, { tier: 'silver' }),
+      locked('secret', 99, 100, { hidden: true }),
+      locked('binary', 0, 1),
+    ];
+    expect(nextUp(items, 20)?.id).toBe('near_silver');
+    expect(nextUp(items.slice(0, 2), 20)?.id).toBe('far');
+  });
+
+  it('skips untouched badges, and earnings without a pay rate', () => {
+    const cash = locked('cash', 900, 1000, { progress: { cur: 900, goal: 1000, unit: '€' } });
+    expect(nextUp([locked('zero', 0, 10), cash], 20)?.id).toBe('cash');
+    expect(nextUp([locked('zero', 0, 10), cash], 0)).toBeNull();
+  });
+});
+
+describe('AchievementsSheet extras', () => {
+  it('shows the next-up strip, and a pay rate hint on earnings when the rate is 0', async () => {
+    const cash = locked('cash', 0, 1000, { title: 'Cash', progress: { cur: 0, goal: 1000, unit: '€' } });
+    ach.achievements.set({ items: [item('x_done'), locked('x_next', 40, 100, { title: 'Hundred' }), cash], newly: [], first_run: false });
+    settings.update((st) => ({ ...st, pay_rate: 0 }));
+    render(AchievementsSheet, { onclose: () => {} });
+    const strip = await vi.waitFor(() => {
+      const el = document.querySelector('.next');
+      if (!el) throw new Error('no strip');
+      return el;
+    });
+    expect(strip.textContent).toContain('Next up');
+    expect(strip.textContent).toContain('Hundred');
+    expect(strip.textContent).toContain('40 / 100 h');
+    expect(screen.getByText('Set your pay rate in Settings to start counting earnings.')).toBeTruthy();
+
+    settings.update((st) => ({ ...st, pay_rate: 20 }));
+    await tick();
+    expect(screen.queryByText('Set your pay rate in Settings to start counting earnings.')).toBeNull();
+  });
+
+  it('tells screen readers what is locked and how many are unlocked', async () => {
+    ach.achievements.set({ items: [item('y_done'), locked('y_locked', 3, 10)], newly: [], first_run: false });
+    render(AchievementsSheet, { onclose: () => {} });
+    const bar = await screen.findByRole('progressbar', { name: 'Achievements unlocked' });
+    expect(bar.getAttribute('aria-valuetext')).toBe('1 of 2 unlocked');
+    const cards = [...document.querySelectorAll('.card')];
+    expect(cards.map((c) => c.querySelector('.sr-only')?.textContent)).toEqual(['Unlocked:', 'Locked:']);
+    expect(cards[1].querySelector('.track')?.getAttribute('aria-hidden')).toBe('true');
   });
 });

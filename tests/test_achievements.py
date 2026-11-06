@@ -25,9 +25,10 @@ def _days(start, n, t_in="08:00", t_out="16:00"):
 def test_catalogue_ids_unique_and_have_medals():
     import os
     ids = [a["id"] for a in CATALOGUE]
-    assert len(ids) == len(set(ids)) == 17
+    assert len(ids) == len(set(ids)) == 28
     medals = os.path.join(os.path.dirname(__file__), "..", "frontend", "src", "assets", "medals")
-    for name in ids + [f"hidden_{t}" for t in achievements.TIERS]:
+    icons = [a.get("icon", a["id"]) for a in CATALOGUE]
+    for name in icons + [f"hidden_{t}" for t in achievements.TIERS]:
         assert os.path.exists(os.path.join(medals, f"{name}.webp")), name
     assert {a["tier"] for a in CATALOGUE} == set(achievements.TIERS)
 
@@ -334,7 +335,105 @@ def test_newly_excludes_seen_and_unmet():
 def test_hidden_flags():
     hidden = {a["id"] for a in CATALOGUE if a.get("hidden")}
     assert hidden == {"first_overnight", "early_bird", "night_owl", "marathon_12h",
-                      "lulz_inferno", "lulz_blue_overtime"}
+                      "lulz_inferno", "lulz_blue_overtime", "friday_13", "leet",
+                      "double_header", "joulu", "no_days_off", "one_year"}
     # Every tier has at least one hidden achievement (for its hidden_<tier> medal).
     assert {a["tier"] for a in CATALOGUE if a.get("hidden")} == set(achievements.TIERS)
     assert {i["id"] for i in evaluate([], today=TODAY) if i["hidden"]} == hidden
+
+
+# ── more milestones (#88) ────────────────────────────────────────────────────
+
+def test_reused_medal_icons():
+    a = _by_id([])
+    assert a["hours_250"]["icon"] == "hours_100"
+    assert a["streak_10"]["icon"] == "streak_5"
+    assert a["first_shift"]["icon"] == "first_shift"
+
+
+def test_hours_250_and_2500_thresholds():
+    # 32 days x 8 h = 256 h; the 250 h mark is crossed on the 32nd day
+    entries = [_e(date(2025, 1, 1) + timedelta(days=k), "08:00", "16:00") for k in range(32)]
+    a = _by_id(entries)
+    assert a["hours_250"]["met_on"] == "2025-02-01"
+    assert a["hours_2500"]["met_on"] is None
+    assert a["hours_2500"]["progress"] == {"cur": 256.0, "goal": 2500, "unit": "h"}
+
+
+def test_centurion_on_the_100th_shift():
+    entries = [_e(date(2026, 1, 1) + timedelta(days=k), "08:00", "09:00") for k in range(99)]
+    a = _by_id(entries)
+    assert a["shifts_100"]["met_on"] is None and a["shifts_100"]["progress"]["cur"] == 99
+    # a second shift on the last day is the 100th
+    a = _by_id(entries + [_e("2026-04-09", "10:00", "11:00")])
+    assert a["shifts_100"]["met_on"] == "2026-04-09"
+
+
+def test_streak_10_spans_weekends():
+    # Mon 5 Oct to Fri 16 Oct: 10 workdays
+    entries = _days(MON, 12)
+    a = _by_id(entries)
+    assert a["streak_10"]["met_on"] == "2026-10-16"
+    a = _by_id(_days(MON, 11))  # up to Thu 15 Oct: 9 workdays
+    assert a["streak_10"]["met_on"] is None and a["streak_10"]["progress"]["cur"] == 9
+
+
+def test_weeks_12_in_a_row():
+    mondays = [MON - timedelta(weeks=k) for k in range(12)]
+    a = _by_id([_e(d, "08:00", "09:00") for d in mondays])
+    assert a["weeks_12"]["met_on"] == MON.isoformat()
+    a = _by_id([_e(d, "08:00", "09:00") for d in mondays[:-1]])
+    assert a["weeks_12"]["met_on"] is None and a["weeks_12"]["progress"]["cur"] == 11
+
+
+# ── calendar Easter eggs (#89) ───────────────────────────────────────────────
+
+def test_friday_13():
+    assert _by_id([_e("2026-11-13", "08:00", "09:00")], today=date(2026, 11, 30))["friday_13"]["met_on"] \
+        == "2026-11-13"
+    # Thursday the 13th and Friday the 14th don't count
+    a = _by_id([_e("2026-08-13", "08:00", "09:00"), _e("2026-08-14", "08:00", "09:00")])
+    assert a["friday_13"]["met_on"] is None
+
+
+def test_overnight_from_thursday_12th_is_not_friday_13():
+    # counts on its start date, so running into Friday the 13th doesn't count
+    assert _by_id([_e("2026-11-12", "22:00", "06:00")], today=date(2026, 11, 30))["friday_13"]["met_on"] is None
+
+
+def test_joulu_christmas_eve_to_boxing_day():
+    late = date(2027, 1, 31)
+    for d, met in (("2026-12-23", False), ("2026-12-24", True), ("2026-12-25", True),
+                   ("2026-12-26", True), ("2026-12-27", False)):
+        a = _by_id([_e(d, "10:00", "14:00")], today=late)
+        assert (a["joulu"]["met_on"] == d) is met, d
+
+
+def test_leet_needs_exactly_13_37():
+    assert _by_id([_e(MON, "13:37", "18:00")])["leet"]["met_on"] == MON.isoformat()
+    assert _by_id([_e(MON, "13:36", "18:00"), _e(MON + timedelta(days=1), "13:38", "18:00")])["leet"]["met_on"] \
+        is None
+
+
+def test_double_header():
+    a = _by_id([_e(MON, "08:00", "12:00"), _e(MON + timedelta(days=1), "08:00", "12:00")])
+    assert a["double_header"]["met_on"] is None
+    a = _by_id([_e(MON, "08:00", "12:00"), _e(MON, "17:00", "21:00")])
+    assert a["double_header"]["met_on"] == MON.isoformat()
+
+
+def test_no_days_off_needs_one_whole_iso_week():
+    # Mon 5 to Sun 11 Oct
+    assert _by_id(_days(MON, 7))["no_days_off"]["met_on"] == "2026-10-11"
+    # seven days in a row but Wed to Tue: two weeks, never all seven in one
+    a = _by_id(_days(MON + timedelta(days=2), 7))
+    assert a["no_days_off"]["met_on"] is None
+    assert a["no_days_off"]["progress"]["cur"] == 5
+
+
+def test_one_year_after_the_first_shift():
+    first = date(2025, 10, 5)
+    a = _by_id([_e(first, "08:00", "09:00"), _e(first + timedelta(days=364), "08:00", "09:00")])
+    assert a["one_year"]["met_on"] is None and a["one_year"]["progress"]["cur"] == 364
+    a = _by_id([_e(first, "08:00", "09:00"), _e(first + timedelta(days=365), "08:00", "09:00")])
+    assert a["one_year"]["met_on"] == (first + timedelta(days=365)).isoformat()

@@ -7,7 +7,7 @@ import { petStats } from '../../lib/stores/pet';
 import { elapsedSeconds, timer } from '../../lib/stores/timer';
 import { ringProgress } from '../timer/timerLogic';
 import { wallClock } from '../timer/timerActions';
-import { energy, level, petName, petPose, type Energy, type Level, type PetPose } from './petLogic';
+import { currentStreak, energy, level, petName, petPose, type Energy, type Level, type PetPose } from './petLogic';
 import { activeSkin, SKIN_ART, unlockedBetween, type PetSkin, type SkinInfo } from './petSkins';
 
 export interface PetView {
@@ -21,6 +21,10 @@ export interface PetView {
   skin: PetSkin;
   /** Holding the after-shift bazooka (rollBazooka): only while awake. */
   bazooka: boolean;
+  /** A running shift is at or past today's target. */
+  overtime: boolean;
+  /** Workdays at target in a row up to today, the running shift included (0 until the stats arrive). */
+  streak: number;
 }
 
 /** How often a saved shift brings out the bazooka, and for how long. */
@@ -104,7 +108,8 @@ export const petView: Readable<PetView> = derived(
       carry = null;
     }
     const lvl = stats ? level(stats.lifetime_minutes) : null;
-    const pose = petPose({ running, progress: running ? ringProgress($elapsed, target) : 0, now, stats });
+    const progress = running ? ringProgress($elapsed, target) : 0;
+    const pose = petPose({ running, progress, now, stats });
     return {
       kind,
       name: petName(kind, $s.ui_prefs.pet_name),
@@ -113,6 +118,8 @@ export const petView: Readable<PetView> = derived(
       level: lvl,
       skin: activeSkin($s.ui_prefs.pet_skin, rememberLevel(lvl?.level ?? null)),
       bazooka: $bazooka && pose === 'idle',
+      overtime: progress >= 1,
+      streak: stats ? currentStreak(stats.days, target, now) : 0,
     };
   },
 );

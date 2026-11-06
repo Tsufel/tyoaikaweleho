@@ -1153,6 +1153,15 @@ class ShiftController:
             entries = storage.load_all_entries()
         return R.ok(**achievements.pet_stats(entries, self._now().date()))
 
+    # Personal records (Hall of fame in the Achievements sheet).
+    def get_records(self) -> dict:
+        """Personal records derived from the entries (records.py). Read-only."""
+        import records
+        with self._lock:
+            entries = storage.load_all_entries()
+            target = storage.get_ui_prefs()["target_hours"]
+        return R.ok(**records.records(entries, target, self._now().date()))
+
     # ── import / export / OCR ────────────────────────────────────
 
     @staticmethod

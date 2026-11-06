@@ -74,3 +74,21 @@ def test_span_covers_every_stored_entry():
     assert span([_e("2026-09-24", "09:00", "")]) == ("2026-09-24", "2026-09-24")
     assert span([]) == (None, None)
     assert span([_e("bad-date", "09:00", "11:00")]) == (None, None)
+
+
+def test_zero_length_entries_are_not_shifts():
+    entries = [_e("2026-09-21", "09:00", "09:00"),    # zero length
+               _e("2026-09-21", "09:00", "xx:yy"),    # unreadable time
+               _e("2026-09-22", "10:00", "11:00", "Support")]
+    s = summarize(entries, date(2026, 9, 21), date(2026, 9, 22), "day", 20.0)
+    assert s["totals"] == {"minutes": 60, "earnings": 20.0, "shifts": 1, "worked_days": 1}
+    assert [b["shifts"] for b in s["buckets"]] == [0, 1]
+    assert [r["job_shift"] for r in s["by_shift"]] == ["Support"]
+    assert s["longest"]["minutes"] == 60
+
+
+def test_only_zero_length_entries_have_no_longest():
+    s = summarize([_e("2026-09-21", "09:00", "09:00")], date(2026, 9, 21), date(2026, 9, 21),
+                  "day", 20.0)
+    assert s["totals"]["shifts"] == 0 and s["longest"] is None and s["by_shift"] == []
+    assert s["open_entries"] == 0

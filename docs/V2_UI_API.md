@@ -192,6 +192,7 @@ The current shift must never be lost:
 | `get_achievements()` | — | `R<{items: Achievement[], newly: string[], first_run: boolean}>` (§10.1). Read-only |
 | `ack_achievements(ids)` | `string[]` of catalogue ids | `R<{}>`; stores the met ones (unmet ids are skipped; `[]` still ends the first run); `invalid(field:'ids')` for anything else; `save_failed` |
 | `get_pet_stats()` | — | `R<{lifetime_minutes, days: {IsoDate: minutes}}>` (§10.2). Read-only |
+| `get_records()` | — | `R<RecordsData>` (§10.3): personal records for the Hall of fame. Read-only |
 
 ### Import / export / OCR
 | method | params | returns |
@@ -484,11 +485,13 @@ StatsData = { start, end, granularity, pay_rate,
 Bucket keys: day `2026-10-29` (label "Thu 29"), week `2026-W44` (label "W44",
 start = Monday), month `2026-10` (label "Oct 2026"). An entry belongs to its
 start date's bucket. `worked_days` = distinct dates with minutes > 0.
+Zero-length entries (`time_in == time_out`, or unreadable times) are skipped:
+they are neither shifts nor `longest`, as for achievements.
 
 ### 10.1 `get_achievements` payload
 
 ```ts
-Achievement = { id, title, desc, icon,          // icon = id = medal file in assets/medals
+Achievement = { id, title, desc, icon,          // medal file in assets/medals (the id, or an earlier medal reused)
   tier: 'bronze'|'silver'|'gold'|'legendary',
   hidden,                                       // show "???" + hidden_<tier> medal until met
   progress: {cur, goal, unit},                  // unit: shifts|h|days|weeks|€; cur ≤ goal
@@ -516,6 +519,30 @@ from it (`views/pet/petLogic.ts`): energy = hours in the last 7 days ÷ (target 
 usual workdays in those 7 days), usual workdays being the weekdays worked on at
 least twice in the 8 weeks; level n needs 10·(n−1)^1.5 lifetime hours (level 1 at 0 h); the running
 timer adds its elapsed time live. It refreshes on the same triggers as achievements.
+
+### 10.3 `get_records` payload
+
+```ts
+RecordsData = { total_shifts, first_shift_date: IsoDate|null, days_since_first: number|null,
+  longest_shift: {entry: EntryRow, minutes} | null,
+  best_day: {date: IsoDate, minutes} | null,
+  best_week: {key: '2026-W44', start: IsoDate /* Monday */, minutes} | null,
+  most_shifts_week: {key, start, shifts} | null,
+  best_month: {key: '2026-10', minutes} | null,
+  earliest_start: {entry: EntryRow, time: 'HH:MM'} | null,
+  latest_finish: {entry: EntryRow, time: 'HH:MM', next_day: boolean} | null,
+  streak: {current, best} }                     // workdays at target in a row
+```
+Derived from the stored entries every call (`records.py`), nothing stored. The
+shifts counted are the ones achievements count: closed, readable, not
+zero-length, not dated after today, each on its start date (so an overnight
+shift's 02:40 finish is `next_day` and beats a 23:00 one). Ties go to the
+earliest. Weeks are ISO weeks, so one can span two months or two years.
+`streak` follows `streak_5`'s rules with the `target_hours` UI pref: Mon–Fri
+only, weekends neither count nor break it, a weekday below target breaks it,
+and today doesn't break `current` before it is done. Every record is `null`
+(streaks 0) until something counts. The Achievements sheet shows it as the
+Hall of fame and asks on the same triggers as achievements.
 
 ## 11. Events (Python → JS)
 
