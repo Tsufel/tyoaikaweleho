@@ -21,12 +21,12 @@
   import { achievements, medalUrl, openAchievements, unlockedCount } from '../../lib/stores/achievements';
   import { timer } from '../../lib/stores/timer';
   import { fade, fly, stagger } from '../../lib/motion';
-  import { formatDuration, formatMoney, fromIsoDate } from '../../lib/time';
+  import { formatDuration, formatMoney, fromIsoDate, toIsoDate } from '../../lib/time';
   import { Button, CalendarPopover, GlassCard, Icon, Segmented, Spinner, tooltip } from '../../lib/ui';
   import AreaChart from '../../charts/AreaChart.svelte';
   import BarChart from '../../charts/BarChart.svelte';
   import DonutChart from '../../charts/DonutChart.svelte';
-  import { bucketTargets, shiftSlices } from '../../charts/chartUtils';
+  import { bucketTargets, cumulative, earningsModel, shiftSlices, type DailyEarnings } from '../../charts/chartUtils';
   import KpiTile from './KpiTile.svelte';
   import {
     GRANULARITIES,
@@ -38,8 +38,11 @@
     granularityAllowed,
     periodTitle,
     presetRange,
+    previousPeriod,
     shiftRange,
+    shortDate,
     validateRange,
+    type PreviousPeriod,
   } from './ranges';
 
   let preset = $state<Preset>(memory.preset);
@@ -89,6 +92,10 @@
 
   // ── data ───────────────────────────────────────────────────────
   let data = $state<StatsData | null>(null);
+  /** The period before, for the earnings comparison; null when there is none or it failed. */
+  let prev = $state<{ data: StatsData; period: PreviousPeriod } | null>(null);
+  /** Day-level buckets of a running period grouped by week or month: "at this point" is then exact. */
+  let daily = $state<DailyEarnings | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let seq = 0;
@@ -97,11 +104,25 @@
     if (rangeError || (preset === 'all' && !span)) return;
     const mySeq = ++seq;
     loading = true;
-    const r = await api.get_stats(range.start, range.end, granularity);
+    const period = previousPeriod(preset, offset, range);
+    const today = toIsoDate(new Date());
+    const running = granularity !== 'day' && range.start <= today && today <= range.end;
+    const none = Promise.resolve(null);
+    const [r, pr, rd, prd] = await Promise.all([
+      api.get_stats(range.start, range.end, granularity),
+      period ? api.get_stats(period.range.start, period.range.end, granularity) : none,
+      running ? api.get_stats(range.start, range.end, 'day') : none,
+      running && period ? api.get_stats(period.range.start, period.range.end, 'day') : none,
+    ]);
     if (mySeq !== seq) return;
     loading = false;
     if (r.ok && r.data) {
       data = r.data;
+      prev = period && pr?.ok && pr.data ? { data: pr.data, period } : null;
+      daily =
+        rd?.ok && rd.data
+          ? { current: rd.data.buckets, previous: prev && prd?.ok && prd.data ? prd.data.buckets : null }
+          : null;
       error = null;
     } else {
       error = r.status === 'error' ? r.error.message : (r.message ?? 'Could not load stats.');
@@ -178,6 +199,32 @@
   );
 
   let showTable = $state(false);
+
+  // ── earnings running total ─────────────────────────────────────
+  const earn = $derived(
+    data ? earningsModel(
+          data.buckets,
+          data.start,
+          data.end,
+          toIsoDate(new Date()),
+          prev?.data.buckets ?? null,
+          span?.first ?? null,
+          data.granularity === 'day' ? { current: data.buckets, previous: prev?.data.buckets ?? null } : daily,
+        )
+      : null,
+  );
+  /** The chart only has room for the pace line when today is not in the last bucket. */
+  const paceDrawn = $derived(!!data && !!earn && earn.projected !== null && earn.elapsed < data.buckets.length - 1);
+  const earnCompare = $derived.by(() => {
+    if (!data || !earn || earn.previousAt === null || !prev) return null;
+    const diff = Math.round((earn.now - earn.previousAt) * 100) / 100;
+    const who = prev.period.phrase;
+    const when = earn.over ? '' : ' at this point';
+    if (diff === 0) return { tone: 'even', amount: '', text: `Level with ${who}${when}` };
+    if (earn.over) return { tone: diff > 0 ? 'up' : 'down', amount: formatMoney(Math.abs(diff)), text: `${diff > 0 ? 'more' : 'less'} than ${who}` };
+    return { tone: diff > 0 ? 'up' : 'down', amount: formatMoney(Math.abs(diff)), text: `${diff > 0 ? 'ahead of' : 'behind'} ${who}${when}` };
+  });
+  const runningTotals = $derived(data ? cumulative(data.buckets.map((b) => b.earnings)) : []);
 
   // ── pickers ────────────────────────────────────────────────────
   let startBtn = $state<HTMLButtonElement>();
@@ -427,14 +474,15 @@
               <div class="table-wrap" in:fade>
                 <table>
                   <thead>
-                    <tr><th scope="col">{unitWord[0].toUpperCase() + unitWord.slice(1)}</th><th scope="col">Hours</th><th scope="col">Earnings</th><th scope="col">Shifts</th></tr>
+                    <tr><th scope="col">{unitWord[0].toUpperCase() + unitWord.slice(1)}</th><th scope="col">Hours</th><th scope="col">Earnings</th><th scope="col">Running total</th><th scope="col">Shifts</th></tr>
                   </thead>
                   <tbody>
-                    {#each data.buckets as b (b.key)}
+                    {#each data.buckets as b, i (b.key)}
                       <tr class:zero={b.minutes === 0}>
                         <th scope="row">{b.label}</th>
                         <td class="num">{formatDuration(b.minutes)}</td>
                         <td class="num">{formatMoney(b.earnings)}</td>
+                        <td class="num">{formatMoney(runningTotals[i] ?? 0)}</td>
                         <td class="num">{b.shifts}</td>
                       </tr>
                     {/each}
@@ -443,6 +491,7 @@
                     <tr>
                       <th scope="row">Total</th>
                       <td class="num">{formatDuration(data.totals.minutes)}</td>
+                      <td class="num">{formatMoney(data.totals.earnings)}</td>
                       <td class="num">{formatMoney(data.totals.earnings)}</td>
                       <td class="num">{data.totals.shifts}</td>
                     </tr>
@@ -466,7 +515,35 @@
               <h3 id="stats-earn">Earnings, running total</h3>
               <span class="big num">{formatMoney(data.totals.earnings)}</span>
             </div>
-            <AreaChart buckets={data.buckets} label="Running total of earnings, {formatRange(range)}" />
+            {#if earn && (earnCompare || earn.projected !== null)}
+              <p class="earn-meta">
+                {#if earnCompare}
+                  <span class="cmp {earnCompare.tone}">
+                    {#if earnCompare.amount}
+                      <Icon name={earnCompare.tone === 'up' ? 'chevron-up' : 'chevron-down'} size={13} />
+                      <b class="num">{earnCompare.amount}</b>
+                    {/if}
+                    {earnCompare.text}
+                  </span>
+                {/if}
+                {#if earn.projected !== null}
+                  <span class="pace-note">On pace for <b class="num">{formatMoney(earn.projected)}</b> by {shortDate(data.end)}</span>
+                {/if}
+              </p>
+            {/if}
+            {#if earn}
+              <span class="legend-inline earn-legend" aria-hidden="true">
+                <span class="key line-key"></span>Earned
+                {#if paceDrawn}<span class="key pace-key"></span>Pace{/if}
+                {#if earn.previous && prev && data.buckets.length > 1}<span class="key prev-key"></span>{prev.period.name}{/if}
+              </span>
+              <AreaChart
+                buckets={data.buckets}
+                model={earn}
+                previousName={prev?.period.name}
+                label="Running total of earnings, {formatRange(range)}"
+              />
+            {/if}
           </GlassCard>
         </div>
 
@@ -770,6 +847,53 @@
   .target-key {
     width: 16px;
     border-top: 2px dashed var(--chart-target);
+  }
+  .earn-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 16px;
+    margin: -4px 0 8px;
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+  }
+  .earn-meta b {
+    color: var(--text);
+    font-weight: 650;
+  }
+  .cmp {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .cmp.up,
+  .cmp.up b {
+    color: var(--success-text);
+  }
+  .cmp.down,
+  .cmp.down b {
+    color: var(--danger-text);
+  }
+  .earn-legend {
+    display: flex;
+    margin: 0 0 2px -8px;
+  }
+  .line-key {
+    width: 16px;
+    height: 3px;
+    border-radius: 2px;
+    background: linear-gradient(90deg, var(--chart-line-a), var(--chart-line-b));
+  }
+  .pace-key {
+    width: 16px;
+    border-top: 2px dashed var(--chart-line-b);
+  }
+  .prev-key {
+    width: 16px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--text-subtle);
+    opacity: 0.7;
   }
 
   .table-wrap {

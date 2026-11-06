@@ -186,3 +186,133 @@ export function stepIndex(key: string, i: number | null, n: number, page = 7): n
   }
   return null;
 }
+
+// ── earnings running total ────────────────────────────────────────
+
+const dayNumber = (iso: string): number | null => {
+  const d = fromIsoDate(iso);
+  return d ? Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86_400_000) : null;
+};
+
+export interface EarningsModel {
+  /** Running total per bucket. */
+  totals: number[];
+  /** Last bucket drawn as earned (today's, or a later one with shifts); -1 before the period starts. */
+  elapsed: number;
+  /** The period is over: comparisons are between whole periods. */
+  over: boolean;
+  /** Period-end total at the pace so far; null when the period is over, barely begun or has later shifts. */
+  projected: number | null;
+  /** Earned so far: up to today (or the latest shift dated ahead), all of it once the period is over. */
+  now: number;
+  /** Previous period's running total, matched by position (day 1 with day 1) and ending on its own
+   *  total; null when it earned nothing. */
+  previous: number[] | null;
+  /** Previous period's total at the same point as `now` (all of it once this one is over). */
+  previousAt: number | null;
+}
+
+/** Day-level buckets of both periods, so "at this point" is exact when the chart groups by week or month. */
+export interface DailyEarnings {
+  current: StatsBucket[];
+  previous: StatsBucket[] | null;
+}
+
+/** A pace needs this much of the period behind it: 2 days of a week, 6 of a month. */
+export function paceReady(elapsedDays: number, totalDays: number): boolean {
+  return elapsedDays >= Math.max(2, Math.ceil(totalDays * 0.2)) && elapsedDays < totalDays;
+}
+
+/**
+ * What the earnings card draws: the line stops at today (days ahead are not
+ * earned yet), a straight-line pace to the period end, and the previous
+ * period for comparison.
+ */
+export function earningsModel(
+  buckets: StatsBucket[],
+  start: string,
+  end: string,
+  today: string,
+  prevBuckets: StatsBucket[] | null = null,
+  /** First stored shift: the pace counts from there when it falls inside the period. */
+  since: string | null = null,
+  /** Day-level buckets; without them a week or month bucket counts as a whole. */
+  daily: DailyEarnings | null = null,
+): EarningsModel {
+  const totals = cumulative(buckets.map((b) => b.earnings));
+  const n = buckets.length;
+  const over = today > end;
+  // the first week or month bucket can start before the range itself
+  const started = today >= start;
+  let todayIdx = -1;
+  if (over) todayIdx = n - 1;
+  else if (started) for (let i = 0; i < n && buckets[i].start <= today; i++) todayIdx = i;
+  let lastEarn = -1;
+  buckets.forEach((b, i) => {
+    if (b.earnings > 0) lastEarn = i;
+  });
+  const elapsed = Math.max(todayIdx, lastEarn);
+
+  const first = dayNumber(start);
+  const e = dayNumber(end);
+  const t = dayNumber(today);
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+
+  // "this point": today, or the latest shift dated ahead of it
+  let now = elapsed >= 0 ? totals[elapsed] : 0;
+  let cut: number | null = null;
+  let ahead = lastEarn > todayIdx;
+  if (over) now = totals[n - 1] ?? 0;
+  else if (daily && first !== null && t !== null) {
+    let last: number | null = null;
+    for (const b of daily.current) {
+      const d = dayNumber(b.start);
+      if (d !== null && b.earnings > 0 && (last === null || d > last)) last = d;
+    }
+    ahead = last !== null && last > t;
+    cut = ahead && last !== null ? last : t;
+    let sum = 0;
+    for (const b of daily.current) {
+      const d = dayNumber(b.start);
+      if (d !== null && d >= first && d <= cut) sum += b.earnings;
+    }
+    now = r2(sum);
+  }
+
+  let projected: number | null = null;
+  const from = since ? dayNumber(since) : null;
+  const s = first !== null && from !== null && from > first ? from : first;
+  if (s !== null && e !== null && t !== null && !over && t >= s && !ahead && now > 0) {
+    const done = t - s + 1;
+    if (paceReady(done, e - s + 1)) projected = r2(now + (now * (e - t)) / done);
+  }
+
+  let previous: number[] | null = null;
+  let previousAt: number | null = null;
+  if (prevBuckets?.length && n) {
+    const pt = cumulative(prevBuckets.map((b) => b.earnings));
+    const full = pt[pt.length - 1];
+    if (full > 0) {
+      previous = Array.from({ length: n }, (_, i) => pt[Math.min(i, pt.length - 1)]);
+      // a longer period before still ends on its total, the figure the text compares against
+      previous[n - 1] = full;
+      if (over) previousAt = full;
+      else if (cut !== null && first !== null && daily?.previous?.length) {
+        const p0 = dayNumber(daily.previous[0].start);
+        let sum = 0;
+        for (const b of daily.previous) {
+          const d = dayNumber(b.start);
+          if (p0 !== null && d !== null && d - p0 <= cut - first) sum += b.earnings;
+        }
+        previousAt = r2(sum);
+      } else if (elapsed >= 0) previousAt = previous[elapsed];
+    }
+  }
+  return { totals, elapsed, over, projected, now, previous, previousAt };
+}
+
+/** Pace line value at bucket `i` (past `elapsed`), straight from today's total to the projection. */
+export function paceAt(i: number, elapsed: number, n: number, from: number, to: number): number {
+  if (i <= elapsed || n - 1 <= elapsed) return from;
+  return from + ((to - from) * (i - elapsed)) / (n - 1 - elapsed);
+}

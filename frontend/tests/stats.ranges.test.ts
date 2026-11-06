@@ -9,7 +9,9 @@ import {
   granularityAllowed,
   periodTitle,
   presetRange,
+  previousPeriod,
   shiftRange,
+  shortDate,
   spanDays,
   validateRange,
 } from '../src/views/stats/ranges';
@@ -131,5 +133,44 @@ describe('labels', () => {
     expect(periodTitle('week', -1, presetRange('week', today, -1))).toBe('Last week');
     expect(periodTitle('custom', 0, m(0))).toBe('Custom range');
     expect(periodTitle('all', 0, m(0))).toBe('All time');
+  });
+});
+
+describe('previousPeriod', () => {
+  it('steps back one period, named for the sentence and the legend', () => {
+    const month = presetRange('month', today);
+    expect(previousPeriod('month', 0, month)).toEqual({
+      range: { start: '2026-09-01', end: '2026-09-30' },
+      name: 'September',
+      phrase: 'September',
+    });
+    const jan = presetRange('month', new Date(2026, 0, 15));
+    expect(previousPeriod('month', 0, jan)?.name).toBe('December 2025');
+    expect(previousPeriod('week', 0, presetRange('week', today))).toMatchObject({
+      range: { start: '2026-10-19', end: '2026-10-25' },
+      phrase: 'last week',
+    });
+    expect(previousPeriod('week', -2, presetRange('week', today, -2))?.phrase).toBe('the week before');
+    expect(previousPeriod('year', 0, presetRange('year', today))).toMatchObject({
+      range: { start: '2025-01-01', end: '2025-12-31' },
+      name: '2025',
+    });
+  });
+
+  it('takes the 3 months before Last 3 months', () => {
+    expect(previousPeriod('quarter', 0, presetRange('quarter', today))?.range).toEqual({
+      start: '2026-05-01',
+      end: '2026-07-31',
+    });
+  });
+
+  it('shifts a custom range by its own length; none for All time', () => {
+    const r = { start: '2026-10-10', end: '2026-10-19' };
+    expect(previousPeriod('custom', 0, r)?.range).toEqual({ start: '2026-09-30', end: '2026-10-09' });
+    expect(previousPeriod('all', 0, r)).toBeNull();
+  });
+
+  it('formats short dates', () => {
+    expect(shortDate('2026-11-30')).toBe('30 Nov');
   });
 });

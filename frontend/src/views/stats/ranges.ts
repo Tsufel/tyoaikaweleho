@@ -146,3 +146,42 @@ export function periodTitle(preset: Preset, offset: number, r: DateRange): strin
   if (preset === 'year') return String(a.getFullYear());
   return preset === 'week' ? 'Week' : '3 months';
 }
+
+export interface PreviousPeriod {
+  range: DateRange;
+  /** Legend and tooltip: "Last week", "October", "2025". */
+  name: string;
+  /** In a sentence: "ahead of last week", "ahead of October". */
+  phrase: string;
+}
+
+/** The period just before `r`, to compare against; null for All time. */
+export function previousPeriod(preset: Preset, offset: number, r: DateRange): PreviousPeriod | null {
+  if (preset === 'all') return null;
+  if (preset === 'custom') return { range: shiftRange(r, -1), name: 'Period before', phrase: 'the period before' };
+  const end = fromIsoDate(r.end);
+  if (!end) return null;
+  // anchored on the end date: "Last 3 months" ends in the month it is named after
+  const range = presetRange(preset, end, -1);
+  const a = fromIsoDate(range.start)!;
+  switch (preset) {
+    case 'week':
+      return offset === 0
+        ? { range, name: 'Last week', phrase: 'last week' }
+        : { range, name: 'Week before', phrase: 'the week before' };
+    case 'month': {
+      const name = a.getFullYear() === end.getFullYear() ? MONTHS[a.getMonth()] : `${MONTHS[a.getMonth()]} ${a.getFullYear()}`;
+      return { range, name, phrase: name };
+    }
+    case 'quarter':
+      return { range, name: '3 months before', phrase: 'the 3 months before' };
+    case 'year':
+      return { range, name: String(a.getFullYear()), phrase: String(a.getFullYear()) };
+  }
+}
+
+/** "30 Nov" */
+export function shortDate(iso: string): string {
+  const d = fromIsoDate(iso);
+  return d ? dm(d) : iso;
+}
