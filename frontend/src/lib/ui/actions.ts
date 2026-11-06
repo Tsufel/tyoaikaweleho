@@ -54,9 +54,19 @@ function tipNode(): HTMLDivElement {
   return tipEl;
 }
 
+// The tip is placed once, so it hides when the page under it moves.
+const hideAny = () => hideTip();
+function watchMoves(on: boolean) {
+  const f = on ? window.addEventListener : window.removeEventListener;
+  f.call(window, 'scroll', hideAny, true);
+  f.call(window, 'resize', hideAny);
+  f.call(window, 'blur', hideAny);
+}
+
 function hideTip(owner?: HTMLElement) {
   clearTimeout(showTimer);
   if (owner && owner !== tipOwner) return;
+  if (tipOwner) watchMoves(false);
   tipOwner?.removeAttribute('aria-describedby');
   tipOwner = null;
   if (tipEl) tipEl.dataset.show = 'false';
@@ -79,6 +89,8 @@ export const tooltip: Action<HTMLElement, string | TooltipParams | null | undefi
         el.appendChild(k);
       }
       el.dataset.show = 'true';
+      if (tipOwner && tipOwner !== node) tipOwner.removeAttribute('aria-describedby');
+      if (!tipOwner) watchMoves(true);
       tipOwner = node;
       node.setAttribute('aria-describedby', el.id);
       const r = node.getBoundingClientRect();
@@ -125,4 +137,22 @@ export function focusables(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(sel)].filter(
     (el) => !el.hasAttribute('inert') && el.getClientRects().length > 0,
   );
+}
+
+/** Give focus back to `previous` once a closing modal is gone. Deferred a
+ *  task so the shell's `inert` (cleared by a scheduled effect) is off first;
+ *  WebView2 ignores focus() on inert elements. Skipped when something else
+ *  already took focus on purpose. */
+export function restoreFocusLater(
+  previous: HTMLElement | null,
+  closing: HTMLElement | null | undefined,
+  defer: (fn: () => void) => void = (fn) => setTimeout(fn, 0),
+): void {
+  if (!previous) return;
+  defer(() => {
+    if (!previous.isConnected) return;
+    const a = document.activeElement;
+    const free = !a || a === document.body || !a.isConnected || !!closing?.contains(a);
+    if (free) previous.focus({ preventScroll: true });
+  });
 }

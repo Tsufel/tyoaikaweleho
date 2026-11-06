@@ -14,6 +14,8 @@
     /** aria label of the floating panel. */
     label?: string;
     role?: 'dialog' | 'menu' | 'listbox' | 'none';
+    /** Close when focus moves somewhere outside the panel and the anchor. */
+    closeOnFocusOut?: boolean;
     class?: string;
     el?: HTMLDivElement;
     children: Snippet;
@@ -26,6 +28,7 @@
     matchWidth = false,
     label,
     role = 'dialog',
+    closeOnFocusOut = true,
     class: cls = '',
     el = $bindable(),
     children,
@@ -55,6 +58,21 @@
     }
   }
 
+  /** Focus left the panel (Tab, a click elsewhere): close once it has
+   *  landed on something real outside. Focus dropping to <body> (a click on
+   *  a non-focusable bit, a re-rendered button) keeps it open. */
+  let focusCheck: ReturnType<typeof setTimeout> | undefined;
+  function onFocusOut() {
+    if (!closeOnFocusOut) return;
+    clearTimeout(focusCheck);
+    focusCheck = setTimeout(() => {
+      const a = document.activeElement;
+      if (!el?.isConnected || !a || a === document.body) return;
+      if (el.contains(a) || anchor?.contains(a) || a.closest('[data-popover]')) return;
+      onclose();
+    }, 0);
+  }
+
   onMount(() => {
     place();
     const ro = new ResizeObserver(place);
@@ -76,6 +94,7 @@
       window.removeEventListener('resize', onWin);
       window.removeEventListener('scroll', onWin, true);
       anchor?.removeEventListener('keydown', onAnchorKey);
+      clearTimeout(focusCheck);
     };
   });
 </script>
@@ -95,6 +114,7 @@
   use:clickOutside={{ fn: onclose, ignore: [anchor] }}
   use:liquidGlass={'popover'}
   onkeydown={onKeydown}
+  onfocusout={onFocusOut}
   transition:scale={{ start: 0.96, duration: 160 }}
 >
   {@render children()}

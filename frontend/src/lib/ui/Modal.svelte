@@ -3,7 +3,7 @@
   import { pushModal, topModal } from '../stores/modals';
   import type { DialogIcon } from '../stores/confirm';
   import { fade, scale } from '../motion';
-  import { focusables, portal } from './actions';
+  import { focusables, portal, restoreFocusLater } from './actions';
   import Icon from './Icon.svelte';
   import { liquidGlass } from '../glass/liquidGlass';
 
@@ -125,8 +125,9 @@
     modalId = handle.id;
     void tick().then(focusFirst);
     return () => {
+      const closing = panel;
       handle.release();
-      if (previous?.isConnected) previous.focus({ preventScroll: true });
+      restoreFocusLater(previous, closing);
     };
   });
 
