@@ -110,6 +110,8 @@ palette), 94 (work anniversary).
   - The palette's `aria-expanded` follows whether anything matches.
   - "Filter the month" is offered only when there is a filter box.
   - With Lulz on, the "Shift saved" toast adds the fun equivalent of the pay.
+  - The idle greeting has a Friday-afternoon line and a New Year's Eve line
+    (31 Dec is a working day, so it isn't in the holiday list).
 
 ## Idea catalogue
 

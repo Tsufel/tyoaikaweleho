@@ -24,6 +24,9 @@ export function idleGreeting(now: Date = new Date()): string {
   if (day === 0 || day === 6) return `Weekend shift? ${IDLE_TEXT}`;
   const h = now.getHours();
   if (h < 5) return `Up late? ${IDLE_TEXT}`;
+  // New Year's Eve is a working day in Finland, so it isn't a holiday here
+  if (now.getMonth() === 11 && now.getDate() === 31) return `Last shift of the year? ${IDLE_TEXT}`;
+  if (day === 5 && h >= 12) return `Friday afternoon. Almost there. ${IDLE_TEXT}`;
   if (h < 12) return `Good morning. ${IDLE_TEXT}`;
   if (h < 18) return `Good afternoon. ${IDLE_TEXT}`;
   return `Good evening. ${IDLE_TEXT}`;
