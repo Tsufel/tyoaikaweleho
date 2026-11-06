@@ -16,6 +16,7 @@ import {
   hourTicks,
   nudgeStart,
   pointerFraction,
+  readDetailsOpen,
   recoveryDate,
   recoveryEndNote,
   ringPoint,
@@ -29,6 +30,7 @@ import {
   startedText,
   targetText,
   unwrapLaps,
+  writeDetailsOpen,
 } from '../src/views/timer/timerLogic';
 import { MAX_INTENSITY } from '../src/fx/fire/fireSim';
 
@@ -299,5 +301,14 @@ describe('recovery dialog', () => {
     const long = recoveryEndNote('08:00', '06:30', 0)!;
     expect(long.tone).toBe('warning');
     expect(long.text).toBe('22h 30m · €0.00 (+1 day) — unusually long');
+  });
+});
+
+describe('details fold storage', () => {
+  it('reads as folded and writes without throwing when there is no localStorage', () => {
+    // this file runs in node, where localStorage doesn't exist
+    expect(readDetailsOpen()).toBe(false);
+    expect(() => writeDetailsOpen(true)).not.toThrow();
+    expect(() => writeDetailsOpen(false)).not.toThrow();
   });
 });

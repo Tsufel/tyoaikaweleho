@@ -40,6 +40,8 @@
     agoText,
     clockGlyphs,
     dialDay,
+    readDetailsOpen,
+    writeDetailsOpen,
     earningsEquivalent,
     fireBadge,
     haloHue,
@@ -147,6 +149,14 @@
   const weekLine = $derived(
     weekSaved == null ? null : weekText(weekSaved + (running ? $elapsedSeconds / 60 : 0), target),
   );
+  /** The start / job / week lines are folded behind ⋯ unless opened (remembered). */
+  let detailsOpen = $state(readDetailsOpen());
+  function toggleDetails() {
+    detailsOpen = !detailsOpen;
+    writeDetailsOpen(detailsOpen);
+    // the start and job editors are anchored to buttons that just folded away
+    if (!detailsOpen && (edit === 'start' || edit === 'job')) edit = null;
+  }
   /** "Still working?" once the shift runs 2 h past the daily target; dismissed per shift. */
   const stillWorking = $derived(
     running && stillWorkingDue($elapsedSeconds, target) && $stillWorkingDismissed !== $timer.start_iso,
@@ -294,9 +304,20 @@
     </div>
   </div>
 
+  {#snippet moreBtn()}
+    <button
+      type="button"
+      class="more"
+      class:on={detailsOpen}
+      aria-expanded={detailsOpen}
+      aria-label={detailsOpen ? 'Hide details' : 'Show details'}
+      onclick={toggleDetails}
+      use:tooltip={detailsOpen ? 'Hide details' : 'Show details'}><Icon name="more" size={18} stroke={3.5} /></button
+    >
+  {/snippet}
   <p class="status" class:live={running} aria-live="polite">
-    {#if running}
-      <button
+    {#if running && detailsOpen}
+      <span class="details" in:fade={{ duration: 160 }}><button
         type="button"
         class="edit"
         bind:this={startBtn}
@@ -314,7 +335,10 @@
         aria-expanded={edit === 'job'}
         onclick={() => openEdit('job')}
         use:tooltip={'Change the job'}><strong>{$timer.job_shift || '—'}</strong></button
-      ><span class="sep">·</span><span class="dots">running</span>
+      ><span class="sep">·</span><span class="dots">running</span></span
+      >{@render moreBtn()}
+    {:else if running}
+      {@render moreBtn()}
     {:else if dialTime}
       Starts {dialYesterday ? 'yesterday at' : 'at'} <strong class="num">{dialTime}</strong><span class="sep">·</span><button
         type="button"
@@ -322,10 +346,10 @@
         onclick={() => (dialStart = null)}>Back to now{#if dialResetIn <= 10 && !dialDragging}<span class="num" aria-hidden="true"> ({dialResetIn}s)</span>{/if}</button
       >
     {:else}
-      {idleGreeting(new Date($wallClock))}
+      {idleGreeting(new Date($wallClock))}{#if weekLine}{@render moreBtn()}{/if}
     {/if}
   </p>
-  {#if weekLine}<p class="week num">{weekLine}</p>{/if}
+  {#if weekLine && detailsOpen}<p class="week num" in:fade={{ duration: 160 }}>{weekLine}</p>{/if}
 
   {#if stillWorking}
     <div class="still" role="status" transition:fade={{ duration: 200 }}>
@@ -702,6 +726,34 @@
   }
   .dots::after {
     content: '…';
+  }
+  /* ⋯ folds the start / job / week lines away */
+  .more {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 22px;
+    margin-left: 6px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-pill);
+    background: none;
+    color: var(--text-subtle);
+    vertical-align: middle;
+    cursor: pointer;
+  }
+  .status > .more:only-child {
+    margin-left: 0;
+  }
+  .more:hover,
+  .more.on {
+    background: var(--neutral-fill);
+    color: var(--text);
+  }
+  .more:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
 
   .controls {

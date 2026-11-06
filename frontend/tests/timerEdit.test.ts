@@ -43,6 +43,7 @@ const running: TimerState = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   setTimer(running);
 });
 afterEach(() => {
@@ -56,6 +57,50 @@ async function submit(value: string) {
   await fireEvent.submit(input.closest('form')!);
   await tick();
 }
+
+/** The start / job line is folded behind ⋯ until opened. */
+async function showDetails() {
+  await fireEvent.click(screen.getByRole('button', { name: 'Show details' }));
+  await tick();
+}
+
+describe('details fold (⋯)', () => {
+  it('hides the start / job line until ⋯ is clicked, and remembers the choice', async () => {
+    render(TimerView);
+    expect(screen.queryByRole('button', { name: /^Started 09:00/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show details' }).getAttribute('aria-expanded')).toBe('false');
+    await showDetails();
+    expect(screen.getByRole('button', { name: /^Started 09:00/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Support' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Hide details' }).getAttribute('aria-expanded')).toBe('true');
+    expect(localStorage.getItem('weleho.timerDetails')).toBe('1');
+
+    cleanup();
+    render(TimerView);
+    expect(screen.getByRole('button', { name: /^Started 09:00/ })).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide details' }));
+    await tick();
+    expect(screen.queryByRole('button', { name: /^Started 09:00/ })).toBeNull();
+    expect(localStorage.getItem('weleho.timerDetails')).toBeNull();
+  });
+
+  it('folding the line away closes an open start editor', async () => {
+    render(TimerView);
+    await showDetails();
+    await fireEvent.click(screen.getByRole('button', { name: /^Started 09:00/ }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Hide details' }));
+    await tick();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(spies.adjustShift).not.toHaveBeenCalled();
+  });
+
+  it('STOP ▾ works with the details folded', async () => {
+    render(TimerView);
+    await fireEvent.click(screen.getByRole('button', { name: 'Stop at an earlier time' }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+  });
+});
 
 describe('running shift editors', () => {
   it('STOP ▾ saves the shift at the typed end time', async () => {
@@ -76,6 +121,7 @@ describe('running shift editors', () => {
 
   it('the start time in the status line moves the start', async () => {
     render(TimerView);
+    await showDetails();
     await fireEvent.click(screen.getByRole('button', { name: /^Started 09:00/ }));
     await submit('08:45');
     expect(spies.adjustShift).toHaveBeenCalledWith('08:45', null);
@@ -83,6 +129,7 @@ describe('running shift editors', () => {
 
   it('the job in the status line changes the job, and an unchanged one is a no-op', async () => {
     render(TimerView);
+    await showDetails();
     await fireEvent.click(screen.getByRole('button', { name: 'Support' }));
     await submit('Support');
     expect(spies.adjustShift).not.toHaveBeenCalled();

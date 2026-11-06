@@ -75,6 +75,28 @@ export function weekText(minutes: number, targetHours: number): string {
   return `This week ${formatDuration(Math.max(0, Math.floor(minutes)))} of ${week}h`;
 }
 
+/** localStorage key: "1" when the start / job / week lines under the ring are
+ *  shown; they're folded behind a ⋯ button otherwise. */
+export const DETAILS_KEY = 'weleho.timerDetails';
+
+/** Browser storage can be missing or throw (private mode, blocked site data). */
+export function readDetailsOpen(): boolean {
+  try {
+    return localStorage.getItem(DETAILS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function writeDetailsOpen(open: boolean): void {
+  try {
+    if (open) localStorage.setItem(DETAILS_KEY, '1');
+    else localStorage.removeItem(DETAILS_KEY);
+  } catch {
+    // blocked storage: the choice lasts until the app reloads
+  }
+}
+
 /** Hours past the daily target before the "Still working?" banner shows. */
 export const STILL_WORKING_AFTER_H = 2;
 
