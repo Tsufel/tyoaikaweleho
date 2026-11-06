@@ -2,7 +2,7 @@
 next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
-    "2.1.5": [
+    "2.1.6": [
         "Forgot to press STOP? Stop the shift at an earlier time, or fix "
         "its start time and job while it runs. A \"Still working?\" note "
         "shows up 2 hours past your daily target",
