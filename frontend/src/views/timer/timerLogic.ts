@@ -24,6 +24,22 @@ export function ringProgress(elapsedSeconds: number, targetHours: number): numbe
   return Math.max(0, elapsedSeconds) / target;
 }
 
+/** Hours past the daily target before the "Still working?" banner shows. */
+export const STILL_WORKING_AFTER_H = 2;
+
+/** True once a running shift is STILL_WORKING_AFTER_H past the daily target. */
+export function stillWorkingDue(elapsedSeconds: number, targetHours: number): boolean {
+  const hours = Math.max(1, targetHours || 8);
+  return elapsedSeconds >= (hours + STILL_WORKING_AFTER_H) * 3600;
+}
+
+/** Banner text: "10h 05m on the clock, 2h 05m past your 8h target." */
+export function stillWorkingText(elapsedSeconds: number, targetHours: number): string {
+  const hours = Math.max(1, targetHours || 8);
+  const mins = Math.floor(Math.max(0, elapsedSeconds) / 60);
+  return `${formatDuration(mins)} on the clock, ${formatDuration(Math.max(0, mins - hours * 60))} past your ${hours}h target.`;
+}
+
 /** Line under the running clock: "62% of 8h · done 16:30" while short of the
  *  daily target, then "8h reached" and "0h 45m over 8h" past it. */
 export function targetText(elapsedSeconds: number, targetHours: number, now: number = Date.now()): string {

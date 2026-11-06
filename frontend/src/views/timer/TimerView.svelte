@@ -28,6 +28,7 @@
     jobDraft,
     startDialShift,
     startShift,
+    stillWorkingDismissed,
     stopShift,
     stopShiftAt,
     wallClock,
@@ -44,6 +45,8 @@
     snapStart,
     spokenDuration,
     startedText,
+    stillWorkingDue,
+    stillWorkingText,
     targetText,
   } from './timerLogic';
 
@@ -132,6 +135,10 @@
   });
   onDestroy(() => clearTimeout(flareTimer));
   const blocked = $derived(!!$pendingRecovery || $timer.recovery_pending);
+  /** "Still working?" once the shift runs 2 h past the daily target; dismissed per shift. */
+  const stillWorking = $derived(
+    running && stillWorkingDue($elapsedSeconds, target) && $stillWorkingDismissed !== $timer.start_iso,
+  );
 
   let seenBurst = $burst;
   $effect(() => {
@@ -304,6 +311,15 @@
       {IDLE_TEXT}
     {/if}
   </p>
+
+  {#if stillWorking}
+    <div class="still" role="status" transition:fade={{ duration: 200 }}>
+      <Icon name="warning" size={16} />
+      <span><strong>Still working?</strong> {stillWorkingText($elapsedSeconds, target)}</span>
+      <button type="button" class="link" disabled={$busy} onclick={() => openEdit('stop')}>Stop at…</button>
+      <button type="button" class="link" onclick={() => stillWorkingDismissed.set($timer.start_iso)}>Keep going</button>
+    </div>
+  {/if}
 
   <div class="controls" bind:this={controlsEl}>
     {#if running}
@@ -683,6 +699,21 @@
   }
   .blocked span {
     flex: 1;
+  }
+  .still {
+    align-self: stretch;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--amber) 14%, transparent);
+    color: var(--warning-text);
+    font-size: var(--fs-sm);
+  }
+  .still span {
+    flex: 1 1 12em;
   }
   .link {
     background: none;
