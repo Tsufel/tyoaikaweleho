@@ -295,6 +295,36 @@ describe('liquid glass', () => {
     expect(get(glassMode)).toBe('off');
     expect(get(toasts).some((t) => t.tone === 'error')).toBe(true);
   });
+
+  it('saveUiPrefs: an older reply never rolls back a newer change (held zoom key)', async () => {
+    withPrefs({ zoom: 100 });
+    const replies: ((v: unknown) => void)[] = [];
+    fakeApi.save_ui_prefs.mockImplementation(() => new Promise((r) => replies.push(r)));
+    const saved = (zoom: number) => ({ ok: true, status: 'saved', settings: { ...S, ui_prefs: { ...S.ui_prefs, zoom } } });
+    const p1 = saveUiPrefs({ zoom: 110 });
+    const p2 = saveUiPrefs({ zoom: 120 });
+    expect(get(settings).ui_prefs.zoom).toBe(120);
+    replies[0](saved(110));
+    expect(await p1).toBe(true);
+    // the first reply must not snap the zoom back to 110 (a third press would then step from it)
+    expect(get(settings).ui_prefs.zoom).toBe(120);
+    replies[1](saved(120));
+    expect(await p2).toBe(true);
+    expect(get(settings).ui_prefs.zoom).toBe(120);
+  });
+
+  it('saveUiPrefs: a failed older save keeps the newer change', async () => {
+    withPrefs({ zoom: 100 });
+    const replies: ((v: unknown) => void)[] = [];
+    fakeApi.save_ui_prefs.mockImplementation(() => new Promise((r) => replies.push(r)));
+    const p1 = saveUiPrefs({ zoom: 110 });
+    const p2 = saveUiPrefs({ zoom: 120 });
+    replies[0]({ ok: false, status: 'error', error: { code: 'save_failed', message: 'Disk full' } });
+    expect(await p1).toBe(false);
+    expect(get(settings).ui_prefs.zoom).toBe(120);
+    replies[1]({ ok: true, status: 'saved', settings: { ...S, ui_prefs: { ...S.ui_prefs, zoom: 120 } } });
+    expect(await p2).toBe(true);
+  });
 });
 
 describe('update check', () => {
