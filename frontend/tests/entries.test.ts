@@ -13,6 +13,7 @@ import {
   parseEditor,
   parseYear,
   pickerStep,
+  rangeExports,
   stepMonth,
   weekTotalText,
 } from '../src/views/entries/entriesLogic';
@@ -69,6 +70,12 @@ describe('texts', () => {
       'Imported 3 entries from 2 files.\n2 duplicates skipped.\n\nErrors:\nbad.xlsx: no sheet',
     );
     expect(importSummary({ imported: 0, skipped: 1, files: 1, errors: [] })).toBe('Imported 0 entries from 1 file.\n1 duplicate skipped.');
+  });
+
+  it('says why a file gave nothing', () => {
+    expect(
+      importSummary({ imported: 0, skipped: 0, files: 2, errors: ['b.xls: save it as .xlsx'], notes: ['No timesheet rows found in a.xlsx'] }),
+    ).toBe('Imported 0 entries from 2 files.\n\nNo timesheet rows found in a.xlsx\n\nErrors:\nb.xls: save it as .xlsx');
   });
 });
 
@@ -158,5 +165,18 @@ describe('earlyExportMonth', () => {
   });
   it('January offers December of the year before', () => {
     expect(earlyExportMonth({ year: 2027, month: 1 }, new Date(2027, 0, 3))).toEqual({ year: 2026, month: 12 });
+  });
+});
+
+describe('rangeExports', () => {
+  it('the viewed month as CSV, then its year as CSV or one sheet', () => {
+    const [month, yearCsv, yearXlsx] = rangeExports({ year: 2028, month: 2 });
+    expect(month).toMatchObject({ label: 'February 2028 as CSV…', start: '2028-02-01', end: '2028-02-29', kind: 'csv' });
+    expect(yearCsv).toMatchObject({ start: '2028-01-01', end: '2028-12-31', kind: 'csv' });
+    expect(yearXlsx).toMatchObject({ start: '2028-01-01', end: '2028-12-31', kind: 'xlsx' });
+  });
+  it('pads the month and ends on its last day', () => {
+    expect(rangeExports({ year: 2026, month: 9 })[0]).toMatchObject({ start: '2026-09-01', end: '2026-09-30' });
+    expect(rangeExports({ year: 2027, month: 2 })[0].end).toBe('2027-02-28');
   });
 });

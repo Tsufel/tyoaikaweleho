@@ -843,6 +843,7 @@ class ShiftController:
             "default_job_shift": storage.get_default_job_shift(),
             "export_format": fmt if fmt in storage.EXPORT_FORMATS else "Simple",
             "export_include_pay": storage.get_export_include_pay(),
+            **storage.get_sheet_names(),
             "ui_prefs": storage.get_ui_prefs(),
         }
 
@@ -872,6 +873,14 @@ class ShiftController:
             values["export_format"] = fmt
         if draft.get("appearance") in storage.APPEARANCE_MODES:
             values["appearance_mode"] = draft["appearance"]
+        for key in storage.SHEET_NAME_KEYS:  # optional: left out = unchanged
+            if key in draft:
+                problem = storage._sheet_name_error(key, draft[key])
+                if problem:
+                    return R.invalid(key, "Names can't contain control characters."
+                                     if "control" in problem else
+                                     f"Keep names to at most {storage.SHEET_NAME_MAX} characters.")
+                values[key] = draft[key]
         prefs = draft.get("ui_prefs")
         if prefs is not None:
             invalid = self._check_prefs(prefs)
@@ -1020,10 +1029,11 @@ class ShiftController:
             fmt = storage.get_export_format()
             include_pay = storage.get_export_include_pay()
             rate = storage.get_pay_rate()
+            names = storage.get_sheet_names()
         try:
             excel_export.export_month(entries=entries, year=int(year), month=int(month),
                                       save_path=path, fmt=fmt, include_pay=include_pay,
-                                      pay_rate=rate)
+                                      pay_rate=rate, **names)
         except PermissionError:
             return R.error("file_locked",
                            f"Could not write:\n{path}\n\n"
@@ -1032,6 +1042,58 @@ class ShiftController:
             return R.error("internal", f"Could not export:\n\n{exc}")
         self._last_export = path
         return R.saved(f"Timesheet saved to:\n{path}", path=path)
+
+    # ── export a date range (CSV or Simple workbook) ──
+
+    EXPORT_RANGE_KINDS = ("xlsx", "csv")
+
+    @staticmethod
+    def _export_range_args(start_iso, end_iso, kind) -> tuple[date, date, str] | dict:
+        if kind not in ShiftController.EXPORT_RANGE_KINDS:
+            return R.invalid("kind", "Export as xlsx or csv.")
+        try:
+            start = date.fromisoformat(str(start_iso))
+            end = date.fromisoformat(str(end_iso))
+        except ValueError:
+            return R.invalid("range", "Pick a valid date range.")
+        if end < start or (end - start).days > MAX_STATS_DAYS:
+            return R.invalid("range", "Pick a range of at most about ten years, "
+                                      "with the end after the start.")
+        return start, end, kind
+
+    @staticmethod
+    def export_range_filename(start_iso, end_iso, kind) -> str | None:
+        """'Hours 1.1.–31.12.2026.csv', or None when the arguments are invalid."""
+        import excel_export
+        args = ShiftController._export_range_args(start_iso, end_iso, kind)
+        if isinstance(args, dict):
+            return None
+        start, end, kind = args
+        return f"Hours {excel_export.range_label(start, end)}.{kind}"
+
+    def export_range(self, start_iso, end_iso, kind, path: str | None) -> dict:
+        args = self._export_range_args(start_iso, end_iso, kind)
+        if isinstance(args, dict):
+            return args
+        if not path:
+            return R.cancelled()
+        start, end, kind = args
+        import excel_export
+        with self._lock:
+            entries = storage.load_all_entries()
+            include_pay = storage.get_export_include_pay()
+            rate = storage.get_pay_rate()
+        try:
+            excel_export.export_range(entries, start, end, path, kind=kind,
+                                      include_pay=include_pay, pay_rate=rate)
+        except PermissionError:
+            return R.error("file_locked",
+                           f"Could not write:\n{path}\n\n"
+                           "The file is probably open in Excel — close it and try again.")
+        except Exception as exc:
+            return R.error("internal", f"Could not export:\n\n{exc}")
+        self._last_export = path
+        return R.saved(f"Hours saved to:\n{path}", path=path)
 
     def last_export(self) -> str | None:
         """The file the last successful export wrote (for "Show in folder";
@@ -1043,24 +1105,44 @@ class ShiftController:
         if not paths:
             return R.cancelled()
         import import_excel
+        from openpyxl.utils.exceptions import InvalidFileException
         imported = skipped = 0
         errors = []
+        notes = []
         with self._lock:
             for path in paths:
+                name = os.path.basename(path)
+                report = {}
                 try:
-                    imp, skp = import_excel.import_from_file(path)
+                    imp, skp = import_excel.import_from_file(path, report)
                     imported += imp
                     skipped += skp
+                except InvalidFileException:
+                    errors.append(f"{name}: this isn't an .xlsx workbook. "
+                                  "Open it in Excel and save it as .xlsx first.")
+                    continue
                 except Exception as exc:
-                    errors.append(f"{path}: {exc}")
+                    errors.append(f"{name}: {exc}")
+                    continue
+                if imp or skp:
+                    continue
+                if report.get("unreadable"):
+                    notes.append(f"{name}: found dates, but the start times weren't "
+                                 "readable times (e.g. 9:30 or 9.30).")
+                else:
+                    notes.append(f"No timesheet rows found in {name}: dates go in "
+                                 "column A, times in B/C (or C/D with a shift in B).")
         n = len(paths)
         msg = (f"Imported {imported} {_plural(imported, 'entry', 'entries')}"
                f" from {n} {_plural(n, 'file', 'files')}.")
         if skipped:
             msg += f"\n{skipped} {_plural(skipped, 'duplicate', 'duplicates')} skipped."
+        if notes:
+            msg += "\n\n" + "\n".join(notes)
         if errors:
             msg += "\n\nErrors:\n" + "\n".join(errors)
-        return R.ok(msg, imported=imported, skipped=skipped, files=n, errors=errors)
+        return R.ok(msg, imported=imported, skipped=skipped, files=n, errors=errors,
+                    notes=notes)
 
     @staticmethod
     def _dlc_unavailable() -> dict:

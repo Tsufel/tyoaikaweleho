@@ -1,5 +1,5 @@
 import type { EntryRow, MonthData, WeekGroup } from '../../lib/api/types';
-import { addMonths, formatHM, formatMoney, parseTimeInput } from '../../lib/time';
+import { addMonths, formatHM, formatMoney, monthLabel, parseTimeInput } from '../../lib/time';
 
 export type TableRow =
   | { kind: 'entry'; key: string; entry: EntryRow; index: number }
@@ -65,9 +65,16 @@ export function decideClose(field: EditField, text: string, original: string, co
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /** "Import complete" text of v1.3 `_import_excel`. */
-export function importSummary(r: { imported: number; skipped: number; files: number; errors: string[] }): string {
+export function importSummary(r: {
+  imported: number;
+  skipped: number;
+  files: number;
+  errors: string[];
+  notes?: string[];
+}): string {
   let msg = `Imported ${r.imported} ${plural(r.imported, 'entry', 'entries')} from ${r.files} ${plural(r.files, 'file', 'files')}.`;
   if (r.skipped) msg += `\n${r.skipped} ${plural(r.skipped, 'duplicate', 'duplicates')} skipped.`;
+  if (r.notes?.length) msg += '\n\n' + r.notes.join('\n');
   if (r.errors.length) msg += '\n\nErrors:\n' + r.errors.join('\n');
   return msg;
 }
@@ -125,4 +132,25 @@ export function earlyExportMonth(
   if (today.getDate() > EARLY_EXPORT_DAYS) return null;
   if (view.year !== today.getFullYear() || view.month !== today.getMonth() + 1) return null;
   return addMonths(view.year, view.month, -1);
+}
+
+export interface RangeExport {
+  id: string;
+  label: string;
+  start: string;
+  end: string;
+  kind: 'xlsx' | 'csv';
+}
+
+/** The "More exports" presets for the viewed month: the month as CSV and
+ * the whole year as CSV or a Simple workbook. */
+export function rangeExports(view: { year: number; month: number }): RangeExport[] {
+  const { year, month } = view;
+  const mm = String(month).padStart(2, '0');
+  const last = new Date(year, month, 0).getDate();
+  return [
+    { id: 'month-csv', label: `${monthLabel(year, month)} as CSV…`, start: `${year}-${mm}-01`, end: `${year}-${mm}-${last}`, kind: 'csv' },
+    { id: 'year-csv', label: `All of ${year} as CSV…`, start: `${year}-01-01`, end: `${year}-12-31`, kind: 'csv' },
+    { id: 'year-xlsx', label: `All of ${year} as one sheet…`, start: `${year}-01-01`, end: `${year}-12-31`, kind: 'xlsx' },
+  ];
 }

@@ -193,8 +193,9 @@ The current shift must never be lost:
 | method | params | returns |
 |---|---|---|
 | `export_month(year, month)` | ints | Native save dialog (initial `Hours {Month YYYY}.xlsx`, `.xlsx`). `cancelled` / `saved{path}` / `error(file_locked\|internal)` with v1.3 messages. Uses stored format / include-pay / pay rate. |
+| `export_range(start, end, kind)` | `IsoDate`, `IsoDate`, `'xlsx'\|'csv'` | Export a date range (inclusive). A bad range (end before start, over ~10 years) or kind gives `invalid(field:'range'\|'kind')` without a dialog. Otherwise a native save dialog (initial `Hours 1.1.–31.12.2026.csv`, or `Hours 1.12.2025–31.1.2026.xlsx` across a year; the extension is added when missing). `cancelled` / `saved{path}` / `error(file_locked\|internal)`. `xlsx` is the Simple sheet for the range (stored include-pay and rate). `csv` is `Date;Shift;Start;End;Hours[;Earnings]` with `;` separators, decimal comma (`7,50`), dates as `2.3.2026`, UTF-8 with BOM and CRLF, so Finnish Excel opens it in columns; a running shift has no end or hours. **Show in folder** (`reveal_export`) finds it too. |
 | `reveal_export()` | — | Opens Explorer with the last file `export_month` saved this session selected (its folder if the file is gone). `ok` / `error(not_found)` (nothing exported yet, or the folder is gone) / `error(internal)`. The export toast's **Show in folder** calls it. |
-| `import_excel()` | — | Native multi-open dialog (`*.xlsx *.xls`). `cancelled` / `ok{imported, skipped, files, errors: string[]}`. Each file's new rows are written in one save, after a copy to `backups/pre-import-<timestamp>.json` (newest 5 kept); a failed copy skips that file into `errors`. |
+| `import_excel()` | — | Native multi-open dialog (`*.xlsx *.xlsm`; openpyxl can't read `.xls`, which gets an error line saying to save it as `.xlsx`). `cancelled` / `ok{imported, skipped, files, errors: string[], notes: string[]}`. Lines name the file by its base name. `notes` says why a file gave nothing (no dated rows, or dates with unreadable start times). Column A takes date cells, the Full export's own `Mon 02 Mar 2026` text or a typed date with a year; times take time cells, day fractions, `9:30`, `9.30` and `930`; anything that isn't a valid time is skipped, never clamped. Each file's new rows are written in one save, after a copy to `backups/pre-import-<timestamp>.json` (newest 5 kept); a failed copy skips that file into `errors`. |
 | `ocr_pick_and_extract()` | — | Native multi-open dialog (images). `cancelled` / `error(dlc_unavailable)` / `error(ocr_failed, errors)` when nothing extracted and errors / `ok{candidates: OcrCandidate[], errors}` (empty `candidates` → "No entries found") |
 | `ocr_save(rows)` | `OcrRow[]` (checked rows only, trimmed) | `R<{imported, skipped, invalid_skipped}>` status `saved` / `error(save_failed)`. Rows missing date or time_in are skipped and counted in `invalid_skipped` (v1.3 "Rows skipped" warning). |
 
@@ -390,8 +391,14 @@ Bootstrap = {
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
+  employee_name:'', manager_name:'',
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
   liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false}}`.
+  `employee_name` / `manager_name` are printed after EMPLOYEE: / MANAGER: (B3 /
+  B5) on the Full sheet; `''` leaves the line blank, as before. They are saved
+  through `save_settings`, trimmed with inner whitespace collapsed, at most 60
+  characters with no control characters (`invalid(field:'employee_name'|
+  'manager_name')`); a draft that leaves a name out keeps the stored one.
   `pet` is `'off'|'familiar'|'wizard'`; `pet_name` is stored trimmed with inner
   whitespace collapsed, at most 24 printable characters (`''` = the default name
   "Tähti" / "Weleho"); a bad name is `invalid(field:'pet_name')`.
@@ -660,8 +667,8 @@ through untouched.
 **Shapes (2.3)**
 
 - `Settings` gains `employee_name`, `manager_name` (≤ 60, cleaned like
-  `pet_name`) and `job_shifts: [{name, hidden}]`; `shifts: string[]` keeps
-  listing the visible ones.
+  `pet_name`; **shipped early**, see §8) and `job_shifts: [{name, hidden}]`;
+  `shifts: string[]` keeps listing the visible ones.
 
 **Methods (2.2 / 2.3)**
 
@@ -671,7 +678,7 @@ through untouched.
 | `rename_shift(old, new, confirm?)` | `string`, `string`, answers | needs `rename_shift` when entries use `old`; `R<{shifts, renamed_entries}>`; `invalid` when blank or a duplicate |
 | `set_shift_hidden(name, hidden)` | `string`, `boolean` | `R<{settings: Settings, shifts}>` |
 | `reorder_shifts(names)` | `string[]` (every name, new order) | `R<{settings: Settings, shifts}>`; `invalid` if the set differs |
-| `export_range(start, end, kind)` | `IsoDate`, `IsoDate`, `'xlsx'\|'csv'` | Native save dialog; `cancelled` / `saved{path}` / `error(file_locked\|internal)` / `invalid(field:'range')`. `export_month` stays |
+| `export_range(start, end, kind)` | `IsoDate`, `IsoDate`, `'xlsx'\|'csv'` | **Shipped early**, see §5 Import / export / OCR. `export_month` stays |
 | `list_backups()` | — | `R<{backups: [{name, kind:'daily'\|'bak'\|'before_restore', date, entries, last_entry_date, ok}]}>` newest first |
 | `restore_backup(name, confirm?)` | `string`, answers | needs `restore_backup`; `invalid` while a shift runs or `ok` is false; on success the current data is copied to `backups/data-before-restore-<ts>.json` first, then `data:changed` is emitted |
 

@@ -298,6 +298,9 @@ export interface Settings {
   default_job_shift: string;
   export_format: ExportFormat;
   export_include_pay: boolean;
+  /** Printed after EMPLOYEE: / MANAGER: on the Full sheet; '' = blank line. */
+  employee_name: string;
+  manager_name: string;
   ui_prefs: UiPrefs;
 }
 
@@ -310,6 +313,9 @@ export interface SettingsDraft {
   default_job_shift: string;
   export_format: ExportFormat;
   export_include_pay: boolean;
+  /** ≤ 60 characters, no control characters; left out = unchanged. */
+  employee_name?: string;
+  manager_name?: string;
   ui_prefs: UiPrefs;
 }
 
@@ -414,12 +420,15 @@ export interface ChangelogBlock {
 // ── Import / export / OCR ────────────────────────────────────────
 
 export type ExportResult = Result<{ path: string }>;
+export type ExportRangeKind = 'xlsx' | 'csv';
 
 export type ImportResult = Result<{
   imported: number;
   skipped: number;
   files: number;
   errors: string[];
+  /** Why a file gave nothing (no timesheet rows, unreadable times). */
+  notes: string[];
 }>;
 
 export interface OcrCandidate {
@@ -551,6 +560,10 @@ export interface Api {
   import_excel(): Promise<ImportResult>;
   ocr_pick_and_extract(): Promise<OcrExtractResult>;
   ocr_save(rows: OcrRow[]): Promise<OcrSaveResult>;
+
+  // export a date range (CSV or Simple workbook)
+  /** Save dialog named "Hours 1.1.–31.12.2026.csv"; invalid(field: 'range' | 'kind'). */
+  export_range(start: IsoDate, end: IsoDate, kind: ExportRangeKind): Promise<ExportResult>;
 
   // updates & DLC
   check_updates(): Promise<CheckUpdatesResult>;

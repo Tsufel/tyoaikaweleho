@@ -812,6 +812,31 @@ def add_achievements_seen(seen: dict) -> dict:
 
 EXPORT_FORMATS = ("Simple", "Full")
 
+# names printed on the Full (EAS) sheet; "" leaves the line blank
+SHEET_NAME_KEYS = ("employee_name", "manager_name")
+SHEET_NAME_MAX = 60
+
+
+def _sheet_name_error(key: str, v) -> str | None:
+    """Why *v* can't be stored as *key*, or None when it can."""
+    if not isinstance(v, str):
+        return f"{key} must be text of at most {SHEET_NAME_MAX} characters"
+    if any(unicodedata.category(c) in _BAD_NAME_CATEGORIES or c in _BIDI_CONTROLS for c in v):
+        return f"{key} has control characters"
+    if len(" ".join(v.split())) > SHEET_NAME_MAX:
+        return f"{key} must be text of at most {SHEET_NAME_MAX} characters"
+    return None
+
+
+def get_sheet_names() -> dict:
+    """{employee_name, manager_name}: trimmed, "" when unset or unusable."""
+    data = _load_raw()
+    out = {}
+    for key in SHEET_NAME_KEYS:
+        v = data.get(key, "")
+        out[key] = "" if _sheet_name_error(key, v) else " ".join(v.split())
+    return out
+
 
 def _check_setting(key: str, value):
     if key == "pay_rate":
@@ -833,6 +858,10 @@ def _check_setting(key: str, value):
     elif key == "appearance_mode":
         if value not in APPEARANCE_MODES:
             raise ValueError(f"appearance mode must be one of {APPEARANCE_MODES}")
+    elif key in SHEET_NAME_KEYS:
+        problem = _sheet_name_error(key, value)
+        if problem:
+            raise ValueError(problem)
     elif key != "ui_prefs":
         raise ValueError(f"unknown setting: {key}")
 
@@ -841,7 +870,8 @@ def save_settings(values: dict):
     """Write several settings in one load/save, so either all or none of
     them are stored. Keys are the data.json names (pay_rate,
     default_start_time, default_job_shift, export_format,
-    export_include_pay, appearance_mode, ui_prefs — which may be partial).
+    export_include_pay, appearance_mode, employee_name, manager_name,
+    ui_prefs — which may be partial).
     Raises ValueError, writing nothing, for a bad key or value."""
     for key, value in values.items():
         _check_setting(key, value)
@@ -851,6 +881,8 @@ def save_settings(values: dict):
             value = merge_ui_prefs(data.get("ui_prefs"), value)
         elif key == "pay_rate":
             value = float(value)
+        elif key in SHEET_NAME_KEYS:
+            value = " ".join(value.split())
         data[key] = value
     _save_raw(data)
 

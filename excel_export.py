@@ -3,7 +3,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from storage import WorkEntry
-from utils import is_overnight
+from utils import entry_minutes, is_overnight, week_key
 
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
@@ -38,24 +38,78 @@ def _shift_fraction(entry: WorkEntry) -> float | None:
 # ── public entry point ─────────────────────────────────────────────────────────
 
 def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str,
-                 fmt: str = "Simple", include_pay: bool = False, pay_rate: float = 20.0):
+                 fmt: str = "Simple", include_pay: bool = False, pay_rate: float = 20.0,
+                 employee_name: str = "", manager_name: str = ""):
     """Export *entries* to an Excel file at *save_path*.
 
     fmt:         "Simple" → clean minimal table (default)
                  "Full" → original elaborate EAS layout
     include_pay: when True and fmt=="Simple", append Rate + Earned rows
     pay_rate:    hourly rate used for the earnings calculation
+    employee_name, manager_name: written after EMPLOYEE: / MANAGER: on the
+                 Full sheet; blank leaves the line to fill in by hand
     """
     if fmt == "Full":
-        _export_full(entries, year, month, save_path, pay_rate)
+        _export_full(entries, year, month, save_path, pay_rate, employee_name, manager_name)
     else:
         _export_simple(entries, year, month, save_path, include_pay, pay_rate)
+
+
+# ── any date range (Simple workbook or CSV) ────────────────────────────────────
+
+def range_label(start: date, end: date) -> str:
+    """'1.1.–31.12.2026', or '1.12.2025–31.1.2026' across a year."""
+    if start.year == end.year:
+        return f"{start.day}.{start.month}.–{end.day}.{end.month}.{end.year}"
+    return (f"{start.day}.{start.month}.{start.year}–"
+            f"{end.day}.{end.month}.{end.year}")
+
+
+def export_range(entries: list[WorkEntry], start: date, end: date, save_path: str,
+                 kind: str = "xlsx", include_pay: bool = False, pay_rate: float = 20.0):
+    """Export the entries dated *start*..*end* (inclusive) as a Simple
+    workbook (kind 'xlsx') or a CSV (kind 'csv')."""
+    lo, hi = start.isoformat(), end.isoformat()
+    picked = [e for e in entries if lo <= e.date <= hi]
+    if kind == "csv":
+        export_csv(picked, save_path, include_pay, pay_rate)
+    else:
+        _export_simple(picked, start.year, start.month, save_path, include_pay,
+                       pay_rate, title=f"Hours {range_label(start, end)}")
+
+
+def _decimal_comma(value: float) -> str:
+    return f"{value:.2f}".replace(".", ",")
+
+
+def export_csv(entries: list[WorkEntry], save_path: str, include_pay: bool = False,
+               pay_rate: float = 20.0):
+    """A CSV that Finnish Excel opens straight into columns: ';' separator,
+    decimal comma, UTF-8 with a BOM and CRLF line ends. Hours are decimal
+    (7,50); a shift still in progress has no end, hours or earnings."""
+    import csv
+    header = ["Date", "Shift", "Start", "End", "Hours"]
+    if include_pay:
+        header.append("Earnings")
+    with open(save_path, "w", encoding="utf-8-sig", newline="") as f:
+        out = csv.writer(f, delimiter=";", lineterminator="\r\n")
+        out.writerow(header)
+        for e in sorted(entries, key=lambda x: (x.date, x.time_in)):
+            d = date.fromisoformat(e.date)
+            done = bool(e.time_in and e.time_out)
+            hours = entry_minutes(e.time_in, e.time_out) / 60 if done else None
+            row = [f"{d.day}.{d.month}.{d.year}", e.job_shift, e.time_in, e.time_out,
+                   _decimal_comma(hours) if hours is not None else ""]
+            if include_pay:
+                row.append(_decimal_comma(hours * pay_rate) if hours is not None else "")
+            out.writerow(row)
 
 
 # ── Simple layout ──────────────────────────────────────────────────────────────
 
 def _export_simple(entries: list[WorkEntry], year: int, month: int,
-                   save_path: str, include_pay: bool, pay_rate: float):
+                   save_path: str, include_pay: bool, pay_rate: float,
+                   title: str | None = None):
     wb = Workbook()
     wb.calculation.fullCalcOnLoad = True
     ws = wb.active
@@ -63,6 +117,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
     # Column widths
     ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 14
     ws.column_dimensions["C"].width = 10
     ws.column_dimensions["D"].width = 10
     ws.column_dimensions["E"].width = 12
@@ -75,16 +130,26 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
     # Row 1 — headers
     ws["A1"] = "PVM"
     ws["A1"].font = bold
+    # the shift keeps a re-import of this file from turning every shift
+    # into the default one
+    ws["B1"] = "Shift"
+    ws["B1"].font = bold
     ws["C1"] = "Start"
     ws["C1"].font = bold
     ws["D1"] = "End"
     ws["D1"].font = bold
     ws["E1"] = "Total (h)"
     ws["E1"].font = bold
+    ws["G1"] = "Week (h)"
+    ws["G1"].font = bold
+    ws.freeze_panes = "A2"
+    wb.properties.creator = "Työaikaweleho"
+    wb.properties.title = title or f"Hours {date(year, month, 1):%B %Y}"
 
     # Data rows — sorted by (date, time_in), starting at row 2
     sorted_entries = sorted(entries, key=lambda e: (e.date, e.time_in))
     total = 0.0
+    week_total = 0.0
 
     for i, entry in enumerate(sorted_entries):
         r = i + 2
@@ -93,6 +158,8 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
         d = date.fromisoformat(entry.date)
         ws[f"A{r}"] = d
         ws[f"A{r}"].number_format = "DD.MM.YYYY"
+
+        ws[f"B{r}"] = entry.job_shift
 
         if entry.time_in:
             ws[f"C{r}"] = _time_fraction(entry.time_in)
@@ -110,12 +177,24 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
             hours = _shift_fraction(entry)
             if hours is not None:
                 total += hours
+                week_total += hours
                 ws[f"E{r}"] = hours
                 ws[f"E{r}"].number_format = "[H]:MM"
                 ws[f"E{r}"].alignment = center
         else:
             ws[f"D{r}"] = "In progress"
             ws[f"D{r}"].alignment = center
+
+        # Week subtotal (a value, see _shift_fraction) on each week's last row
+        nxt = sorted_entries[i + 1] if i + 1 < len(sorted_entries) else None
+        if nxt is None or week_key(date.fromisoformat(nxt.date)) != week_key(d):
+            ws[f"G{r}"] = week_total
+            ws[f"G{r}"].number_format = "[H]:MM"
+            ws[f"G{r}"].alignment = center
+            week_total = 0.0
+
+    if sorted_entries:
+        ws.auto_filter.ref = f"A1:E{len(sorted_entries) + 1}"
 
     # Summary — Total label + total hours in column G
     last_data_row = len(sorted_entries) + 1  # row number of last data row
@@ -150,8 +229,16 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
 # ── Full layout ──────────────────────────────────────────────────────────
 
+def _put_text(cell, text: str, font):
+    """*text* as plain text: a name like "=Boss" is never a formula."""
+    cell.value = text
+    cell.data_type = "s"
+    cell.font = font
+
+
 def _export_full(entries: list[WorkEntry], year: int, month: int,
-                 save_path: str, pay_rate: float):
+                 save_path: str, pay_rate: float, employee_name: str = "",
+                 manager_name: str = ""):
     import calendar
     wb = Workbook()
     wb.calculation.fullCalcOnLoad = True
@@ -184,12 +271,16 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
 
     # Row 3: Employee
     ws["A3"] = "EMPLOYEE:"; ws["A3"].font = label_font
+    if employee_name:
+        _put_text(ws["B3"], employee_name, normal_font)
     ws["D3"] = "SIGNATUR:"; ws["D3"].font = label_font
     ws["G3"] = "DATE:";     ws["G3"].font = label_font
     ws["H3"] = datetime.today().strftime("%d.%m.%Y"); ws["H3"].font = normal_font
 
     # Row 5: Manager
     ws["A5"] = "MANAGER:";  ws["A5"].font = label_font
+    if manager_name:
+        _put_text(ws["B5"], manager_name, normal_font)
     ws["D5"] = "SIGNATUR:"; ws["D5"].font = label_font
     ws["G5"] = "DATE:";     ws["G5"].font = label_font
 
@@ -216,18 +307,19 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
         cell.fill  = gray_fill; cell.alignment = center
         cell.border = _thin_border()
 
-    # Group entries by ISO week
-    by_week: dict[int, list[WorkEntry]] = {}
+    # Group entries by ISO (year, week): late December can be week 1 of the
+    # next year and early January week 53 of the last, so the week number
+    # alone sorts them to the wrong end of the month
+    by_week: dict[tuple[int, int], list[WorkEntry]] = {}
     for e in sorted(entries, key=lambda x: (x.date, x.time_in)):
         d  = date.fromisoformat(e.date)
-        wk = d.isocalendar()[1]
-        by_week.setdefault(wk, []).append(e)
+        by_week.setdefault(week_key(d), []).append(e)
 
     current_row = 13
     total = 0.0
 
-    for week_num in sorted(by_week.keys()):
-        for entry in by_week[week_num]:
+    for week in sorted(by_week.keys()):
+        for entry in by_week[week]:
             r = current_row
             ws.row_dimensions[r].height = 16
 

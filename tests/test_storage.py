@@ -135,6 +135,32 @@ def test_export_include_pay_roundtrip(tmp_storage):
     assert storage.get_export_include_pay() is True
 
 
+def test_sheet_names_default_blank(tmp_storage):
+    assert storage.get_sheet_names() == {"employee_name": "", "manager_name": ""}
+
+
+def test_sheet_names_saved_trimmed(tmp_storage):
+    storage.save_settings({"employee_name": "  Aino   Virtanen ", "manager_name": "Pekka"})
+    assert storage.get_sheet_names() == {"employee_name": "Aino Virtanen", "manager_name": "Pekka"}
+    storage.save_settings({"manager_name": ""})
+    assert storage.get_sheet_names() == {"employee_name": "Aino Virtanen", "manager_name": ""}
+
+
+@pytest.mark.parametrize("bad", ["x" * 61, "bell\x07", "a‮b", 5, None])
+def test_sheet_names_rejected_without_writing(tmp_storage, bad):
+    with pytest.raises(ValueError):
+        storage.save_settings({"pay_rate": 30.0, "employee_name": bad})
+    assert not (tmp_storage / "data.json").exists()
+
+
+def test_sheet_names_hand_edited_junk_reads_blank(tmp_storage):
+    (tmp_storage / "data.json").write_text(
+        '{"employee_name": 7, "manager_name": "' + "y" * 80 + '"}', encoding="utf-8")
+    assert storage.get_sheet_names() == {"employee_name": "", "manager_name": ""}
+    storage.save_settings({"employee_name": "x" * 60})
+    assert storage.get_sheet_names()["employee_name"] == "x" * 60
+
+
 # ── shifts ────────────────────────────────────────────────────────────────────
 
 def test_add_job_shift_new(tmp_storage):

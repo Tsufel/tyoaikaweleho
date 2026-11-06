@@ -496,6 +496,23 @@
           </div>
           <Switch label="Include pay in export" bind:checked={form.export_include_pay} />
         </div>
+        <div class="two">
+          {#each [{ f: 'employee_name', id: 'set-employee', label: 'Employee name' }, { f: 'manager_name', id: 'set-manager', label: 'Manager name' }] as const as n (n.f)}
+            <div bind:this={els[n.f]}>
+              <Field label={n.label} forId={n.id} error={errors[n.f]} hint="Printed on Full timesheets.">
+                <TextInput
+                  id={n.id}
+                  bind:value={form[n.f]}
+                  placeholder="Blank"
+                  autocomplete="off"
+                  invalid={!!errors[n.f]}
+                  aria-describedby={describedBy(n.id)}
+                  oninput={() => clearError(n.f)}
+                />
+              </Field>
+            </div>
+          {/each}
+        </div>
       </div>
     </GlassCard>
 

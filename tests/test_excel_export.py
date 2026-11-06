@@ -45,9 +45,47 @@ def test_simple_headers(tmp_path):
     export_month(_sample_entries(), 2026, 5, str(out), fmt="Simple")
     ws = load_workbook(str(out)).active
     assert ws["A1"].value == "PVM"
+    assert ws["B1"].value == "Shift"
     assert ws["C1"].value == "Start"
     assert ws["D1"].value == "End"
     assert ws["E1"].value == "Total (h)"
+    assert ws["G1"].value == "Week (h)"
+
+
+def test_simple_writes_the_shift(tmp_path):
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(out), fmt="Simple")
+    ws = load_workbook(str(out)).active
+    assert [ws["B2"].value, ws["B3"].value] == ["Sales", "Support"]
+
+
+def test_simple_frozen_header_filter_and_properties(tmp_path):
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 3, str(out), fmt="Simple")
+    wb = load_workbook(str(out))
+    ws = wb.active
+    assert ws.freeze_panes == "A2"
+    assert ws.auto_filter.ref == "A1:E3"
+    assert wb.properties.creator == "Työaikaweleho"
+    assert wb.properties.title == "Hours March 2026"
+
+
+def test_simple_week_subtotals(tmp_path):
+    # Fri 1 May and Sun 3 May are ISO week 18, Mon 4 May is week 19
+    entries = [
+        WorkEntry(id="1", date="2026-05-01", job_shift="Sales", time_in="09:00", time_out="17:00"),
+        WorkEntry(id="2", date="2026-05-03", job_shift="Sales", time_in="10:00", time_out="12:30"),
+        WorkEntry(id="3", date="2026-05-04", job_shift="Sales", time_in="22:00", time_out="02:00"),
+        WorkEntry(id="4", date="2026-05-05", job_shift="Sales", time_in="09:00", time_out=""),
+    ]
+    out = tmp_path / "out.xlsx"
+    export_month(entries, 2026, 5, str(out), fmt="Simple")
+    ws = load_workbook(str(out), data_only=True).active
+    assert [ws[f"G{r}"].value for r in range(2, 6)] == [
+        None, timedelta(hours=10, minutes=30), None, timedelta(hours=4)]
+    # the month total is still where it was
+    assert ws["G7"].value == "Total"
+    assert ws["G8"].value == timedelta(hours=14, minutes=30)
 
 
 def test_simple_data_rows(tmp_path):
@@ -184,6 +222,32 @@ def test_full_totals_are_values(tmp_path):
     assert ws["M27"].value == pytest.approx(16 * 20.0)
 
 
+def _cells(ws) -> dict:
+    return {c.coordinate: c.value for row in ws.iter_rows() for c in row if c.value is not None}
+
+
+def test_full_names_fill_b3_b5_only(tmp_path):
+    blank, named = tmp_path / "blank.xlsx", tmp_path / "named.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(blank), fmt="Full")
+    export_month(_sample_entries(), 2026, 5, str(named), fmt="Full",
+                 employee_name="Aino Virtanen", manager_name="=Boss")
+    before, after = _cells(load_workbook(str(blank)).active), _cells(load_workbook(str(named)).active)
+    assert "B3" not in before and "B5" not in before
+    before.pop("H3"), after.pop("H3")  # today's date: could tick over between the two
+    assert after.pop("B3") == "Aino Virtanen"
+    assert after.pop("B5") == "=Boss"  # text, not a formula
+    assert after == before
+    ws = load_workbook(str(named)).active
+    assert ws["B5"].data_type == "s"
+
+
+def test_simple_ignores_names(tmp_path):
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(out), employee_name="Aino", manager_name="Boss")
+    values = set(_cells(load_workbook(str(out)).active).values())
+    assert "Aino" not in values and "Boss" not in values
+
+
 def test_full_empty_entries(tmp_path):
     out = tmp_path / "out.xlsx"
     export_month([], 2026, 5, str(out), fmt="Full")
@@ -210,3 +274,77 @@ def test_full_in_progress_shift_marked(tmp_path):
     # (rows 16-17) — the in-progress shift (05-12) is the last of those.
     assert ws["D17"].value == "In progress"
     assert ws["E17"].value is None
+
+
+def _range_entries():
+    return [
+        WorkEntry(id="1", date="2026-02-28", job_shift="Sales", time_in="09:00", time_out="17:00"),
+        WorkEntry(id="2", date="2026-03-02", job_shift="Support", time_in="09:00", time_out="16:30"),
+        WorkEntry(id="3", date="2026-03-31", job_shift="Sales", time_in="22:00", time_out="02:15"),
+        WorkEntry(id="4", date="2026-03-31", job_shift="Sales", time_in="08:00", time_out=""),
+        WorkEntry(id="5", date="2026-04-01", job_shift="Sales", time_in="09:00", time_out="17:00"),
+    ]
+
+
+def test_range_label():
+    from datetime import date
+    from excel_export import range_label
+    assert range_label(date(2026, 1, 1), date(2026, 12, 31)) == "1.1.–31.12.2026"
+    assert range_label(date(2025, 12, 1), date(2026, 1, 31)) == "1.12.2025–31.1.2026"
+
+
+def test_csv_range_bytes(tmp_path):
+    from datetime import date
+    from excel_export import export_range
+    out = tmp_path / "out.csv"
+    export_range(_range_entries(), date(2026, 3, 1), date(2026, 3, 31), str(out),
+                 kind="csv", include_pay=True, pay_rate=20.0)
+    raw = out.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert raw.decode("utf-8-sig").split("\r\n") == [
+        "Date;Shift;Start;End;Hours;Earnings",
+        "2.3.2026;Support;09:00;16:30;7,50;150,00",
+        "31.3.2026;Sales;08:00;;;",
+        "31.3.2026;Sales;22:00;02:15;4,25;85,00",
+        "",
+    ]
+
+
+def test_csv_without_pay_has_no_earnings(tmp_path):
+    from excel_export import export_csv
+    out = tmp_path / "out.csv"
+    export_csv(_range_entries()[:1], str(out))
+    assert out.read_text(encoding="utf-8-sig").splitlines() == [
+        "Date;Shift;Start;End;Hours", "28.2.2026;Sales;09:00;17:00;8,00"]
+
+
+def test_xlsx_range_is_a_simple_sheet_of_the_range(tmp_path):
+    from datetime import date
+    from excel_export import export_range
+    out = tmp_path / "out.xlsx"
+    export_range(_range_entries(), date(2026, 2, 28), date(2026, 3, 2), str(out), kind="xlsx")
+    wb = load_workbook(str(out))
+    ws = wb.active
+    assert wb.properties.title == "Hours 28.2.–2.3.2026"
+    assert [ws[f"B{r}"].value for r in (2, 3, 4)] == ["Sales", "Support", None]
+
+
+def _full_dates(ws) -> list[str]:
+    return [ws[f"A{r}"].value for r in range(13, ws.max_row + 1)
+            if isinstance(ws[f"A{r}"].value, str) and ws[f"A{r}"].value[:3].isalpha()]
+
+
+@pytest.mark.parametrize("year, month, days", [
+    # 29-31 Dec 2025 are ISO week 1 of 2026
+    (2025, 12, ["2025-12-01", "2025-12-15", "2025-12-30"]),
+    # 1-3 Jan 2027 are ISO week 53 of 2026
+    (2027, 1, ["2027-01-01", "2027-01-04", "2027-01-20"]),
+])
+def test_full_weeks_in_date_order_at_year_end(tmp_path, year, month, days):
+    from datetime import date
+    entries = [WorkEntry(id=str(i), date=d, job_shift="Sales", time_in="09:00", time_out="17:00")
+               for i, d in enumerate(reversed(days))]
+    out = tmp_path / "out.xlsx"
+    export_month(entries, year, month, str(out), fmt="Full")
+    ws = load_workbook(str(out)).active
+    assert _full_dates(ws) == [date.fromisoformat(d).strftime("%a %d %b %Y") for d in days]
