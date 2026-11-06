@@ -291,6 +291,9 @@ export interface Settings {
   default_job_shift: string;
   export_format: ExportFormat;
   export_include_pay: boolean;
+  /** Printed after EMPLOYEE: / MANAGER: on the Full sheet; '' = blank line. */
+  employee_name: string;
+  manager_name: string;
   ui_prefs: UiPrefs;
 }
 
@@ -303,6 +306,9 @@ export interface SettingsDraft {
   default_job_shift: string;
   export_format: ExportFormat;
   export_include_pay: boolean;
+  /** ≤ 60 characters, no control characters; left out = unchanged. */
+  employee_name?: string;
+  manager_name?: string;
   ui_prefs: UiPrefs;
 }
 

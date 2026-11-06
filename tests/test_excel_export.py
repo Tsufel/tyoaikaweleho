@@ -222,6 +222,32 @@ def test_full_totals_are_values(tmp_path):
     assert ws["M27"].value == pytest.approx(16 * 20.0)
 
 
+def _cells(ws) -> dict:
+    return {c.coordinate: c.value for row in ws.iter_rows() for c in row if c.value is not None}
+
+
+def test_full_names_fill_b3_b5_only(tmp_path):
+    blank, named = tmp_path / "blank.xlsx", tmp_path / "named.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(blank), fmt="Full")
+    export_month(_sample_entries(), 2026, 5, str(named), fmt="Full",
+                 employee_name="Aino Virtanen", manager_name="=Boss")
+    before, after = _cells(load_workbook(str(blank)).active), _cells(load_workbook(str(named)).active)
+    assert "B3" not in before and "B5" not in before
+    before.pop("H3"), after.pop("H3")  # today's date: could tick over between the two
+    assert after.pop("B3") == "Aino Virtanen"
+    assert after.pop("B5") == "=Boss"  # text, not a formula
+    assert after == before
+    ws = load_workbook(str(named)).active
+    assert ws["B5"].data_type == "s"
+
+
+def test_simple_ignores_names(tmp_path):
+    out = tmp_path / "out.xlsx"
+    export_month(_sample_entries(), 2026, 5, str(out), employee_name="Aino", manager_name="Boss")
+    values = set(_cells(load_workbook(str(out)).active).values())
+    assert "Aino" not in values and "Boss" not in values
+
+
 def test_full_empty_entries(tmp_path):
     out = tmp_path / "out.xlsx"
     export_month([], 2026, 5, str(out), fmt="Full")

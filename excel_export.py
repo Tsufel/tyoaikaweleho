@@ -38,16 +38,19 @@ def _shift_fraction(entry: WorkEntry) -> float | None:
 # ── public entry point ─────────────────────────────────────────────────────────
 
 def export_month(entries: list[WorkEntry], year: int, month: int, save_path: str,
-                 fmt: str = "Simple", include_pay: bool = False, pay_rate: float = 20.0):
+                 fmt: str = "Simple", include_pay: bool = False, pay_rate: float = 20.0,
+                 employee_name: str = "", manager_name: str = ""):
     """Export *entries* to an Excel file at *save_path*.
 
     fmt:         "Simple" → clean minimal table (default)
                  "Full" → original elaborate EAS layout
     include_pay: when True and fmt=="Simple", append Rate + Earned rows
     pay_rate:    hourly rate used for the earnings calculation
+    employee_name, manager_name: written after EMPLOYEE: / MANAGER: on the
+                 Full sheet; blank leaves the line to fill in by hand
     """
     if fmt == "Full":
-        _export_full(entries, year, month, save_path, pay_rate)
+        _export_full(entries, year, month, save_path, pay_rate, employee_name, manager_name)
     else:
         _export_simple(entries, year, month, save_path, include_pay, pay_rate)
 
@@ -226,8 +229,16 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
 # ── Full layout ──────────────────────────────────────────────────────────
 
+def _put_text(cell, text: str, font):
+    """*text* as plain text: a name like "=Boss" is never a formula."""
+    cell.value = text
+    cell.data_type = "s"
+    cell.font = font
+
+
 def _export_full(entries: list[WorkEntry], year: int, month: int,
-                 save_path: str, pay_rate: float):
+                 save_path: str, pay_rate: float, employee_name: str = "",
+                 manager_name: str = ""):
     import calendar
     wb = Workbook()
     wb.calculation.fullCalcOnLoad = True
@@ -260,12 +271,16 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
 
     # Row 3: Employee
     ws["A3"] = "EMPLOYEE:"; ws["A3"].font = label_font
+    if employee_name:
+        _put_text(ws["B3"], employee_name, normal_font)
     ws["D3"] = "SIGNATUR:"; ws["D3"].font = label_font
     ws["G3"] = "DATE:";     ws["G3"].font = label_font
     ws["H3"] = datetime.today().strftime("%d.%m.%Y"); ws["H3"].font = normal_font
 
     # Row 5: Manager
     ws["A5"] = "MANAGER:";  ws["A5"].font = label_font
+    if manager_name:
+        _put_text(ws["B5"], manager_name, normal_font)
     ws["D5"] = "SIGNATUR:"; ws["D5"].font = label_font
     ws["G5"] = "DATE:";     ws["G5"].font = label_font
 

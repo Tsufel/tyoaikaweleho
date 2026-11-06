@@ -24,6 +24,8 @@ export const DEFAULT_SETTINGS: Settings = {
   default_job_shift: '',
   export_format: 'Simple',
   export_include_pay: false,
+  employee_name: '',
+  manager_name: '',
   ui_prefs: { ...DEFAULT_UI_PREFS },
 };
 

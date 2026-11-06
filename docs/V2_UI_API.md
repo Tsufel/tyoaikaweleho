@@ -390,8 +390,14 @@ Bootstrap = {
   The JS clock ticks from `start_epoch_ms`; Python is authoritative on stop.
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
+  employee_name:'', manager_name:'',
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
   liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false}}`.
+  `employee_name` / `manager_name` are printed after EMPLOYEE: / MANAGER: (B3 /
+  B5) on the Full sheet; `''` leaves the line blank, as before. They are saved
+  through `save_settings`, trimmed with inner whitespace collapsed, at most 60
+  characters with no control characters (`invalid(field:'employee_name'|
+  'manager_name')`); a draft that leaves a name out keeps the stored one.
   `pet` is `'off'|'familiar'|'wizard'`; `pet_name` is stored trimmed with inner
   whitespace collapsed, at most 24 printable characters (`''` = the default name
   "Tähti" / "Weleho"); a bad name is `invalid(field:'pet_name')`.
@@ -660,8 +666,8 @@ through untouched.
 **Shapes (2.3)**
 
 - `Settings` gains `employee_name`, `manager_name` (≤ 60, cleaned like
-  `pet_name`) and `job_shifts: [{name, hidden}]`; `shifts: string[]` keeps
-  listing the visible ones.
+  `pet_name`; **shipped early**, see §8) and `job_shifts: [{name, hidden}]`;
+  `shifts: string[]` keeps listing the visible ones.
 
 **Methods (2.2 / 2.3)**
 

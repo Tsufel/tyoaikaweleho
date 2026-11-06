@@ -823,6 +823,7 @@ class ShiftController:
             "default_job_shift": storage.get_default_job_shift(),
             "export_format": fmt if fmt in storage.EXPORT_FORMATS else "Simple",
             "export_include_pay": storage.get_export_include_pay(),
+            **storage.get_sheet_names(),
             "ui_prefs": storage.get_ui_prefs(),
         }
 
@@ -852,6 +853,14 @@ class ShiftController:
             values["export_format"] = fmt
         if draft.get("appearance") in storage.APPEARANCE_MODES:
             values["appearance_mode"] = draft["appearance"]
+        for key in storage.SHEET_NAME_KEYS:  # optional: left out = unchanged
+            if key in draft:
+                problem = storage._sheet_name_error(key, draft[key])
+                if problem:
+                    return R.invalid(key, "Names can't contain control characters."
+                                     if "control" in problem else
+                                     f"Keep names to at most {storage.SHEET_NAME_MAX} characters.")
+                values[key] = draft[key]
         prefs = draft.get("ui_prefs")
         if prefs is not None:
             invalid = self._check_prefs(prefs)
@@ -993,10 +1002,11 @@ class ShiftController:
             fmt = storage.get_export_format()
             include_pay = storage.get_export_include_pay()
             rate = storage.get_pay_rate()
+            names = storage.get_sheet_names()
         try:
             excel_export.export_month(entries=entries, year=int(year), month=int(month),
                                       save_path=path, fmt=fmt, include_pay=include_pay,
-                                      pay_rate=rate)
+                                      pay_rate=rate, **names)
         except PermissionError:
             return R.error("file_locked",
                            f"Could not write:\n{path}\n\n"

@@ -223,6 +223,8 @@ export function createMockApi(): Api {
     default_job_shift: 'Sales',
     export_format: 'Simple',
     export_include_pay: false,
+    employee_name: '',
+    manager_name: '',
     ui_prefs: {
       lulz: q.has('lulz'),
       reduce_effects: false,
@@ -887,6 +889,18 @@ export function createMockApi(): Api {
       if (rate === null) return invalid('pay_rate', 'Pay rate must be a positive number (e.g. 20 or 20,50).');
       const th = draft.ui_prefs.target_hours;
       if (!(th >= 1 && th <= 24)) return invalid('target_hours', 'Daily target must be between 1 and 24 hours.');
+      // like storage._sheet_name_error; left out = unchanged
+      const names = { employee_name: settings.employee_name, manager_name: settings.manager_name };
+      for (const key of ['employee_name', 'manager_name'] as const) {
+        const raw = draft[key];
+        if (raw === undefined) continue;
+        if (typeof raw === 'string' && /[\p{Cc}\p{Cs}\p{Co}\p{Zl}\p{Zp}‪-‮⁦-⁩]/u.test(raw)) {
+          return invalid(key, "Names can't contain control characters.");
+        }
+        const name = typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ') : null;
+        if (name === null || [...name].length > 60) return invalid(key, 'Keep names to at most 60 characters.');
+        names[key] = name;
+      }
       if (controls.failSave) return err('save_failed', `Settings could not be written: ${saveFailMsg()}`);
       const job = draft.default_job_shift.trim();
       if (job && !shifts.some((s) => s.toLowerCase() === job.toLowerCase())) shifts = [...shifts, job];
@@ -898,6 +912,7 @@ export function createMockApi(): Api {
         default_job_shift: job,
         export_format: draft.export_format,
         export_include_pay: draft.export_include_pay,
+        ...names,
         ui_prefs: { ...draft.ui_prefs },
       };
       emitEvent('timer:changed', timerState());

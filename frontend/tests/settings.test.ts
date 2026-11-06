@@ -32,6 +32,8 @@ const S: Settings = {
   default_job_shift: 'Morning',
   export_format: 'Simple',
   export_include_pay: false,
+  employee_name: 'Aino Virtanen',
+  manager_name: '',
   ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '', pet_hint_seen: false, pet_skin: 'classic' },
 };
 
@@ -76,6 +78,19 @@ describe('settings form', () => {
       pet_hint_seen: false,
       pet_skin: 'classic',
     });
+  });
+
+  it('carries the timesheet names, trimmed, and maps their errors', () => {
+    const f = formFromSettings(S);
+    expect(f.employee_name).toBe('Aino Virtanen');
+    expect(f.manager_name).toBe('');
+    expect(isDirty(f, { ...f, manager_name: '  ' })).toBe(false);
+    expect(isDirty(f, { ...f, manager_name: 'Pekka' })).toBe(true);
+    const d = draftFromForm({ ...f, manager_name: ' Pekka ' }, S);
+    expect(d.employee_name).toBe('Aino Virtanen');
+    expect(d.manager_name).toBe('Pekka');
+    expect(fieldOf('employee_name')).toBe('employee_name');
+    expect(fieldOf('manager_name')).toBe('manager_name');
   });
 
   it('clamps and formats the daily target', () => {

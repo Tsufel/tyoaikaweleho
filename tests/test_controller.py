@@ -899,6 +899,28 @@ def test_save_settings(env):
     assert "shifts" in r
 
 
+def test_save_settings_sheet_names(env, tmp_path):
+    ctrl, _ = env
+    s = ctrl.get_settings()["settings"]
+    assert s["employee_name"] == "" and s["manager_name"] == ""
+    r = ctrl.save_settings(_settings_draft(employee_name=" Aino  Virtanen ", manager_name="Pekka"))
+    assert r["settings"]["employee_name"] == "Aino Virtanen"
+    assert r["settings"]["manager_name"] == "Pekka"
+    # a draft without the names leaves them as they were
+    r = ctrl.save_settings(_settings_draft())
+    assert r["settings"]["employee_name"] == "Aino Virtanen"
+    assert "control characters" in ctrl.save_settings(
+        _settings_draft(employee_name="bell\x07"))["message"]
+    assert "60 characters" in ctrl.save_settings(
+        _settings_draft(employee_name="x" * 61))["message"]
+    # the Full export prints them after EMPLOYEE: / MANAGER:
+    from openpyxl import load_workbook
+    out = tmp_path / "Full.xlsx"
+    assert ctrl.export_month(2026, 5, str(out))["status"] == "saved"
+    ws = load_workbook(str(out)).active
+    assert ws["B3"].value == "Aino Virtanen" and ws["B5"].value == "Pekka"
+
+
 def test_save_settings_lulz_sound(env):
     ctrl, _ = env
     r = ctrl.save_settings(_settings_draft(ui_prefs={"lulz": True, "lulz_sound": True}))
@@ -928,6 +950,9 @@ def test_save_settings_ignores_bad_appearance(env):
     ({"export_format": "Fancy"}, "export_format"),
     ({"ui_prefs": {"target_hours": 30}}, "target_hours"),
     ({"ui_prefs": {"bogus": 1}}, "ui_prefs"),
+    ({"employee_name": "x" * 61}, "employee_name"),
+    ({"manager_name": "tab\tfeed"}, "manager_name"),
+    ({"manager_name": None}, "manager_name"),
 ])
 def test_save_settings_invalid_writes_nothing(env, over, field):
     ctrl, _ = env
