@@ -10,7 +10,9 @@ copy of Mozilla's root list.
 """
 import functools
 import os
+import socket
 import ssl
+import urllib.error
 import urllib.request
 
 
@@ -51,3 +53,46 @@ def describe_error(exc: BaseException) -> str:
                 "connection was stopped.\n\nAntivirus HTTPS scanning, a network "
                 "proxy or a wrong date and time on this PC can cause this.")
     return str(exc)
+
+
+def classify_error(exc: BaseException) -> str:
+    """Sort a failed request into "certificate", "timeout", "offline",
+    "http" or "other" so the user is told what went wrong in plain words."""
+    if is_cert_error(exc):
+        return "certificate"
+    if isinstance(exc, urllib.error.HTTPError):
+        return "http"
+    reason = getattr(exc, "reason", exc) if isinstance(exc, urllib.error.URLError) else exc
+    if isinstance(reason, (TimeoutError, socket.timeout)) or (
+            isinstance(reason, str) and "timed out" in reason.lower()):
+        return "timeout"
+    if isinstance(reason, ssl.SSLError):
+        return "other"
+    # DNS failure (socket.gaierror), refused/reset connections, no network
+    if isinstance(reason, OSError):
+        return "offline"
+    return "other"
+
+
+def describe_check_failure(exc: BaseException) -> str:
+    """Why an update check failed, for the user: never the raw exception
+    text, which is technical and can carry addresses or paths."""
+    kind = classify_error(exc)
+    if kind == "certificate":
+        return describe_error(exc)
+    if kind == "timeout":
+        return ("GitHub took too long to answer. The connection may be slow "
+                "or busy — try again in a moment.")
+    if kind == "offline":
+        return ("GitHub could not be reached. Check that this PC is connected "
+                "to the internet, then try again.")
+    if kind == "http":
+        code = getattr(exc, "code", None)
+        if code in (403, 429):
+            return ("GitHub is limiting requests right now (too many checks). "
+                    "Try again in an hour.")
+        if isinstance(code, int) and code >= 500:
+            return (f"GitHub had a problem answering (error {code}). "
+                    "Try again later.")
+        return f"GitHub turned the request down (error {code}). Try again later."
+    return "Something went wrong while talking to GitHub. Try again later."

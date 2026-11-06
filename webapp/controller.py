@@ -1575,8 +1575,11 @@ class ShiftController:
         try:
             release = updater.fetch_latest_release()
         except Exception as exc:
+            # the raw error goes to the log only; the user gets plain words
+            storage.append_error_log(
+                f"[updates] check failed: {type(exc).__name__}: {exc}")
             return R.error("network", "Could not check for updates:\n"
-                                      + net.describe_error(exc))
+                                      + net.describe_check_failure(exc))
         available = bool(release and updater._is_newer(release[0], current_version))
         if available:
             self.remember_update(*release)

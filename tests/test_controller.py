@@ -1541,10 +1541,14 @@ def test_check_updates_network_error(env, monkeypatch):
     ctrl, _ = env
 
     def offline():
-        raise OSError("offline")
+        raise OSError("secret-host 10.0.0.1 offline")
     monkeypatch.setattr(updater, "fetch_latest_release", offline)
     r = ctrl.check_updates("2.0.0")
-    assert r["error"]["code"] == "network" and "offline" in r["message"]
+    assert r["error"]["code"] == "network"
+    assert "could not be reached" in r["message"]
+    assert "secret-host" not in r["message"]   # raw text stays out of the UI
+    with open(storage.ERROR_LOG, encoding="utf-8") as f:
+        assert "secret-host" in f.read()       # ...but is kept for diagnosis
 
 
 def test_install_update(env, monkeypatch):
