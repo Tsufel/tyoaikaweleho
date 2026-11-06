@@ -97,6 +97,24 @@ def test_import_eas_preserves_shift(tmp_path, tmp_storage):
     assert entries[0].job_shift == "Sales"
 
 
+def test_import_cleans_shift_names(tmp_path, tmp_storage):
+    # Alt+Enter line breaks, tabs and over-long cells would give entries
+    # whose job the app refuses when starting a shift or saving an edit
+    p = str(tmp_path / "t.xlsx")
+    _make_eas_xlsx(p, [
+        (datetime(2026, 5, 10), "Night\nshift", dt_time(9, 0), dt_time(17, 0)),
+        (datetime(2026, 5, 11), " Front\tdesk ", dt_time(9, 0), dt_time(17, 0)),
+        (datetime(2026, 5, 12), "x" * (storage.JOB_SHIFT_MAX + 20), dt_time(9, 0),
+         dt_time(17, 0)),
+    ])
+    assert import_from_file(p) == (3, 0)
+    names = [e.job_shift for e in storage.load_month(2026, 5)]
+    assert names[:2] == ["Night shift", "Front desk"]
+    assert len(names[2]) == storage.JOB_SHIFT_MAX
+    for name in names:
+        assert storage.clean_job_shift(name) == name
+
+
 def test_import_eas_multiple_shifts(tmp_path, tmp_storage):
     p = str(tmp_path / "t.xlsx")
     _make_eas_xlsx(p, [

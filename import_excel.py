@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import datetime, date, time as dt_time, timedelta
 from openpyxl import load_workbook
 
@@ -8,6 +9,16 @@ from utils import parse_date_input, parse_time_input
 # The Full (EAS) export writes column A as text in this format
 _EXPORT_DATE_FORMAT = "%a %d %b %Y"
 _HAS_YEAR = re.compile(r"\d{4}")
+
+
+def _shift_name(raw) -> str:
+    """A shift cell as a name storage.clean_job_shift accepts: line breaks
+    and tabs (Alt+Enter in Excel) become spaces, other control characters
+    are dropped and the name is cut to storage.JOB_SHIFT_MAX."""
+    s = " ".join(str(raw).split())
+    s = "".join(c for c in s if unicodedata.category(c) not in storage._BAD_NAME_CATEGORIES
+                and c not in storage._BIDI_CONTROLS)
+    return " ".join(s.split())[:storage.JOB_SHIFT_MAX].rstrip()
 
 
 def _hhmm(minutes: int) -> str | None:
@@ -139,7 +150,7 @@ def import_from_file(path: str, report: dict | None = None) -> tuple[int, int]:
                 time_out = _normalise_time(row[2]) if len(row) > 2 else None
             else:  # eas
                 raw_shift = row[1] if len(row) > 1 else None
-                job_shift = str(raw_shift).strip() if raw_shift is not None else ""
+                job_shift = _shift_name(raw_shift) if raw_shift is not None else ""
                 if not job_shift or job_shift.lower() == "none":
                     job_shift = default_js
                 raw_in = row[2] if len(row) > 2 else None
