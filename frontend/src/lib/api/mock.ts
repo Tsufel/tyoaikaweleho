@@ -59,6 +59,7 @@ import {
   weekKey,
 } from '../time';
 import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
+import { computeRecords } from './mockRecords';
 
 /** storage.PET_SKINS */
 const PET_SKIN_IDS: readonly PetSkinId[] = ['classic', 'cosmic', 'neon', 'gilded', 'legend'];
@@ -1035,6 +1036,11 @@ export function createMockApi(): Api {
       // &petxp=900: that many extra lifetime hours, to see the high levels
       const extra = Math.max(0, Number(q.get('petxp')) || 0) * 60;
       return okR('ok', { ...stats, lifetime_minutes: stats.lifetime_minutes + extra });
+    },
+    // personal records (Hall of fame)
+    async get_records() {
+      await latency();
+      return okR('ok', computeRecords(entries, settings.ui_prefs.target_hours, new Date(), toRow));
     },
 
     // ── import / export / OCR ──

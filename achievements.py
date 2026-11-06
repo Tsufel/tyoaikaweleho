@@ -81,6 +81,13 @@ def _clock(t: str) -> int:
 
 def _closed_shifts(entries, today: date):
     """(day, start minute, minutes) for every countable entry, in replay order."""
+    return [(d, start, mins) for d, start, mins, _e in countable_shifts(entries, today)]
+
+
+def countable_shifts(entries, today: date):
+    """(day, start minute, minutes, entry) for every countable entry (closed,
+    readable, not zero-length, not after *today*), in replay order. Shared
+    with records.py so both engines count the same shifts."""
     out = []
     for e in entries:
         if not e.time_in or not e.time_out:
@@ -94,7 +101,7 @@ def _closed_shifts(entries, today: date):
         mins = entry_minutes(e.time_in, e.time_out)
         if d > today or mins <= 0:
             continue
-        out.append((d, start, mins))
+        out.append((d, start, mins, e))
     out.sort(key=lambda s: (s[0], s[1]))
     return out
 

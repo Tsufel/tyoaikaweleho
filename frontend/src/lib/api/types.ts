@@ -282,6 +282,27 @@ export interface PetStats {
   days: Record<IsoDate, number>;
 }
 
+/** get_records (§10.3): personal records, null until a shift counts. Ties go to the earliest. */
+export interface RecordsData {
+  total_shifts: number;
+  first_shift_date: IsoDate | null;
+  /** Days from the first shift to today. */
+  days_since_first: number | null;
+  longest_shift: { entry: EntryRow; minutes: number } | null;
+  best_day: { date: IsoDate; minutes: number } | null;
+  /** key "2026-W38", start = its Monday. */
+  best_week: { key: string; start: IsoDate; minutes: number } | null;
+  most_shifts_week: { key: string; start: IsoDate; shifts: number } | null;
+  /** key "2026-09". */
+  best_month: { key: string; minutes: number } | null;
+  /** time "HH:MM". */
+  earliest_start: { entry: EntryRow; time: HHMM } | null;
+  /** next_day: the shift ran past midnight (02:40 the next morning beats 23:00). */
+  latest_finish: { entry: EntryRow; time: HHMM; next_day: boolean } | null;
+  /** Workdays (Mon-Fri) at target in a row; `current` ends today, which doesn't break it before it's done. */
+  streak: { current: number; best: number };
+}
+
 export interface Settings {
   appearance: Appearance;
   default_start_time: HHMM;
@@ -534,6 +555,8 @@ export interface Api {
   get_achievements(): Promise<Result<AchievementsData>>;
   ack_achievements(ids: string[]): Promise<Result>;
   get_pet_stats(): Promise<Result<PetStats>>;
+  // personal records (Hall of fame)
+  get_records(): Promise<Result<RecordsData>>;
 
   // import / export / OCR
   export_month(year: number, month: number): Promise<ExportResult>;

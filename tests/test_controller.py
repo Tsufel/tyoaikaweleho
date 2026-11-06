@@ -1356,6 +1356,27 @@ def test_pet_stats(env):
     assert r["days"] == {"2026-07-30": 60, "2026-09-22": 330}
 
 
+def test_records(env):
+    ctrl, clock = env  # today is Wed 2026-09-23
+    r = ctrl.get_records()
+    assert r["ok"] and r["total_shifts"] == 0 and r["longest_shift"] is None
+    assert r["streak"] == {"current": 0, "best": 0}
+    _add("2026-09-21", "07:30", "16:00")
+    _add("2026-09-22", "09:00", "18:30")
+    _add("2026-09-24", "05:00", "23:00")  # future: not a record yet
+    r = ctrl.get_records()
+    json.dumps(r, allow_nan=False)
+    assert r["total_shifts"] == 2
+    assert r["longest_shift"]["minutes"] == 570
+    assert r["longest_shift"]["entry"]["date"] == "2026-09-22"
+    assert r["earliest_start"]["time"] == "07:30"
+    assert r["latest_finish"] == {**r["latest_finish"], "time": "18:30", "next_day": False}
+    assert r["best_week"] == {"key": "2026-W39", "start": "2026-09-21", "minutes": 1080}
+    assert r["streak"] == {"current": 2, "best": 2}
+    storage.set_ui_prefs({"target_hours": 9})  # Monday's 8.5 h no longer counts
+    assert ctrl.get_records()["streak"] == {"current": 1, "best": 1}
+
+
 def test_achievements_ignore_future_entries(env):
     ctrl, clock = env  # today is 2026-09-23
     _add("2026-09-24")

@@ -240,6 +240,11 @@ class Api:
     def get_pet_stats(self):
         return self._c.get_pet_stats()
 
+    # Personal records (Hall of fame)
+    @_guarded
+    def get_records(self):
+        return self._c.get_records()
+
     # ── import / export / OCR ────────────────────────────────────
 
     @_guarded
