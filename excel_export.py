@@ -160,6 +160,8 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
         ws[f"A{r}"].number_format = "DD.MM.YYYY"
 
         ws[f"B{r}"] = entry.job_shift
+        if isinstance(entry.job_shift, str):
+            ws[f"B{r}"].data_type = "s"   # "=Boss" is a name, not a formula
 
         if entry.time_in:
             ws[f"C{r}"] = _time_fraction(entry.time_in)
@@ -326,6 +328,8 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
             ws[f"A{r}"].font = normal_font; ws[f"A{r}"].alignment = left
 
             ws[f"B{r}"] = entry.job_shift
+            if isinstance(entry.job_shift, str):
+                ws[f"B{r}"].data_type = "s"   # "=Boss" is a name, not a formula
             ws[f"B{r}"].font = normal_font; ws[f"B{r}"].alignment = center
 
             if entry.time_in:

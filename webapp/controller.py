@@ -611,7 +611,11 @@ class ShiftController:
             old = t.start_dt
             if start_iso != _iso(old):
                 return R.stale(timer=self.timer_state())
-            job = t.job_shift if job_shift is None else (job_shift.strip() or "—")
+            try:
+                typed = storage.clean_job_shift(job_shift)
+            except ValueError as exc:
+                return R.invalid("job_shift", str(exc), timer=self.timer_state())
+            job = t.job_shift if job_shift is None else (typed or "—")
             start = old
             if time is not None:
                 tm = parse_time_input(time)

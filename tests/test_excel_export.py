@@ -58,6 +58,18 @@ def test_simple_writes_the_shift(tmp_path):
     assert [ws["B2"].value, ws["B3"].value] == ["Sales", "Support"]
 
 
+@pytest.mark.parametrize("fmt, cell", [("Simple", "B2"), ("Full", "B13")])
+def test_shift_is_text_not_a_formula(tmp_path, fmt, cell):
+    # a shift named "=Boss" must stay text: as a formula Excel shows #NAME?
+    # and a re-import reads the cell as empty
+    out = tmp_path / "out.xlsx"
+    entries = [WorkEntry(id="1", date="2026-05-10", job_shift="=Boss",
+                         time_in="09:00", time_out="17:00")]
+    export_month(entries, 2026, 5, str(out), fmt=fmt)
+    ws = load_workbook(str(out)).active
+    assert ws[cell].value == "=Boss" and ws[cell].data_type == "s"
+
+
 def test_simple_frozen_header_filter_and_properties(tmp_path):
     out = tmp_path / "out.xlsx"
     export_month(_sample_entries(), 2026, 3, str(out), fmt="Simple")
