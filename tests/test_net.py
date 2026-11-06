@@ -4,6 +4,7 @@ request with CERTIFICATE_VERIFY_FAILED. Uses a loopback TLS server whose
 test root (tests/fixtures/tls) is in neither list unless a test adds it."""
 import http.server
 import os
+import socket
 import ssl
 import sys
 import threading
@@ -127,3 +128,33 @@ def test_describe_error(exc, friendly):
     assert ("certificate could not be verified" in text) is friendly
     if not friendly:
         assert text == str(exc)
+
+
+def _http(code):
+    return urllib.error.HTTPError("https://api.github.com/x", code, "msg", {}, None)
+
+
+@pytest.mark.parametrize("exc, kind, phrase", [
+    (urllib.error.URLError(socket.gaierror(11001, "getaddrinfo failed")), "offline", "could not be reached"),
+    (urllib.error.URLError(ConnectionRefusedError(10061, "refused")), "offline", "could not be reached"),
+    (OSError("network is unreachable"), "offline", "could not be reached"),
+    (urllib.error.URLError(TimeoutError("timed out")), "timeout", "took too long"),
+    (urllib.error.URLError("timed out"), "timeout", "took too long"),
+    (socket.timeout("timed out"), "timeout", "took too long"),
+    (_http(403), "http", "limiting requests"),
+    (_http(429), "http", "limiting requests"),
+    (_http(502), "http", "error 502"),
+    (_http(410), "http", "error 410"),
+    (urllib.error.URLError(ssl.SSLCertVerificationError(1, "bad issuer")), "certificate", "certificate"),
+    (urllib.error.URLError(ssl.SSLError(1, "wrong version number")), "other", "went wrong"),
+    (ValueError("Expecting value: line 1 column 1"), "other", "went wrong"),
+    (KeyError("tag_name"), "other", "went wrong"),
+])
+def test_describe_check_failure(exc, kind, phrase):
+    assert net.classify_error(exc) == kind
+    text = net.describe_check_failure(exc)
+    assert phrase in text
+    # the raw exception text never reaches the user
+    for raw in ("getaddrinfo", "refused", "unreachable", "msg", "wrong version",
+                "Expecting value", "tag_name", "bad issuer"):
+        assert raw not in text

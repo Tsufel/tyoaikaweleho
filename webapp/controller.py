@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 from datetime import date, datetime, timedelta
 
 import holidays
@@ -23,6 +24,7 @@ from webapp.results import Stale, answer, describe, entry_row, money, opt, store
 
 MAX_ENTRY_MINUTES = 24 * 60
 RECOVERY_LIMIT = timedelta(hours=8)
+UPDATE_RECHECK_SECONDS = 24 * 60 * 60   # automatic update checks: at most daily
 
 
 def _session_start(session: dict) -> datetime | None:
@@ -83,6 +85,11 @@ class ShiftController:
         self._timer = timer if timer is not None else WorkTimer()
         self._clock = clock
         self._update: tuple[str, str, str | None] | None = None
+        # automatic re-checks: when the last check started (monotonic) and
+        # whether an update is downloading/installing right now
+        self._update_check_lock = threading.Lock()
+        self._last_update_check: float | None = None
+        self._update_busy = False
         self.dlc_update_version: str | None = None
         self._last_export: str | None = None
 
@@ -1596,14 +1603,36 @@ class ShiftController:
     def pending_update(self) -> tuple[str, str, str | None] | None:
         return self._update
 
+    def note_update_check(self, now: float | None = None):
+        """A check (startup, manual or automatic) is starting now."""
+        with self._update_check_lock:
+            self._last_update_check = time.monotonic() if now is None else now
+
+    def claim_auto_update_check(self, now: float | None = None) -> bool:
+        """True (and the check is noted) when an automatic re-check may run:
+        none in the last UPDATE_RECHECK_SECONDS and no install under way."""
+        now = time.monotonic() if now is None else now
+        with self._update_check_lock:
+            if self._update_busy:
+                return False
+            last = self._last_update_check
+            if last is not None and now - last < UPDATE_RECHECK_SECONDS:
+                return False
+            self._last_update_check = now
+            return True
+
     def check_updates(self, current_version: str) -> dict:
         """Manual check; network calls run without the lock."""
         import updater
+        self.note_update_check()
         try:
             release = updater.fetch_latest_release()
         except Exception as exc:
+            # the raw error goes to the log only; the user gets plain words
+            storage.append_error_log(
+                f"[updates] check failed: {type(exc).__name__}: {exc}")
             return R.error("network", "Could not check for updates:\n"
-                                      + net.describe_error(exc))
+                                      + net.describe_check_failure(exc))
         available = bool(release and updater._is_newer(release[0], current_version))
         if available:
             self.remember_update(*release)
@@ -1648,9 +1677,18 @@ class ShiftController:
         except OSError as exc:
             return R.error("update_failed", "Your data couldn't be backed up, so the "
                                             f"update was not installed:\n\n{exc}")
+        with self._update_check_lock:
+            self._update_busy = True
         try:
             updater.apply_update(url, sha)
         except Exception as exc:
             return R.error("update_failed", "The update could not be installed:\n\n"
                                             + net.describe_error(exc))
+        finally:
+            with self._update_check_lock:
+                self._update_busy = False
         return R.ok(version=version)
+
+    @property
+    def update_busy(self) -> bool:
+        return self._update_busy
