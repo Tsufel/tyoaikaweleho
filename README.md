@@ -296,7 +296,7 @@ Existing users with the DLC installed see the update button on their next launch
 | [Inno Setup 6](https://jrsoftware.org/isdl.php) | free, ~5 MB |
 
 ```batch
-REM 1. Bump __version__ in version.py
+REM 1. python scriptsump_version.py X.Y.Z  (then write the notes in changelog.py)
 REM 2. Run the build script
 build.bat
 REM → produces Output\TyoaikawelehoSetup_x.x.x.exe
@@ -312,14 +312,18 @@ The script automatically:
 To check a bundle without installing it: `dist\Tyoaikaweleho\Tyoaikaweleho.exe --smoke-test`.
 
 **Releasing:**
-1. Bump the version in `version.py` and `frontend/package.json`, and add the
-   release notes to `changelog.py`
-2. Commit, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
+1. `python scripts/bump_version.py X.Y.Z` sets the version in `version.py`,
+   `frontend/package.json` and `frontend/package-lock.json`, and adds an empty
+   `X.Y.Z` entry to `changelog.py`
+2. Write the release notes in that entry (the tests fail while it is empty).
+   `python scripts/release_notes.py` shows them as they will appear on GitHub
+3. Commit, then push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`
 
-The **Release** workflow (`.github/workflows/release.yml`) runs the tests,
-checks the tag matches both version files, builds the installer and publishes
-a GitHub release with `TyoaikawelehoSetup_X.Y.Z.exe` and its `.sha256` checksum
-attached. `build.bat` is for local builds only.
+`python scripts/bump_version.py --check` lists the version in every place it
+is written. The **Release** workflow (`.github/workflows/release.yml`) runs the
+tests, checks the tag and every version file agree, builds the installer and
+publishes a GitHub release with the `changelog.py` notes and
+`TyoaikawelehoSetup_X.Y.Z.exe` and its `.sha256` checksum attached. `build.bat` is for local builds only.
 
 Installed copies of the app detect the new release on next launch and offer to update silently. The updater only accepts release assets from this repository over HTTPS, and verifies the installer's SHA-256 when a `.sha256` asset is published.
 
