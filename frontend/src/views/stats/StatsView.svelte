@@ -195,7 +195,7 @@
   // ── derived view model ─────────────────────────────────────────
   const targetHours = $derived($settings.ui_prefs.target_hours);
   const targets = $derived(data ? bucketTargets(data.buckets, data.granularity, data.start, data.end, targetHours) : []);
-  const achTotal = $derived($achievements?.items.length || 17);
+  const achTotal = $derived($achievements?.items.length || 28);
   // all-time, newest first: the tile ignores the picked range
   const latestAch = $derived(
     ($achievements?.items ?? [])
