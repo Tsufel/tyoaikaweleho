@@ -2,6 +2,37 @@
 next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.5": [
+        "Forgot to press STOP? Stop the shift at an earlier time, or fix "
+        "its start time and job while it runs. A \"Still working?\" note "
+        "shows up 2 hours past your daily target",
+        "The Timer card shows how much you've worked this week, chips for "
+        "your recent jobs and the time you'll reach your daily target",
+        "Add a note to any shift, and undo an add or an edit from the toast",
+        "Shifts list: duplicate a shift, copy it as text, filter the month "
+        "(Ctrl+F) and use the new right-click menu",
+        "Finnish public holidays are marked in the Shifts list, and they "
+        "never break your streak",
+        "Zoom the whole app with Ctrl + and Ctrl −, or reset it with Ctrl 0. "
+        "Press Ctrl+K for a command palette, and ? or F1 for every shortcut",
+        "Export any date range as CSV or as a simple workbook. The Full "
+        "sheet now has a Notes column, and it can print your and your "
+        "manager's names: turn on Settings ▸ Include names",
+        "New Your data card in Settings: see your backups, make one now, "
+        "and restore one safely (your current data is copied aside first)",
+        "Safer data: a missing data file is restored from the newest "
+        "backup, an import is saved in one go after a safety copy, and "
+        "your files are copied aside before an update installs",
+        "Achievements: more milestones, hidden calendar medals and a Hall "
+        "of fame of your personal records. A recap of last week's hours "
+        "shows up when a new week starts",
+        "Stats: clearer axis labels, the change from the last period and "
+        "a shifts donut",
+        "The window title shows the running shift's time, so you can see "
+        "it from the taskbar",
+        "Fixed: the selected month in the month picker is highlighted "
+        "again, and update checks now say why they failed",
+    ],
     "2.1.4": [
         "New pet looks: Cosmic at level 5, Neon at 10, Gilded at 20 and "
         "Legend at 25. Pick one on the pet sheet once your pet gets there",
