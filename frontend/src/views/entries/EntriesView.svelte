@@ -48,6 +48,8 @@
     isFiltering,
     isSameMonth,
     isWeekend,
+    dateTitle,
+    holidayOn,
     jobsInMonth,
     monthAsText,
     monthSummary,
@@ -776,12 +778,13 @@
         <tbody bind:this={tbody}>
           {#each rows as row (row.key)}
             {@const e = row.kind === 'entry' ? row.entry : null}
+            {@const holiday = e ? holidayOn($month, e.date) : null}
             <tr
               data-id={e?.id}
               class={e ? 'entry' : 'week'}
               class:selected={!!e && e.id === $selectedId}
               class:today={!!e && e.date === todayIso}
-              class:weekend={!!e && isWeekend(e.date)}
+              class:weekend={!!e && (isWeekend(e.date) || !!holiday)}
               aria-selected={e ? e.id === $selectedId : undefined}
               tabindex={e ? (e.id === focusId ? 0 : -1) : undefined}
               onclick={() => e && onRowClick(e.id)}
@@ -793,8 +796,10 @@
               out:fade={{ duration: 140 }}
             >
               {#if e}
-                <td class="c-date num" title={e.display_date}>
-                  {#if e.date === todayIso}<span class="today-dot" aria-hidden="true"></span>{/if}{shortDate(e.date)}{#if e.date === todayIso}<span class="sr-only">, today</span>{/if}{#if e.overlap}<button
+                <td class="c-date num" title={dateTitle(e.display_date, holiday)}>
+                  {#if e.date === todayIso}<span class="today-dot" aria-hidden="true"></span>{/if}{shortDate(e.date)}{#if e.date === todayIso}<span class="sr-only">, today</span>{/if}{#if holiday}<span
+                      class="holiday-mark"
+                      aria-hidden="true"></span><span class="sr-only">, {holiday}</span>{/if}{#if e.overlap}<button
                       type="button"
                       class="overlap"
                       tabindex="-1"
@@ -1182,6 +1187,17 @@
     border-radius: 50%;
     background: var(--accent);
     box-shadow: 0 0 6px var(--accent-glow);
+  }
+  /* Public holiday: a small hollow ring after the date (name in the tooltip) */
+  .holiday-mark {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    margin-left: 6px;
+    vertical-align: 2px;
+    border-radius: 50%;
+    border: 1.5px solid var(--accent);
+    opacity: 0.8;
   }
   tr.entry.today .c-date {
     color: var(--accent-text);

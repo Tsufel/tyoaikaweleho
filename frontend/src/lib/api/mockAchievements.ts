@@ -3,6 +3,7 @@
 
 import type { Achievement, AchievementTier, PetStats, WorkEntry } from './types';
 import { entryMinutes, fromIsoDate, isOvernight, toIsoDate } from '../time';
+import { isWorkday, prevWorkday } from '../holidays';
 
 interface Def {
   id: string;
@@ -25,7 +26,7 @@ const CATALOGUE: Def[] = [
   { id: 'leet', tier: 'bronze', goal: 1, unit: 'shifts', hidden: true, icon: 'early_bird', title: '1337', desc: 'Start a shift at exactly 13:37.' },
   { id: 'double_header', tier: 'bronze', goal: 1, unit: 'days', hidden: true, icon: 'target_10', title: 'Double header', desc: 'Work two shifts on the same day.' },
   { id: 'hours_100', tier: 'silver', goal: 100, unit: 'h', title: '100 hours', desc: 'Log 100 hours in total.' },
-  { id: 'streak_5', tier: 'silver', goal: 5, unit: 'days', title: 'Full week', desc: "Hit your target on 5 workdays in a row (weekends don't count)." },
+  { id: 'streak_5', tier: 'silver', goal: 5, unit: 'days', title: 'Full week', desc: "Hit your target on 5 workdays in a row (weekends and public holidays don't count)." },
   { id: 'weeks_4', tier: 'silver', goal: 4, unit: 'weeks', title: 'Regular', desc: 'Work at least one shift in 4 weeks in a row.' },
   { id: 'early_bird', tier: 'silver', goal: 1, unit: 'shifts', hidden: true, title: 'Early bird', desc: 'Start a shift before 06:00.' },
   { id: 'night_owl', tier: 'silver', goal: 1, unit: 'shifts', hidden: true, title: 'Night owl', desc: 'Keep working past 22:00.' },
@@ -37,7 +38,7 @@ const CATALOGUE: Def[] = [
   { id: 'marathon_12h', tier: 'gold', goal: 12, unit: 'h', hidden: true, title: 'Marathon', desc: 'Work a single 12-hour shift.' },
   { id: 'earned_10k', tier: 'gold', goal: 10000, unit: '€', title: '€10 000 earned', desc: 'Earn €10 000 in total.' },
   { id: 'shifts_100', tier: 'gold', goal: 100, unit: 'shifts', icon: 'first_shift', title: 'Centurion', desc: 'Save 100 shifts.' },
-  { id: 'streak_10', tier: 'gold', goal: 10, unit: 'days', icon: 'streak_5', title: 'Fortnight', desc: "Hit your target on 10 workdays in a row (weekends don't count)." },
+  { id: 'streak_10', tier: 'gold', goal: 10, unit: 'days', icon: 'streak_5', title: 'Fortnight', desc: "Hit your target on 10 workdays in a row (weekends and public holidays don't count)." },
   { id: 'weeks_12', tier: 'gold', goal: 12, unit: 'weeks', icon: 'weeks_4', title: 'Seasoned', desc: 'Work at least one shift in 12 weeks in a row.' },
   { id: 'no_days_off', tier: 'gold', goal: 7, unit: 'days', hidden: true, icon: 'weeks_4', title: 'No days off', desc: 'Work every day of one week, Monday to Sunday.' },
   { id: 'one_year', tier: 'gold', goal: 365, unit: 'days', hidden: true, icon: 'target_50', title: 'One year in', desc: 'Work a shift a year after your first one.' },
@@ -58,11 +59,6 @@ const clock = (t: string) => {
 // Calendar arithmetic, not ms, so DST changes don't shift the day.
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const weekday = (d: Date) => (d.getDay() + 6) % 7; // Mon 0 … Sun 6
-const prevWorkday = (d: Date) => {
-  let p = addDays(d, -1);
-  while (weekday(p) >= 5) p = addDays(p, -1);
-  return p;
-};
 
 export function evaluateAchievements(
   entries: WorkEntry[],
@@ -138,13 +134,13 @@ export function evaluateAchievements(
       targetDays++;
       if (targetDays >= goals.target_10) hit('target_10', iso);
       if (targetDays >= goals.target_50) hit('target_50', iso);
-      if (weekday(d) < 5) {
+      if (isWorkday(d)) {
         run = lastRunDay === toIsoDate(prevWorkday(d)) ? run + 1 : 1;
         lastRunDay = iso;
         bestRun = Math.max(bestRun, run);
         for (const id of ['streak_5', 'streak_10']) if (run >= goals[id]) hit(id, iso);
       }
-    } else if (weekday(d) < 5) {
+    } else if (isWorkday(d)) {
       run = 0;
       lastRunDay = null;
     }

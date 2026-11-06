@@ -8,7 +8,7 @@ Ties go to the earliest.
 """
 from datetime import date, timedelta
 
-from achievements import countable_shifts, norm_target
+from achievements import countable_shifts, is_workday, norm_target, prev_workday
 from utils import week_key
 from webapp.results import entry_row
 
@@ -20,29 +20,18 @@ def _hhmm(minute: int) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
-def _is_workday(d: date) -> bool:
-    return d.weekday() < 5
-
-
-def _prev_workday(d: date) -> date:
-    d -= timedelta(days=1)
-    while not _is_workday(d):
-        d -= timedelta(days=1)
-    return d
-
-
 def _streaks(day_min: dict[date, int], target_min: float, today: date) -> dict:
     """Workdays at target in a row (achievements' streak_5 rules): Mon-Fri only,
-    weekends neither count nor break a run, a weekday below target or without
-    a shift breaks it. `current` ends today, and today doesn't break it
-    before it is done."""
+    weekends and public holidays neither count nor break a run, a workday
+    below target or without a shift breaks it. `current` ends today, and
+    today doesn't break it before it is done."""
     best = run = 0
     last = None
     for d in sorted(day_min):
-        if not _is_workday(d):
+        if not is_workday(d):
             continue
         if day_min[d] >= target_min:
-            run = run + 1 if last == _prev_workday(d) else 1
+            run = run + 1 if last == prev_workday(d) else 1
             last = d
             best = max(best, run)
         else:
@@ -50,12 +39,12 @@ def _streaks(day_min: dict[date, int], target_min: float, today: date) -> dict:
 
     current = 0
     d = today
-    if not _is_workday(d) or day_min.get(d, 0) < target_min:
-        d = _prev_workday(d)  # today: counts once done, never breaks it
+    if not is_workday(d) or day_min.get(d, 0) < target_min:
+        d = prev_workday(d)  # today: counts once done, never breaks it
     first = min(day_min) if day_min else today
     while d >= first and day_min.get(d, 0) >= target_min:
         current += 1
-        d = _prev_workday(d)
+        d = prev_workday(d)
     return {"current": current, "best": best}
 
 

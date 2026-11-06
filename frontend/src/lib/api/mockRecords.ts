@@ -3,6 +3,7 @@
 
 import type { EntryRow, RecordsData, WorkEntry } from './types';
 import { entryMinutes, fromIsoDate, toIsoDate, weekKey } from '../time';
+import { isWorkday, prevWorkday } from '../holidays';
 
 const DAY = 24 * 60;
 const clock = (t: string) => {
@@ -13,11 +14,6 @@ const pad2 = (n: number) => String(n).padStart(2, '0');
 const hhmm = (minute: number) => `${pad2(Math.floor((minute % DAY) / 60))}:${pad2(minute % 60)}`;
 const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 const weekday = (d: Date) => (d.getDay() + 6) % 7; // Mon 0 … Sun 6
-const prevWorkday = (d: Date) => {
-  let p = addDays(d, -1);
-  while (weekday(p) >= 5) p = addDays(p, -1);
-  return p;
-};
 
 /** The key with the biggest value; sorted keys first, so a tie keeps the earliest. */
 function best<K extends string>(map: Map<K, number>): K | null {
@@ -69,7 +65,7 @@ export function computeRecords(
   let last: string | null = null;
   for (const iso of [...dayMin.keys()].sort()) {
     const d = fromIsoDate(iso)!;
-    if (weekday(d) >= 5) continue;
+    if (!isWorkday(d)) continue;
     if (dayMin.get(iso)! >= targetMin) {
       run = last === toIsoDate(prevWorkday(d)) ? run + 1 : 1;
       last = iso;
@@ -82,7 +78,7 @@ export function computeRecords(
   const at = (d: Date) => (dayMin.get(toIsoDate(d)) ?? 0) >= targetMin;
   let current = 0;
   let d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  if (weekday(d) >= 5 || !at(d)) d = prevWorkday(d);
+  if (!isWorkday(d) || !at(d)) d = prevWorkday(d);
   const first = shifts[0]?.d ?? null;
   while (first && d >= first && at(d)) {
     current++;

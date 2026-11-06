@@ -345,6 +345,16 @@ export function shortDate(iso: string): string {
 }
 
 /** Saturday or Sunday. */
+/** The public holiday's name on *iso* (list_month's `holidays`), or null. */
+export function holidayOn(m: MonthData | null, iso: string): string | null {
+  return m?.holidays?.[iso] ?? null;
+}
+
+/** The date cell's tooltip: the long date, plus the holiday when there is one. */
+export function dateTitle(displayDate: string, holiday: string | null): string {
+  return holiday ? `${displayDate} · ${holiday} (public holiday)` : displayDate;
+}
+
 export function isWeekend(iso: string): boolean {
   const d = fromIsoDate(iso);
   return !!d && (d.getDay() === 0 || d.getDay() === 6);

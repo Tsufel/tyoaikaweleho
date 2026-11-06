@@ -9,6 +9,7 @@ import sys
 import threading
 from datetime import date, datetime, timedelta
 
+import holidays
 import storage
 import timer as timer_module
 from services import dlc, net
@@ -813,6 +814,7 @@ class ShiftController:
             "pay_rate": rate, "entries": rows,
             "weeks": [weeks[k] for k in sorted(weeks)],
             "total_minutes": total, "earnings": money(total / 60 * rate),
+            "holidays": holidays.holidays_in_month(first.year, first.month),
         })
 
     def get_entry(self, entry_id: str) -> dict:
