@@ -140,7 +140,7 @@ The current shift must never be lost:
 ### App / lifecycle
 | method | params | returns |
 |---|---|---|
-| `bootstrap()` | — | `R<{data: Bootstrap}>` (§7). Also records `last_seen_version` (after computing `changelog`). |
+| `bootstrap()` | — | `R<{data: Bootstrap}>` (§7). Also records `last_seen_version` (after computing `changelog`; only when it changed, so a normal launch writes nothing). |
 | `frontend_ready()` | — | `R<{}>`. Shows the hidden window (restores placement/maximised). Watchdog shows it anyway after 6 s. |
 | `set_close_guard(enabled)` | `boolean` | `R<{}>`. `true` once the page handles `close:requested`; while `false` the native close just closes (session stays → recovery). |
 | `close_app(confirm?)` | `ConfirmAnswer[]` | see §6.8. On success the window is destroyed (Promise may never resolve). |
@@ -155,6 +155,7 @@ The current shift must never be lost:
 | `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
 | `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
 | `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded` |
+| `get_recovery()` | — | `R<{timer: T, recovery: Recovery\|null, data_recovery: DataRecovery\|null}>`. Read-only re-check for §6.3 (the Review link, `recovery_pending`); unlike `bootstrap` it writes nothing. `data_recovery` is a data.json repair since bootstrap, handed over once. |
 | `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
 
 ### Entries
@@ -569,7 +570,7 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   `topModal`, `focusTopModal()`. App marks the shell `inert` while
   `modalOpen > 0`.
 - `stores/recovery.ts` (§4): `pendingRecovery: Recovery|null`,
-  `offerRecovery(rec?)` (no arg → re-reads bootstrap),
+  `offerRecovery(rec?)` (no arg → re-reads `get_recovery()`),
   `applyRecoveryResult(r)` (sets timer; clears the pending recovery only when
   the result's `recovery` is null / ok; on error reports and keeps it pending,
   so the modal is re-offered). App shows `RecoverShiftModal` after the intro

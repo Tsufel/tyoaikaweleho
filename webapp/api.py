@@ -166,6 +166,11 @@ class Api:
     def timer_discard(self, confirm=None):
         return self._c.timer_discard(confirm)
 
+    # get_recovery: re-offer recovery without re-running bootstrap
+    @_guarded
+    def get_recovery(self):
+        return self._c.get_recovery()
+
     @_guarded
     def recovery_resolve(self, action, end=None, confirm=None):
         result = self._c.recovery_resolve(action, end, confirm)

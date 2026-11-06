@@ -744,6 +744,11 @@ export function createMockApi(): Api {
       session = null;
       return okR('discarded', { timer: timerState() }, 'Shift discarded');
     },
+    // get_recovery: re-offer recovery without re-running bootstrap
+    async get_recovery() {
+      await latency();
+      return okR('ok', { timer: timerState(), recovery: recovery(), data_recovery: null });
+    },
     async recovery_resolve(action, end, confirm) {
       await latency();
       const rec = recovery();

@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store';
 import { api } from '../api/bridge';
-import type { Recovery, RecoveryResult } from '../api/types';
+import type { DataRecovery, Recovery, RecoveryResult } from '../api/types';
 import { reportError } from './confirm';
 import { showEntry, refreshMonth, setViewMonth } from './entries';
 import { setTimer } from './timer';
@@ -12,14 +12,26 @@ import { toast } from './toasts';
 export const pendingRecovery = writable<Recovery | null>(null);
 
 /** Re-offer recovery, e.g. after timer_start returned error/recovery_pending.
- *  Without an argument the pending session is re-read through bootstrap(). */
+ *  Without an argument the pending session is re-read through get_recovery(),
+ *  which (unlike bootstrap) writes nothing. */
 export async function offerRecovery(rec?: Recovery | null): Promise<void> {
   if (rec) return pendingRecovery.set(rec);
-  const r = await api.bootstrap();
+  const r = await api.get_recovery();
   if (r.ok) {
-    pendingRecovery.set(r.data.recovery);
-    setTimer(r.data.timer);
+    pendingRecovery.set(r.recovery);
+    setTimer(r.timer);
+    notifyDataRecovery(r.data_recovery);
   }
+}
+
+/** Tell the user a damaged data.json was replaced by a backup (sticky toast). */
+export function notifyDataRecovery(dr: DataRecovery | null | undefined): void {
+  if (!dr) return;
+  toast(
+    `Your hours file was damaged and has been restored from a backup (${dr.source.split(/[\\/]/).pop()}). ` +
+      'Check your latest shifts.',
+    { tone: 'warning', ms: 0 },
+  );
 }
 
 /** Apply a recovery_resolve result: keeps the modal up on failure. */

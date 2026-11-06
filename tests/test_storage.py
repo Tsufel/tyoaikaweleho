@@ -167,7 +167,128 @@ def test_get_job_shift_list_includes_entry_shifts(tmp_storage):
     assert "CustomShift" in shifts
 
 
+def test_shift_list_reads_an_ansi_file(tmp_storage):
+    """Notepad's ANSI save (cp1252) must not stop the app from starting."""
+    (tmp_storage / "shifts.txt").write_bytes("Myymälä\r\nTyömaa\r\n".encode("cp1252"))
+    assert storage.get_job_shift_list() == ["Myymälä", "Työmaa"]
+    assert storage.get_default_job_shift() == "Myymälä"
+
+
+def test_shift_list_reads_a_bom_file_without_a_junk_character(tmp_storage):
+    (tmp_storage / "shifts.txt").write_bytes(b"\xef\xbb\xbfSales\r\nSupport")
+    assert storage.get_job_shift_list() == ["Sales", "Support"]
+    assert storage.add_job_shift("Sales") is False
+
+
+def test_shift_list_ignores_case_when_adding_names_from_entries(tmp_storage):
+    (tmp_storage / "shifts.txt").write_text("Sales\n", encoding="utf-8")
+    storage.save_entry(_entry(shift="sales"))
+    storage.save_entry(_entry(shift="Night"))
+    storage.save_entry(_entry(shift="NIGHT"))
+    assert storage.get_job_shift_list() == ["Sales", "Night"]
+
+
+def test_add_job_shift_after_a_last_line_without_newline(tmp_storage):
+    (tmp_storage / "shifts.txt").write_bytes(b"Sales\r\nSupport")
+    assert storage.add_job_shift("Night") is True
+    assert (tmp_storage / "shifts.txt").read_bytes() == b"Sales\r\nSupport\r\nNight\r\n"
+    assert storage.get_job_shift_list() == ["Sales", "Support", "Night"]
+    assert not (tmp_storage / "shifts.txt.tmp").exists()
+
+
+def test_add_job_shift_to_an_ansi_file_keeps_every_name(tmp_storage):
+    (tmp_storage / "shifts.txt").write_bytes("Myymälä\r\n\r\n  Varasto  \r\n".encode("cp1252"))
+    assert storage.add_job_shift("Yövuoro") is True
+    # rewritten as UTF-8 with the lines as they were (blank line, spaces kept)
+    text = (tmp_storage / "shifts.txt").read_bytes().decode("utf-8")
+    assert text == "Myymälä\r\n\r\n  Varasto  \r\nYövuoro\r\n"
+    assert storage.get_job_shift_list() == ["Myymälä", "Varasto", "Yövuoro"]
+
+
+def test_add_job_shift_failure_keeps_the_file(tmp_storage, monkeypatch):
+    (tmp_storage / "shifts.txt").write_bytes(b"Sales\n")
+
+    def locked(src, dst):
+        raise PermissionError(13, "locked")
+
+    monkeypatch.setattr(storage.os, "replace", locked)
+    monkeypatch.setattr(storage, "_REPLACE_WAIT", 0)
+    with pytest.raises(PermissionError):
+        storage.add_job_shift("Night")
+    assert (tmp_storage / "shifts.txt").read_bytes() == b"Sales\n"
+    assert not (tmp_storage / "shifts.txt.tmp").exists()
+
+
 # ── atomic write & corruption recovery ───────────────────────────────────────
+
+def test_identical_save_does_not_touch_the_files(tmp_storage):
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-11"))
+    bak = (tmp_storage / "data.json.bak").read_bytes()
+    data = storage._load_raw()
+    storage._save_raw(data)
+    # .bak still holds the state from one real save ago
+    assert (tmp_storage / "data.json.bak").read_bytes() == bak
+    assert len(storage._load_raw()["entries"]) == 2
+
+
+def test_identical_setting_does_not_rewrite(tmp_storage, monkeypatch):
+    storage.set_pay_rate(22.0)
+    calls = []
+    monkeypatch.setattr(storage.os, "replace", lambda *a: calls.append(a))
+    storage.set_pay_rate(22.0)
+    assert calls == []
+
+
+def test_save_format_matches_the_old_text_mode_write(tmp_storage):
+    import json
+    import os
+    data = {"entries": [], "pay_rate": 20.0, "x": "ä\nb"}
+    storage._save_raw(data)
+    expected = json.dumps(data, indent=2, ensure_ascii=False).replace("\n", os.linesep)
+    assert (tmp_storage / "data.json").read_bytes() == expected.encode("utf-8")
+
+
+def test_unencodable_text_leaves_data_and_no_temp_file(tmp_storage):
+    storage.save_entry(_entry(date="2026-05-10"))
+    before = (tmp_storage / "data.json").read_bytes()
+    with pytest.raises(UnicodeEncodeError):
+        storage.save_entry(_entry(shift="Sales \ud83d"))   # half an emoji
+    assert (tmp_storage / "data.json").read_bytes() == before
+    assert not (tmp_storage / "data.json.tmp").exists()
+
+
+def test_save_retries_while_data_json_is_briefly_locked(tmp_storage, monkeypatch):
+    storage.save_entry(_entry(date="2026-05-10"))
+    real = storage.os.replace
+    fails = [PermissionError(32, "in use"), PermissionError(5, "denied")]
+
+    def flaky(src, dst):
+        if fails:
+            raise fails.pop(0)
+        real(src, dst)
+
+    monkeypatch.setattr(storage.os, "replace", flaky)
+    monkeypatch.setattr(storage, "_REPLACE_WAIT", 0)
+    storage.save_entry(_entry(date="2026-05-11"))
+    assert len(storage.load_all_entries()) == 2
+    assert not (tmp_storage / "data.json.tmp").exists()
+
+
+def test_save_gives_up_on_a_lasting_lock_and_keeps_data(tmp_storage, monkeypatch):
+    storage.save_entry(_entry(date="2026-05-10"))
+    before = (tmp_storage / "data.json").read_bytes()
+
+    def locked(src, dst):
+        raise PermissionError(32, "in use")
+
+    monkeypatch.setattr(storage.os, "replace", locked)
+    monkeypatch.setattr(storage, "_REPLACE_WAIT", 0)
+    with pytest.raises(PermissionError):
+        storage.save_entry(_entry(date="2026-05-11"))
+    assert (tmp_storage / "data.json").read_bytes() == before
+    assert not (tmp_storage / "data.json.tmp").exists()
+
 
 def test_save_leaves_no_temp_file(tmp_storage):
     storage.save_entry(_entry())

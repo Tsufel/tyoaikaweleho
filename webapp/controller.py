@@ -262,10 +262,11 @@ class ShiftController:
         records *current_version* as seen."""
         import changelog as cl
         last = storage.get_last_seen_version()
-        try:
-            storage.set_last_seen_version(current_version)
-        except OSError as exc:
-            storage.append_error_log(f"could not store last_seen_version: {exc}")
+        if last != current_version:   # an unchanged version writes nothing
+            try:
+                storage.set_last_seen_version(current_version)
+            except OSError as exc:
+                storage.append_error_log(f"could not store last_seen_version: {exc}")
         if last is None or last == current_version:
             return None
         newer = [v for v in cl.CHANGELOG if _ver_tuple(v) > _ver_tuple(last)]
@@ -560,6 +561,14 @@ class ShiftController:
                 "elapsed_minutes": max(0, int((now - start).total_seconds() // 60)),
                 "over_limit": over_limit, "suggested_end": suggested.strftime("%H:%M"),
             }
+
+    # get_recovery: re-offer recovery without re-running bootstrap
+    def get_recovery(self) -> dict:
+        """The pending recovery and the timer, re-read without bootstrap's
+        writes. Also hands over a data.json repair note left since then."""
+        with self._lock:
+            return R.ok(recovery=self.recovery(), timer=self.timer_state(),
+                        data_recovery=self._take_data_recovery())
 
     def recovery_resolve(self, action: str, end: str | None = None, confirm=None) -> dict:
         with self._lock:

@@ -1273,6 +1273,50 @@ def test_bootstrap_without_damage_has_no_data_recovery(env, monkeypatch):
     assert ctrl.bootstrap("2.0.0")["data"]["data_recovery"] is None
 
 
+def test_relaunch_with_same_version_does_not_rewrite_data(env, tmp_storage, monkeypatch):
+    ctrl, _ = env
+    _dlc_state(monkeypatch, "missing", None)
+    _add(date="2026-09-20")
+    _add(date="2026-09-21")
+    ctrl.bootstrap("2.0.0")   # records the version: a real change
+    bak = (tmp_storage / "data.json.bak").read_bytes()
+    data = (tmp_storage / "data.json").read_bytes()
+    saves = []
+    real = storage._save_raw
+    monkeypatch.setattr(storage, "_save_raw", lambda d: (saves.append(1), real(d)))
+    ctrl.bootstrap("2.0.0")
+    assert saves == []
+    assert (tmp_storage / "data.json.bak").read_bytes() == bak
+    assert (tmp_storage / "data.json").read_bytes() == data
+
+
+def test_get_recovery_reads_without_writing(env, tmp_storage, monkeypatch):
+    ctrl, _ = env
+    _add(date="2026-09-20")
+    _crash(T0 - timedelta(hours=1))
+    monkeypatch.setattr(storage, "_save_raw", _fail)
+    r = ctrl.get_recovery()
+    assert r["ok"] and r["recovery"]["job_shift"] == "Support"
+    assert r["timer"]["recovery_pending"] is True
+    assert r["data_recovery"] is None
+
+
+def test_get_recovery_without_session(env):
+    ctrl, _ = env
+    r = ctrl.get_recovery()
+    assert r["ok"] and r["recovery"] is None and r["timer"]["running"] is False
+
+
+def test_get_recovery_hands_over_a_repair_once(env, tmp_storage):
+    ctrl, _ = env
+    _add(date="2026-09-20")
+    _add(date="2026-09-21")
+    (tmp_storage / "data.json").write_text("{ broken", encoding="utf-8")
+    storage.load_all_entries()   # a mid-session read repairs data.json
+    assert ctrl.get_recovery()["data_recovery"]["source"].endswith("data.json.bak")
+    assert ctrl.get_recovery()["data_recovery"] is None
+
+
 def test_ensure_shifts_file(env, tmp_storage):
     ctrl, _ = env
     path = ctrl.ensure_shifts_file()

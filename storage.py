@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import sys
+import time as _time
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
@@ -163,25 +164,67 @@ def _load_raw() -> dict:
     return data if data is not None else _recover(raw)
 
 
+def _encode(data: dict) -> bytes:
+    """data.json's bytes, as text mode wrote them before (os.linesep line
+    ends). Raises (UnicodeEncodeError for a lone surrogate) before anything
+    touches the disk."""
+    text = json.dumps(data, indent=2, ensure_ascii=False)
+    return text.replace("\n", os.linesep).encode("utf-8")
+
+
+# Antivirus, the Search indexer or OneDrive can hold data.json for a moment,
+# which makes os.replace fail with PermissionError on Windows
+_REPLACE_TRIES = 5
+_REPLACE_WAIT = 0.05
+
+
+def _replace(src: str, dst: str):
+    for attempt in range(_REPLACE_TRIES):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == _REPLACE_TRIES - 1:
+                raise
+            _time.sleep(_REPLACE_WAIT * (attempt + 1))
+
+
 def _save_raw(data: dict):
     # Atomic write: serialize to a temp file, back up the previous good
     # file, then swap the temp file into place. A crash at any point
     # leaves either the old file or the new file intact — never a
     # half-written data.json.
+    blob = _encode(data)
+    try:
+        with open(DATA_FILE, "rb") as f:
+            current = f.read()
+    except OSError:   # missing, or locked (the replace below reports that)
+        current = None
+    if current == blob:
+        # nothing changed: rewriting would turn .bak into a copy of this
+        # file and lose the state from one real save ago
+        return
     tmp = DATA_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-        f.flush()
-        os.fsync(f.fileno())
-    # only a file that reads is worth backing up: copying a damaged one
-    # would replace the last good .bak / snapshot with it
-    if os.path.exists(DATA_FILE) and _read_data_file(DATA_FILE) is not None:
-        try:
-            shutil.copy2(DATA_FILE, DATA_FILE + ".bak")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(blob)
+            f.flush()
+            os.fsync(f.fileno())
+        # only a file that reads is worth backing up: copying a damaged one
+        # would replace the last good .bak / snapshot with it
+        if current is not None and _parse_data(current) is not None:
+            try:
+                shutil.copy2(DATA_FILE, DATA_FILE + ".bak")
+            except OSError:
+                pass
+            _daily_snapshot()
+        _replace(tmp, DATA_FILE)
+    except BaseException:
+        try:   # never leave a half-written temp file behind
+            os.remove(tmp)
         except OSError:
             pass
-        _daily_snapshot()
-    os.replace(tmp, DATA_FILE)
+        raise
 
 
 _SNAPSHOT_KEEP = 14
@@ -317,15 +360,36 @@ def _ensure_shifts_file():
             f.write("\n".join(_DEFAULT_SHIFTS) + "\n")
 
 
+def _read_shifts_text() -> str:
+    """shifts.txt as text. Notepad may have saved it as ANSI or with a BOM;
+    both read. latin-1 decodes any byte, so this never raises for content."""
+    with open(SHIFTS_FILE, "rb") as f:
+        raw = f.read()
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            pass
+    return raw.decode("latin-1")
+
+
+def _shift_lines(text: str) -> list[str]:
+    lines = (ln.replace("﻿", "").strip() for ln in text.splitlines())
+    return [ln for ln in lines if ln]
+
+
 def get_job_shift_list() -> list[str]:
     """Load shift list from shifts.txt (created with defaults if missing).
-    Also appends any previously-used shifts not already in the file."""
+    Also appends any previously-used shifts not already in the file. Names
+    are de-duplicated ignoring case; the first spelling (the file's) wins."""
     _ensure_shifts_file()
-    with open(SHIFTS_FILE, "r", encoding="utf-8") as f:
-        lines = [ln.strip() for ln in f if ln.strip()]
-    for e in _entries(_load_raw()):
-        js = e.job_shift.strip() if isinstance(e.job_shift, str) else ""
-        if js and js not in lines:
+    lines: list[str] = []
+    seen: set[str] = set()
+    used = (e.job_shift.strip() if isinstance(e.job_shift, str) else ""
+            for e in _entries(_load_raw()))
+    for js in (*_shift_lines(_read_shifts_text()), *used):
+        if js and js.casefold() not in seen:
+            seen.add(js.casefold())
             lines.append(js)
     return lines
 
@@ -336,14 +400,32 @@ def get_job_shift_history() -> list[str]:
 
 
 def add_job_shift(js: str) -> bool:
-    """Append *js* to shifts.txt. Returns True if added, False if already present."""
+    """Append *js* to shifts.txt. Returns True if added, False if already present.
+
+    The file is rewritten whole through a temp file (as UTF-8, keeping every
+    line and its line ends), so a last line Notepad saved without a newline
+    doesn't get the new name glued on, and an ANSI file doesn't end up half
+    ANSI, half UTF-8."""
     _ensure_shifts_file()
-    with open(SHIFTS_FILE, "r", encoding="utf-8") as f:
-        existing = [ln.strip() for ln in f if ln.strip()]
-    if any(e.lower() == js.lower() for e in existing):
+    text = _read_shifts_text()
+    if any(e.casefold() == js.casefold() for e in _shift_lines(text)):
         return False
-    with open(SHIFTS_FILE, "a", encoding="utf-8") as f:
-        f.write(js + "\n")
+    newline = "\r\n" if "\r\n" in text else ("\n" if "\n" in text else os.linesep)
+    if text and not text.endswith(("\n", "\r")):
+        text += newline
+    tmp = SHIFTS_FILE + ".tmp"
+    try:
+        with open(tmp, "wb") as f:
+            f.write((text + js + newline).encode("utf-8"))
+            f.flush()
+            os.fsync(f.fileno())
+        _replace(tmp, SHIFTS_FILE)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return True
 
 
@@ -357,7 +439,7 @@ def get_default_job_shift() -> str:
         return stored
     try:
         shifts = get_job_shift_list()
-    except OSError:  # shifts.txt unreadable: the defaults plus shifts in use
+    except (OSError, ValueError):  # shifts.txt unreadable: the defaults plus shifts in use
         shifts = list(_DEFAULT_SHIFTS) + [e.job_shift for e in _entries(_load_raw())]
     if _LEGACY_DEFAULT_SHIFT in shifts:
         return _LEGACY_DEFAULT_SHIFT

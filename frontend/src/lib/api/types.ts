@@ -250,6 +250,13 @@ export type RecoveryResult = Result<{
   overlap_warning?: string;
   recovery: Recovery | null;
 }>;
+/** get_recovery: data_recovery is set once when a damaged data.json was
+ *  replaced by a backup since bootstrap (see Bootstrap.data_recovery). */
+export type GetRecoveryResult = Result<{
+  timer: TimerState;
+  recovery: Recovery | null;
+  data_recovery: DataRecovery | null;
+}>;
 
 // ── Settings ─────────────────────────────────────────────────────
 
@@ -494,6 +501,8 @@ export interface Api {
   ): Promise<TimerResult>;
   timer_stop(source: StopSource, confirm?: ConfirmList): Promise<StopResult>;
   timer_discard(confirm?: ConfirmList): Promise<TimerResult>;
+  // get_recovery: re-offer recovery without re-running bootstrap
+  get_recovery(): Promise<GetRecoveryResult>;
   recovery_resolve(
     action: RecoveryAction,
     end?: string | null,

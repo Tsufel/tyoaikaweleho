@@ -152,7 +152,7 @@ def test_every_method_returns_json(rig):
         ("log_client_error", ("boom", "at x")), ("open_shifts_file", ()),
         ("get_timer", ()), ("timer_start", ("now", None, None, None)),
         ("timer_stop", ("button", None)), ("timer_discard", (None,)),
-        ("recovery_resolve", ("discard", None, None)),
+        ("get_recovery", ()), ("recovery_resolve", ("discard", None, None)),
         ("list_month", (2026, 9)), ("get_entry", ("missing",)),
         ("save_entry", ({"date": "2026-09-01", "time_in": "08:00", "time_out": "16:00",
                          "job_shift": "Sales"}, None)),
