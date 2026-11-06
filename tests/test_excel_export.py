@@ -219,6 +219,28 @@ def test_full_column_headers(tmp_path):
     assert ws["A11"].value == "DATE"
     assert ws["C11"].value == "TIME IN"
     assert ws["D11"].value == "TIME OUT"
+    assert ws["E11"].value == "(HOURS)"
+    assert ws["F11"].value == "NOTES"
+
+
+def test_full_writes_notes_as_text(tmp_path):
+    entries = [
+        WorkEntry(id="1", date="2026-05-10", job_shift="Sales",
+                  time_in="09:00", time_out="17:00", note="Covered for Aino"),
+        WorkEntry(id="2", date="2026-05-11", job_shift="Sales",
+                  time_in="09:00", time_out="17:00", note="=SUM(1,2)"),
+        WorkEntry(id="3", date="2026-05-12", job_shift="Sales",
+                  time_in="09:00", time_out="17:00"),
+    ]
+    out = tmp_path / "out.xlsx"
+    export_month(entries, 2026, 5, str(out), fmt="Full")
+    ws = load_workbook(str(out)).active
+    # 05-10 is its own ISO week (row 13); 05-11/05-12 follow at rows 16-17
+    assert ws["F13"].value == "Covered for Aino"
+    assert ws["F16"].value == "=SUM(1,2)" and ws["F16"].data_type == "s"
+    assert ws["F17"].value is None
+    # the rest of the row layout is unchanged
+    assert ws["E13"].value is not None and ws["E16"].value is not None
 
 
 def test_full_totals_are_values(tmp_path):

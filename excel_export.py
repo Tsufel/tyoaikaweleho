@@ -248,7 +248,7 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
 
     # column widths
     widths = {"A": 14, "B": 16, "C": 10, "D": 10, "E": 10,
-              "F": 6, "G": 12, "H": 14, "I": 10, "J": 8,
+              "F": 30, "G": 12, "H": 14, "I": 10, "J": 8,
               "K": 8, "L": 8, "M": 10}
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
@@ -300,7 +300,8 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
     # Row 11: Column headers
     ws.row_dimensions[11].height = 18
     headers = {"A": "DATE", "B": "JOB / SHIFT", "C": "TIME IN",
-               "D": "TIME OUT", "E": "(HOURS)"}
+               "D": "TIME OUT", "E": "(HOURS)",
+               "F": "NOTES"}
     for col, text in headers.items():
         cell = ws[f"{col}11"]
         cell.value = text; cell.font = header_font
@@ -355,7 +356,12 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
                 ws[f"D{r}"] = "In progress"
                 ws[f"D{r}"].alignment = center; ws[f"D{r}"].font = normal_font
 
-            for col in "ABCDE":
+            if entry.note:
+                # text, so a note starting with "=" is not a formula
+                _put_text(ws[f"F{r}"], entry.note, normal_font)
+                ws[f"F{r}"].alignment = left
+
+            for col in "ABCDEF":
                 ws[f"{col}{r}"].border = _thin_border()
 
             current_row += 1
