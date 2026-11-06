@@ -333,7 +333,7 @@ class Api:
         if self._frozen and pending is not None:
             self._shell.save_placement()
             self._emit("update:installing", {"version": pending[0]})
-        result = self._c.install_update(self._frozen)
+        result = self._c.install_update(self._frozen, self._version)
         if not result.get("ok") and result.get("error", {}).get("code") == "update_failed":
             self._emit("update:failed", {"message": result.get("message", "")})
         return result

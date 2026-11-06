@@ -1284,6 +1284,61 @@ def test_install_update(env, monkeypatch):
     assert calls == [("https://x/setup.exe", "https://x/sha")]
 
 
+def _pre_update_dirs():
+    folder = os.path.join(os.path.dirname(storage.DATA_FILE), "backups")
+    return sorted(f for f in os.listdir(folder) if f.startswith("pre-update-"))
+
+
+def test_install_update_copies_user_files_first(env, monkeypatch):
+    import updater
+    ctrl, _ = env
+    storage.set_default_job_shift("Support")
+    storage.add_job_shift("Night")
+    order = []
+    monkeypatch.setattr(storage, "pre_update_copy",
+                        lambda c, n, real=storage.pre_update_copy: (order.append("copy"),
+                                                                    real(c, n))[1])
+    monkeypatch.setattr(updater, "apply_update", lambda u, s: order.append("apply"))
+    ctrl.remember_update("2.1.0", "https://x/setup.exe", None)
+    assert ctrl.install_update(frozen=True, current="2.0.0")["ok"]
+    assert order == ["copy", "apply"]
+    assert _pre_update_dirs() == ["pre-update-v2.0.0-to-v2.1.0"]
+    target = os.path.join(os.path.dirname(storage.DATA_FILE), "backups", _pre_update_dirs()[0])
+    for name in ("data.json", "shifts.txt"):
+        with open(os.path.join(target, name), "rb") as a, \
+                open(os.path.join(os.path.dirname(storage.DATA_FILE), name), "rb") as b:
+            assert a.read() == b.read()
+
+
+def test_install_update_aborts_when_the_copy_fails(env, monkeypatch):
+    import updater
+    ctrl, _ = env
+    storage.set_default_job_shift("Support")
+    calls = []
+    monkeypatch.setattr(updater, "apply_update", lambda u, s: calls.append(u))
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(storage.shutil, "copy2", boom)
+    ctrl.remember_update("2.1.0", "https://x/setup.exe", None)
+    r = ctrl.install_update(frozen=True, current="2.0.0")
+    assert r["error"]["code"] == "update_failed" and "backed up" in r["message"]
+    assert calls == []
+
+
+def test_pre_update_copies_keep_the_newest_three(tmp_storage):
+    storage.set_default_job_shift("Support")
+    for i in range(5):
+        storage.pre_update_copy("2.0.0", f"2.0.{i + 1}")
+        folder = os.path.join(os.path.dirname(storage.DATA_FILE), "backups",
+                              f"pre-update-v2.0.0-to-v2.0.{i + 1}")
+        os.utime(folder, (1_000_000 + i, 1_000_000 + i))
+    storage.pre_update_copy("2.0.0", "2.0.6")
+    assert _pre_update_dirs() == ["pre-update-v2.0.0-to-v2.0.4", "pre-update-v2.0.0-to-v2.0.5",
+                                  "pre-update-v2.0.0-to-v2.0.6"]
+    assert storage.get_default_job_shift() == "Support"
+
+
 # ── app ──────────────────────────────────────────────────────────────────────
 
 def test_changelog(env, monkeypatch):

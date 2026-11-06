@@ -1214,8 +1214,9 @@ class ShiftController:
                             "available — see the DLC Store below.")
         return R.ok(message, app=app, dlc=dlc_info)
 
-    def install_update(self, frozen: bool | None = None) -> dict:
-        """Download/verify/run the remembered installer (lock not held)."""
+    def install_update(self, frozen: bool | None = None, current: str = "") -> dict:
+        """Download/verify/run the remembered installer (lock not held, bar
+        the pre-update copy of the user's files, which must succeed first)."""
         import updater
         if frozen is None:
             frozen = bool(getattr(sys, "frozen", False))
@@ -1226,6 +1227,12 @@ class ShiftController:
             return R.error("update_failed", "No update has been found yet — "
                                             "check for updates first.")
         version, url, sha = self._update
+        try:
+            with self._lock:
+                storage.pre_update_copy(current, version)
+        except OSError as exc:
+            return R.error("update_failed", "Your data couldn't be backed up, so the "
+                                            f"update was not installed:\n\n{exc}")
         try:
             updater.apply_update(url, sha)
         except Exception as exc:

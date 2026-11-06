@@ -203,7 +203,7 @@ The current shift must never be lost:
 |---|---|---|
 | `check_updates()` | — | Manual check. `ok{app: {current, latest, available}, dlc: {current, latest, available}\|null}` / `error(network)`. If an app update is found Python also remembers its URLs and emits `update:available`. |
 | `open_download_page()` | — | Opens the GitHub releases page (fixed URL from `version.GITHUB_REPO`) in the default browser: the manual way out when a check or update fails. `ok` / `error(internal)`. |
-| `install_update()` | — | Uses the URLs Python remembered (JS never passes URLs). `error(not_frozen)` from source; otherwise emits `update:installing`, downloads/verifies off-lock; on success the installer closes the app (Promise never resolves); on failure `error(update_failed, message)`. |
+| `install_update()` | — | Uses the URLs Python remembered (JS never passes URLs). `error(not_frozen)` from source; otherwise emits `update:installing`, copies data.json, shifts.txt and session.json to `backups/pre-update-v<cur>-to-v<new>/` (newest 3 kept; a failed copy is `error(update_failed)` and nothing is installed), downloads/verifies off-lock; on success the installer closes the app (Promise never resolves); on failure `error(update_failed, message)`. |
 | `get_dlc_status()` | — | `R<{dlc: DlcStatus}>` |
 | `dlc_install()` | — | Blocks until done. `ok{verified, dlc}` (module reloaded without restart when compatible) / `error(dlc_failed, message)`. Emits `dlc:status`. |
 | `dlc_remove(confirm?)` | answers | `needs_confirm(remove_dlc)` → `ok{dlc}` / `error(dlc_failed)`. Emits `dlc:status`. |

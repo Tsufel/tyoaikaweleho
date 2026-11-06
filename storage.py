@@ -276,7 +276,38 @@ def pre_import_snapshot() -> str:
     return target
 
 
-_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+_PRE_UPDATE_KEEP = 3
+
+
+def pre_update_copy(current: str, new: str) -> str:
+    """Copy data.json, shifts.txt and session.json to
+    backups/pre-update-v<current>-to-v<new>/ before an installer runs over
+    the folder they live in, keeping the newest _PRE_UPDATE_KEEP such
+    folders. Raises OSError: the update must not run without the copy."""
+    def tag(v):
+        return re.sub(r"[^0-9A-Za-z.+-]", "_", str(v or "unknown"))
+    data_dir = os.path.dirname(DATA_FILE)
+    backup_dir = os.path.join(data_dir, "backups")
+    target = os.path.join(backup_dir, f"pre-update-v{tag(current)}-to-v{tag(new)}")
+    os.makedirs(target, exist_ok=True)
+    for src in (DATA_FILE, SHIFTS_FILE, os.path.join(data_dir, "session.json")):
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(target, os.path.basename(src)))
+    os.utime(target)   # a retried update counts as the newest copy
+    try:
+        folders = [os.path.join(backup_dir, f) for f in os.listdir(backup_dir)
+                   if f.startswith("pre-update-")]
+        folders = [f for f in folders if os.path.isdir(f)]
+        folders.sort(key=os.path.getmtime)
+        for old in folders[:-_PRE_UPDATE_KEEP]:
+            if os.path.normcase(old) != os.path.normcase(target):
+                shutil.rmtree(old, ignore_errors=True)
+    except OSError:
+        pass
+    return target
+
+
+_ISO_DATE =re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 def _normalise_date(s: str) -> str:
