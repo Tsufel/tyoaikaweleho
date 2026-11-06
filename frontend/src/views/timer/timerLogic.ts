@@ -24,6 +24,19 @@ export function ringProgress(elapsedSeconds: number, targetHours: number): numbe
   return Math.max(0, elapsedSeconds) / target;
 }
 
+/** Line under the running clock: "62% of 8h · done 16:30" while short of the
+ *  daily target, then "8h reached" and "0h 45m over 8h" past it. */
+export function targetText(elapsedSeconds: number, targetHours: number, now: number = Date.now()): string {
+  const hours = Math.max(1, targetHours || 8);
+  const left = hours * 3600 - Math.max(0, elapsedSeconds);
+  if (left > 0) {
+    const pct = Math.floor(ringProgress(elapsedSeconds, hours) * 100);
+    return `${pct}% of ${hours}h · done ${hhmm(new Date(now + left * 1000))}`;
+  }
+  const over = Math.floor(-left / 60);
+  return over < 1 ? `${hours}h reached` : `${formatDuration(over)} over ${hours}h`;
+}
+
 // violet → cyan → teal (target reached) → lime → amber (double target)
 const HUE_STOPS: [number, number][] = [
   [0, 265],

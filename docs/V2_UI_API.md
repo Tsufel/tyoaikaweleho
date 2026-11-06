@@ -292,7 +292,7 @@ minute → `invalid` ("End time must be after the start (HH:MM)."); an end
 still ahead of now → `invalid` ("T hasn't come yet (it's HH:MM now)."); >14 h
 → `needs_confirm(long_entry)` (token = `start_iso`); then as `timer_stop`'s
 save (§6.1 step 6, `save_failed` keeps it running). The STOP button's "▾"
-opens a time picker for it.
+opens a small HH:MM field for it, prefilled with now.
 
 `timer_adjust(start_iso, time?, job_shift?)` changes the running shift and
 rewrites `session.json` (atomic; a write failure → `error(save_failed)`, old
@@ -300,7 +300,10 @@ values kept). `start_iso` other than the running one → `error(stale)`.
 `time` resolves like `timer_start('at')` to the last HH:MM at or before now;
 one 0–6 h ahead → `invalid(field:'time')`. Moving the start earlier to ≥6 h
 behind now → `needs_confirm(start_backdate)` with `earlier` / `cancel`.
-`job_shift` blank → `"—"`; `null` keeps it. → `ok{timer}`.
+`job_shift` blank → `"—"`; `null` keeps it. → `ok{timer}`. In TimerView the
+running status line's start time and job are buttons opening the same field.
+The ring's line under the clock reads "62% of 8h · done 16:30", then
+"8h reached" / "0h 45m over 8h" (`targetText`).
 
 ### 6.4 Inline edit — `update_entry_field(id, field, value, confirm)`
 JS owns the editor (Enter = strict, Tab/blur/click elsewhere/scroll = lenient,

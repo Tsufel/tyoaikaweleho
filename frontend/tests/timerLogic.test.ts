@@ -25,6 +25,7 @@ import {
   spokenDuration,
   startFromLaps,
   startedText,
+  targetText,
   unwrapLaps,
 } from '../src/views/timer/timerLogic';
 import { MAX_INTENSITY } from '../src/fx/fire/fireSim';
@@ -36,6 +37,15 @@ describe('ring maths', () => {
     expect(ringProgress(12 * 3600, 8)).toBe(1.5);
     expect(ringProgress(-5, 8)).toBe(0);
     expect(ringProgress(3600, 0)).toBe(1 / 8); // falls back to 8 h
+  });
+
+  it('target line gives the finish time, then the overtime', () => {
+    const now = new Date(2026, 8, 23, 12, 0, 0).getTime();
+    expect(targetText(3 * 3600, 8, now)).toBe('37% of 8h · done 17:00');
+    expect(targetText(0, 8, now)).toBe('0% of 8h · done 20:00');
+    expect(targetText(8 * 3600 + 30, 8, now)).toBe('8h reached');
+    expect(targetText(8 * 3600 + 45 * 60, 8, now)).toBe('0h 45m over 8h');
+    expect(targetText(9 * 3600, 0, now)).toBe('1h 00m over 8h');
   });
 
   it('hue walks violet → teal → amber and clamps', () => {
