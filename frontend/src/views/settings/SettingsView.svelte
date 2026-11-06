@@ -204,6 +204,8 @@
   async function setPet(v: PetKind) {
     await saveUiPrefs({ pet: v, pet_hint_seen: true });
   }
+  /** The shortcut list is folded away until asked for. */
+  let keysOpen = $state(false);
   let petNameDraft = $state(get(settings).ui_prefs.pet_name);
   let petNameInput = $state<HTMLInputElement>();
   // follow a rename made in the pet sheet, unless the user is typing here
@@ -580,11 +582,18 @@
       <div class="card-in" in:fly={{ y: 12, delay: stagger(6, 50) }}>
         <div class="keys-head">
           <h3 id="s-keys"><Icon name="keyboard" size={16} /> Keyboard shortcuts</h3>
-          <Button variant="ghost" size="sm" onclick={() => runCommand('help.shortcuts')} tooltip={{ text: 'Open the cheat sheet', kbd: '?' }}>
-            Cheat sheet
-          </Button>
+          <div class="keys-actions">
+            <Button variant="ghost" size="sm" onclick={() => runCommand('help.shortcuts')} tooltip={{ text: 'Open the cheat sheet', kbd: '?' }}>
+              Cheat sheet
+            </Button>
+            <Button variant="ghost" size="sm" aria-expanded={keysOpen} aria-controls="s-keys-list" onclick={() => (keysOpen = !keysOpen)}>
+              {keysOpen ? 'Hide' : `Show all (${SHORTCUTS.length})`}
+              <Icon name={keysOpen ? 'chevron-up' : 'chevron-down'} size={14} />
+            </Button>
+          </div>
         </div>
-        <table class="keys">
+        {#if keysOpen}
+        <table class="keys" id="s-keys-list">
           <tbody>
             {#each SHORTCUTS as s (s.what)}
               <tr>
@@ -599,6 +608,7 @@
             {/each}
           </tbody>
         </table>
+        {/if}
       </div>
     </GlassCard>
   </div>
@@ -610,6 +620,10 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+  .keys-actions {
+    display: flex;
+    gap: 4px;
   }
   .settings {
     display: flex;
@@ -903,6 +917,7 @@
   }
   .keys {
     width: 100%;
+    margin-top: 8px;
     border-collapse: collapse;
   }
   .keys td {
