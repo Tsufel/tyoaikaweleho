@@ -7,14 +7,28 @@
   import { formatDuration, formatMoney } from '../lib/time';
   import { percent, stepIndex, type Slice } from './chartUtils';
 
-  let { slices, label, size = 200 }: { slices: Slice[]; label: string; size?: number } = $props();
+  let {
+    slices,
+    label,
+    metric = 'hours',
+    size = 200,
+  }: {
+    slices: Slice[];
+    label: string;
+    /** What the ring and the shares measure: hours worked or number of shifts. */
+    metric?: 'hours' | 'shifts';
+    size?: number;
+  } = $props();
+
+  const amount = (s: Slice) => (metric === 'shifts' ? s.shifts : s.minutes);
+  const shiftsWord = (n: number) => `${n} ${n === 1 ? 'shift' : 'shifts'}`;
 
   let active = $state<number | null>(null);
   let legend = $state<HTMLElement>();
 
   const R = $derived(size / 2 - 8);
   const sweep = new Tween(0, { easing: cubicOut });
-  const sig = $derived(slices.map((s) => `${s.key}:${s.minutes}`).join('|'));
+  const sig = $derived(metric + '|' + slices.map((s) => `${s.key}:${amount(s)}`).join('|'));
 
   $effect(() => {
     void sig;
@@ -28,7 +42,7 @@
     const end = Math.PI * 2 * sweep.current;
     const gen = pie<Slice>()
       .sort(null)
-      .value((s) => s.minutes)
+      .value(amount)
       .startAngle(0)
       .endAngle(Math.max(0.0001, end))
       .padAngle(slices.length > 1 ? 0.025 : 0);
@@ -46,7 +60,8 @@
   }
 
   const fill = (s: Slice) => (s.slot < 0 ? 'var(--series-other)' : `var(--series-${s.slot + 1})`);
-  const total = $derived(slices.reduce((t, s) => t + s.minutes, 0));
+  const total = $derived(slices.reduce((t, s) => t + amount(s), 0));
+  const shareOf = (s: Slice) => (total > 0 ? amount(s) / total : 0);
   const act = $derived(active !== null ? slices[active] ?? null : null);
 
   function onLegendKey(e: KeyboardEvent, i: number) {
@@ -74,13 +89,19 @@
       {/each}
     </svg>
     <div class="center" aria-hidden="true">
-      {#if act}
+      {#if act && metric === 'shifts'}
+        <span class="c-label">{act.label}</span>
+        <span class="c-value num">{shiftsWord(act.shifts)}</span>
+        <span class="c-sub num">
+          {percent(shareOf(act))}{act.shifts > 0 ? ` · avg ${formatDuration(Math.round(act.minutes / act.shifts))}` : ''}
+        </span>
+      {:else if act}
         <span class="c-label">{act.label}</span>
         <span class="c-value num">{formatDuration(act.minutes)}</span>
-        <span class="c-sub num">{percent(act.share)} · {formatMoney(act.earnings)}</span>
+        <span class="c-sub num">{percent(shareOf(act))} · {formatMoney(act.earnings)}</span>
       {:else}
         <span class="c-label">All jobs</span>
-        <span class="c-value num">{formatDuration(total)}</span>
+        <span class="c-value num">{metric === 'shifts' ? shiftsWord(total) : formatDuration(total)}</span>
         <span class="c-sub">{slices.length} {slices.length === 1 ? 'job' : 'jobs'}</span>
       {/if}
     </div>
@@ -93,7 +114,9 @@
           type="button"
           data-slice
           class:on={active === i}
-          aria-label="{s.label}: {formatDuration(s.minutes)}, {percent(s.share)}, {formatMoney(s.earnings)}, {s.shifts} {s.shifts === 1 ? 'shift' : 'shifts'}"
+          aria-label="{s.label}: {metric === 'shifts'
+            ? `${shiftsWord(s.shifts)}, ${percent(shareOf(s))} of shifts, ${formatDuration(s.minutes)}`
+            : `${formatDuration(s.minutes)}, ${percent(shareOf(s))} of hours, ${shiftsWord(s.shifts)}`}, {formatMoney(s.earnings)}"
           onpointerenter={() => (active = i)}
           onpointerleave={() => (active = null)}
           onfocus={() => (active = i)}
@@ -102,8 +125,8 @@
         >
           <span class="sw" style:background={fill(s)}></span>
           <span class="name">{s.label}</span>
-          <span class="hrs num">{formatDuration(s.minutes)}</span>
-          <span class="pct num">{percent(s.share)}</span>
+          <span class="hrs num">{metric === 'shifts' ? shiftsWord(s.shifts) : formatDuration(s.minutes)}</span>
+          <span class="pct num">{percent(shareOf(s))}</span>
         </button>
       </li>
     {/each}

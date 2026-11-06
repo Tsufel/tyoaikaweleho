@@ -4,18 +4,21 @@ import {
   NO_SHIFT_LABEL,
   SERIES_SLOTS,
   axisHours,
+  axisLabels,
   axisMoney,
   barPath,
   bucketTargets,
   cumulative,
   earningsModel,
   hourScale,
-  labelStep,
+  kpiDelta,
   paceAt,
   paceReady,
   percent,
+  previousTotalsAt,
   resize,
   shiftSlices,
+  shownLabels,
   stepIndex,
   weekdaysBetween,
 } from '../src/charts/chartUtils';
@@ -39,11 +42,6 @@ describe('scales and labels', () => {
   });
   it('empty data still gets a usable scale', () => {
     expect(hourScale(0, 0, 100).y.domain()[1]).toBeGreaterThan(0);
-  });
-  it('labelStep thins crowded axes', () => {
-    expect(labelStep(7, 700)).toBe(1);
-    expect(labelStep(31, 600)).toBe(3);
-    expect(labelStep(0, 600)).toBe(1);
   });
   it('axis formats', () => {
     expect(axisHours(7.5)).toBe('7.5h');
@@ -115,6 +113,23 @@ describe('shiftSlices', () => {
     const s = shiftSlices([st('x', 50), st('y', 40), st('Morning', 30)], ['Morning']);
     expect(new Set(s.map((x) => x.slot)).size).toBe(3);
     expect(s.find((x) => x.label === 'Morning')!.slot).toBe(0);
+  });
+  it('ranks, folds and shares by shifts when measuring shifts', () => {
+    const rows = ['a', 'b', 'c', 'd', 'e'].map((j) => ({ ...st(j, 1200), shifts: 2 }));
+    rows.push({ ...st('f', 180), shifts: 20 });
+    const s = shiftSlices(rows, [], 'shifts');
+    expect(s[0].label).toBe('f');
+    expect(s[0].share).toBeCloseTo(20 / 30);
+    expect(s.at(-1)!.label).toBe('Other (2)');
+    expect(s.at(-1)!.shifts).toBe(4);
+    expect(s.reduce((t, x) => t + x.share, 0)).toBeCloseTo(1);
+    // by hours, f is the smallest and folds into Other
+    expect(shiftSlices(rows, []).some((x) => x.label === 'f')).toBe(false);
+  });
+  it('keeps zero-minute jobs when measuring shifts', () => {
+    const rows = [st('a', 60), { ...st('b', 0), shifts: 1 }];
+    expect(shiftSlices(rows, [])).toHaveLength(1);
+    expect(shiftSlices(rows, [], 'shifts')).toHaveLength(2);
   });
 });
 
@@ -259,5 +274,111 @@ describe('earnings running total', () => {
     expect(paceAt(9, 4, 10, 200, 400)).toBe(400);
     expect(paceAt(6, 4, 10, 200, 400)).toBe(280);
     expect(paceAt(9, 9, 10, 200, 400)).toBe(200);
+  });
+});
+
+describe('axis labels', () => {
+  const months = (from: number, count: number, year = 2025): StatsBucket[] =>
+    Array.from({ length: count }, (_, i) => {
+      const y = year + Math.floor((from + i) / 12);
+      const m = (from + i) % 12;
+      const start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+      const label = `${['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][m]} ${y}`;
+      return { key: start.slice(0, 7), label, start, minutes: 0, earnings: 0, shifts: 0 };
+    });
+  const days = (count: number): StatsBucket[] =>
+    Array.from({ length: count }, (_, i) => ({ ...bucket(`2026-11-${String(i + 1).padStart(2, '0')}`), label: `Mon ${i + 1}` }));
+
+  /** No two shown labels overlap at `slot` px per category. */
+  const clear = (labels: string[], slot: number) => {
+    const shown = labels.map((l, i) => [l, i] as const).filter(([l]) => l);
+    for (let k = 1; k < shown.length; k++) {
+      const [a, i] = shown[k - 1];
+      const [b, j] = shown[k];
+      expect(((a.length + b.length) * 6.8) / 2 + 10).toBeLessThanOrEqual((j - i) * slot);
+    }
+  };
+
+  it('months drop the year except on the first label and where it changes', () => {
+    const { step, labels } = axisLabels(months(10, 5), 'month', 80);
+    expect(step).toBe(1);
+    expect(labels).toEqual(['Nov 2025', 'Dec', 'Jan 2026', 'Feb', 'Mar']);
+  });
+  it('a year of months fits in a narrow chart without overlap', () => {
+    // about 735px wide: the case where "Jan 2026Feb 2026" ran together
+    const slot = 675 / 12;
+    const { step, labels } = axisLabels(months(0, 12, 2026), 'month', slot);
+    expect(step).toBe(1);
+    expect(labels[0]).toBe('Jan 2026');
+    clear(labels, slot);
+  });
+  it('thins labels so none collide', () => {
+    for (const slot of [8, 14, 20, 33, 60]) {
+      const r = axisLabels(days(31), 'day', slot);
+      clear(r.labels, slot);
+      expect(r.labels.filter(Boolean).length).toBeGreaterThan(0);
+      expect(r.labels.every((l, i) => (i % r.step === 0) === !!l)).toBe(true);
+    }
+    for (const slot of [10, 25, 40]) clear(axisLabels(months(0, 36), 'month', slot).labels, slot);
+  });
+  it('shows the year again when thinning skips January', () => {
+    const { step, labels } = axisLabels(months(0, 24, 2025), 'month', 20);
+    expect(step).toBeGreaterThan(1);
+    const shown = labels.filter(Boolean);
+    expect(shown[0]).toBe('Jan 2025');
+    expect(shown.filter((l) => l.includes('2026'))).toHaveLength(1);
+  });
+  it('one label when even two cannot fit', () => {
+    const r = axisLabels(days(3), 'day', 2);
+    expect(r.labels.filter(Boolean)).toEqual(['Mon 1']);
+    expect(axisLabels([], 'day', 50)).toEqual({ step: 1, labels: [] });
+    expect(axisLabels(days(2), 'day', 0).labels.filter(Boolean)).toHaveLength(1);
+  });
+  it('the hovered label is shown in full and its neighbours make room', () => {
+    const b = months(0, 12, 2026);
+    const slot = 60;
+    const { labels } = axisLabels(b, 'month', slot);
+    const out = shownLabels(b, labels, 4, slot);
+    expect(out[4]).toBe('May 2026');
+    clear(out, slot);
+    expect(shownLabels(b, labels, null, slot)).toBe(labels);
+  });
+});
+
+describe('previous period at the same point', () => {
+  const day = (start: string, minutes: number, shifts = minutes > 0 ? 1 : 0): StatsBucket => ({
+    ...bucket(start, minutes),
+    earnings: minutes / 6,
+    shifts,
+  });
+  const nov = (spec: Record<number, number>) =>
+    Array.from({ length: 30 }, (_, i) => day(`2026-11-${String(i + 1).padStart(2, '0')}`, spec[i + 1] ?? 0));
+  const oct = (spec: Record<number, number>) =>
+    Array.from({ length: 31 }, (_, i) => day(`2026-10-${String(i + 1).padStart(2, '0')}`, spec[i + 1] ?? 0));
+  const full = { minutes: 9999, earnings: 1, shifts: 9, worked_days: 9 };
+
+  it('counts the period before up to the same day', () => {
+    const r = previousTotalsAt('2026-11-01', '2026-11-30', '2026-11-06', { current: nov({ 2: 60 }), previous: oct({ 1: 60, 6: 120, 7: 300 }) }, full);
+    expect(r).toEqual({ minutes: 180, earnings: 30, shifts: 2, worked_days: 2 });
+  });
+  it('a shift dated ahead moves the point forward', () => {
+    const r = previousTotalsAt('2026-11-01', '2026-11-30', '2026-11-06', { current: nov({ 8: 60 }), previous: oct({ 7: 300, 9: 60 }) }, full);
+    expect(r?.minutes).toBe(300);
+  });
+  it('whole periods once this one is over, none before it starts', () => {
+    expect(previousTotalsAt('2026-10-01', '2026-10-31', '2026-11-06', null, full)).toBe(full);
+    expect(previousTotalsAt('2026-12-01', '2026-12-31', '2026-11-06', null, full)).toBeNull();
+    expect(previousTotalsAt('2026-11-01', '2026-11-30', '2026-11-06', null, full)).toBeNull();
+    expect(previousTotalsAt('2026-11-01', '2026-11-30', '2026-11-06', { current: nov({}), previous: null }, full)).toBeNull();
+  });
+  it('kpiDelta words the change', () => {
+    expect(kpiDelta(390, 0, (n) => `${n}m`, 'October', ' at this point')).toEqual({
+      tone: 'up',
+      text: '390m',
+      hint: '+390m vs October at this point',
+    });
+    expect(kpiDelta(10, 12.5, (n) => `€${n}`, 'last week', '')).toEqual({ tone: 'down', text: '€2.5', hint: '−€2.5 vs last week' });
+    expect(kpiDelta(3, 3, String, '2025', '')).toEqual({ tone: 'even', text: 'Same', hint: 'Same as 2025' });
+    expect(kpiDelta(0.1 + 0.2, 0.3, String, 'x', '').tone).toBe('even');
   });
 });
