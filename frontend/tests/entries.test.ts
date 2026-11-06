@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { EntryRow, MonthData } from '../src/lib/api/types';
 import {

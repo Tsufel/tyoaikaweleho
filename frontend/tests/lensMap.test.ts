@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import { bezelLut, lensField, mapKey, mapScale, type FieldSpec } from '../src/lib/glass/lensMap';
 
