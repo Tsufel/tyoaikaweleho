@@ -279,6 +279,13 @@ def test_dialog_cancel_is_cancelled(rig):
     assert window.dialog_calls[1][2] is True      # import allows multiple
 
 
+def test_export_bad_month_is_invalid_without_a_dialog(rig):
+    api, window, *_ = rig
+    r = _check(api.export_month(2026, 13))
+    assert r["status"] == "invalid" and r["field"] == "month"
+    assert window.dialog_calls == []
+
+
 def test_file_types_are_valid_for_pywebview(rig):
     util = pytest.importorskip("webview.util")
     from webapp import api as api_mod

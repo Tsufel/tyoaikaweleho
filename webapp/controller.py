@@ -355,7 +355,11 @@ class ShiftController:
                                "An unfinished shift from last time needs to be "
                                "saved, resumed or discarded first.",
                                timer=self.timer_state())
-            js = (job_shift or storage.get_default_job_shift() or "").strip() or "—"
+            try:
+                typed = storage.clean_job_shift(job_shift)
+            except ValueError as exc:
+                return R.invalid("job_shift", str(exc), timer=self.timer_state())
+            js = (typed or storage.get_default_job_shift() or "").strip() or "—"
             now = self._now().replace(microsecond=0)
             if mode == "now":
                 start = now
@@ -686,6 +690,10 @@ class ShiftController:
         t_out = parse_time_input(out_raw) if out_raw else ""
         if t_out is None:
             return R.invalid("time_out", "Time Out must be a valid time (e.g. 17:00).")
+        try:
+            job_shift = storage.clean_job_shift(draft.get("job_shift"))
+        except ValueError as exc:
+            return R.invalid("job_shift", str(exc))
         if t_out:
             minutes = entry_minutes(t_in, t_out)
             if is_long_shift(minutes):
@@ -696,7 +704,7 @@ class ShiftController:
                     return R.cancelled()
         entry = storage.WorkEntry(
             id=str(draft.get("id") or "") or storage.new_entry_id(), date=d,
-            job_shift=str(draft.get("job_shift") or "").strip(),
+            job_shift=job_shift,
             time_in=t_in, time_out=t_out)
         with self._lock:
             choice = answer(confirm, "overlap")
@@ -801,6 +809,9 @@ class ShiftController:
         if not isinstance(entry, dict) or not all(
                 isinstance(entry.get(k), str) for k in ("id", "date", "time_in")):
             return R.invalid("entry", "That is not a saved entry.")
+        # a date nothing can read would hide the entry from every month
+        if not entry["id"] or parse_date_input(entry["date"]) is None:
+            return R.invalid("entry", "That is not a saved entry.")
         # keys a newer version wrote (a break, a note) come back too; a
         # restored entry is never a tombstone
         extra = {k: v for k, v in entry.items()
@@ -901,7 +912,10 @@ class ShiftController:
             return R.saved(settings=self._settings())
 
     def add_job_shift(self, name: str) -> dict:
-        js = str(name or "").strip()
+        try:
+            js = storage.clean_job_shift(name)
+        except ValueError as exc:
+            return R.invalid("name", str(exc))
         if not js:
             return R.invalid("name", "Enter a shift name.")
         with self._lock:
@@ -994,6 +1008,10 @@ class ShiftController:
         return f"Hours {date(int(year), int(month), 1):%B %Y}.xlsx"
 
     def export_month(self, year: int, month: int, path: str | None) -> dict:
+        try:
+            date(int(year), int(month), 1)
+        except (TypeError, ValueError):
+            return R.invalid("month", "Not a valid month.")
         if not path:
             return R.cancelled()
         import excel_export

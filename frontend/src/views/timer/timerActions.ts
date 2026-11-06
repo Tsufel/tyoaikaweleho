@@ -60,7 +60,7 @@ export function startShift(
     if (r.timer) setTimer(r.timer);
     if (r.status === 'ok' && r.timer.running) emitFx({ kind: 'ignite' });
     if (r.status === 'invalid') {
-      await alert('Invalid start time', r.message, 'error');
+      await alert(r.field === 'job_shift' ? 'Invalid shift name' : 'Invalid start time', r.message, 'error');
     } else if (r.status === 'error') {
       if (r.error.code === 'recovery_pending') await offerRecovery();
       else if (r.error.code === 'already_running') {

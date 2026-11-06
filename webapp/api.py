@@ -249,7 +249,10 @@ class Api:
 
     @_guarded
     def export_month(self, year, month):
-        name = self._c.export_filename(year, month)
+        try:
+            name = self._c.export_filename(year, month)
+        except (TypeError, ValueError):
+            return R.invalid("month", "Not a valid month.")
         picked = self._dialog(_DIALOG_SAVE, _EXPORT_TYPES, save_filename=name)
         if not picked:
             return R.cancelled()

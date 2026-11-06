@@ -614,6 +614,27 @@ def _pet_name_error(v) -> str | None:
     return None
 
 
+JOB_SHIFT_MAX = 100
+
+
+def clean_job_shift(v) -> str:
+    """A job/shift name as typed, trimmed with inner runs of spaces made one.
+    Raises ValueError (worded for the user) for non-text, a line break, tab
+    or other control character (a newline would split shifts.txt), or a name
+    over JOB_SHIFT_MAX characters. None is ""."""
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise ValueError("The shift name must be text.")
+    if any(unicodedata.category(c) in _BAD_NAME_CATEGORIES or c in _BIDI_CONTROLS for c in v):
+        raise ValueError("Shift names can't contain line breaks, tabs or other "
+                         "control characters.")
+    name = " ".join(v.split())
+    if len(name) > JOB_SHIFT_MAX:
+        raise ValueError(f"Shift names can be at most {JOB_SHIFT_MAX} characters.")
+    return name
+
+
 def _clean_pet_name(v) -> str | None:
     """Trimmed name, or None when *v* is not a usable one ("" = default name)."""
     if _pet_name_error(v):

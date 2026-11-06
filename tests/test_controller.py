@@ -1007,6 +1007,61 @@ def test_add_job_shift_fails(env, monkeypatch):
     assert ctrl.add_job_shift("X")["error"]["code"] == "save_failed"
 
 
+@pytest.mark.parametrize("name", ["A\nB", "A\rB", "Tab\there", "Sales \ud83d",
+                                  "evil‮RTL", "x" * 101, 5])
+def test_add_job_shift_rejects_bad_names(env, tmp_storage, name):
+    ctrl, _ = env
+    before = storage.get_job_shift_list()
+    r = ctrl.add_job_shift(name)
+    assert r["status"] == "invalid" and r["field"] == "name"
+    assert storage.get_job_shift_list() == before
+
+
+def test_add_job_shift_collapses_spaces(env):
+    ctrl, _ = env
+    r = ctrl.add_job_shift("  Night   shift ")
+    assert r["added"] is True and "Night shift" in r["shifts"]
+
+
+def test_save_entry_rejects_a_bad_job_shift(env, tmp_storage):
+    ctrl, _ = env
+    draft = {"date": "2026-09-01", "time_in": "08:00", "time_out": "16:00"}
+    for bad in ("Sales\nNight", "Sales \ud83d", "y" * 101):
+        r = ctrl.save_entry({**draft, "job_shift": bad})
+        assert r["status"] == "invalid" and r["field"] == "job_shift"
+    assert storage.load_all_entries() == []
+    assert not (tmp_storage / "data.json.tmp").exists()
+    r = ctrl.save_entry({**draft, "job_shift": " Sales  Night "})
+    assert r["status"] == "saved" and r["entry"]["job_shift"] == "Sales Night"
+
+
+def test_timer_start_rejects_a_bad_job_shift(env):
+    ctrl, _ = env
+    for bad in (5, "A\nB", "z" * 101):
+        r = ctrl.timer_start("now", job_shift=bad)
+        assert r["status"] == "invalid" and r["field"] == "job_shift"
+        assert r["timer"]["running"] is False
+    assert ctrl.timer_start("now", job_shift=None)["timer"]["running"] is True
+
+
+def test_restore_rejects_an_unreadable_date(env):
+    ctrl, _ = env
+    for date_ in ("", "not a date", "2026-13-40"):
+        r = ctrl.restore_entry({"id": "x", "date": date_, "time_in": "09:00"})
+        assert r["status"] == "invalid" and r["field"] == "entry"
+    assert storage.load_all_entries() == []
+    r = ctrl.restore_entry({"id": "x", "date": "20260901", "time_in": "09:00",
+                            "time_out": "17:00", "job_shift": "Sales"})
+    assert r["status"] == "saved" and storage.load_all_entries()[0].date == "2026-09-01"
+
+
+def test_export_month_rejects_a_bad_month(env, tmp_path):
+    ctrl, _ = env
+    for month in (13, 0, "x", None):
+        r = ctrl.export_month(2026, month, str(tmp_path / "x.xlsx"))
+        assert r["status"] == "invalid" and r["field"] == "month"
+
+
 # ── stats / export / import ──────────────────────────────────────────────────
 
 def test_get_stats(env):
