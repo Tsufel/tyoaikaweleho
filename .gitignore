@@ -5,6 +5,9 @@ data.json.tmp
 session.json
 shifts.txt
 backups/
+data.damaged-*.json
+session.bad-*.json
+*.tmp
 
 # ── Python bytecode ───────────────────────────────────────────
 __pycache__/
@@ -26,8 +29,10 @@ Output/
 
 # ── Pytest / coverage artifacts ───────────────────────────────
 .pytest_cache/
+.ruff_cache/
 htmlcov/
 .coverage
+.coverage.*
 
 # ── Misc ──────────────────────────────────────────────────────
 *.log
