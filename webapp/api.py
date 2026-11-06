@@ -173,6 +173,16 @@ class Api:
     def get_recovery(self):
         return self._c.get_recovery()
 
+    # running shift: stop at a past time, fix the start or job
+
+    @_guarded
+    def timer_stop_at(self, end, confirm=None):
+        return self._c.timer_stop_at(end, confirm)
+
+    @_guarded
+    def timer_adjust(self, start_iso, time=None, job_shift=None, confirm=None):
+        return self._c.timer_adjust(start_iso, time, job_shift, confirm)
+
     @_guarded
     def recovery_resolve(self, action, end=None, confirm=None):
         result = self._c.recovery_resolve(action, end, confirm)

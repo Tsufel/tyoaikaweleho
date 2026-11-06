@@ -15,13 +15,17 @@ import {
   nudgeStart,
   pointerFraction,
   recoveryDate,
+  recoveryEndNote,
   ringPoint,
   ringProgress,
   runningText,
+  savedToastText,
+  sinceText,
   snapStart,
   spokenDuration,
   startFromLaps,
   startedText,
+  targetText,
   unwrapLaps,
 } from '../src/views/timer/timerLogic';
 import { MAX_INTENSITY } from '../src/fx/fire/fireSim';
@@ -33,6 +37,15 @@ describe('ring maths', () => {
     expect(ringProgress(12 * 3600, 8)).toBe(1.5);
     expect(ringProgress(-5, 8)).toBe(0);
     expect(ringProgress(3600, 0)).toBe(1 / 8); // falls back to 8 h
+  });
+
+  it('target line gives the finish time, then the overtime', () => {
+    const now = new Date(2026, 8, 23, 12, 0, 0).getTime();
+    expect(targetText(3 * 3600, 8, now)).toBe('37% of 8h · done 17:00');
+    expect(targetText(0, 8, now)).toBe('0% of 8h · done 20:00');
+    expect(targetText(8 * 3600 + 30, 8, now)).toBe('8h reached');
+    expect(targetText(8 * 3600 + 45 * 60, 8, now)).toBe('0h 45m over 8h');
+    expect(targetText(9 * 3600, 0, now)).toBe('1h 00m over 8h');
   });
 
   it('hue walks violet → teal → amber and clamps', () => {
@@ -234,5 +247,33 @@ describe('start dial', () => {
   it('says how long ago the picked start is', () => {
     expect(agoText(at(10, 0), now)).toBe('3m ago');
     expect(agoText(at(8, 45), now)).toBe('1h 18m ago');
+  });
+});
+
+describe('recovery dialog', () => {
+  it('says how long ago an unfinished shift started', () => {
+    expect(sinceText(20)).toBe('less than an hour ago');
+    expect(sinceText(60)).toBe('1 hour ago');
+    expect(sinceText(47 * 60 + 59)).toBe('47 hours ago');
+    expect(sinceText(3 * 24 * 60 + 5)).toBe('3 days ago');
+  });
+
+  it('notes the length, pay and next day for the end time', () => {
+    expect(recoveryEndNote('09:00', '17:30', 20)).toEqual({ text: '8h 30m · €170.00', tone: 'muted' });
+    expect(recoveryEndNote('22:00', '06:00', 10)).toEqual({ text: '8h 00m · €80.00 (+1 day)', tone: 'muted' });
+    expect(recoveryEndNote('09:00', 'nope', 20)).toBeNull();
+  });
+
+  it('saved toast shows the pay only with a pay rate', () => {
+    expect(savedToastText(480, 20)).toBe('Shift saved — 8h 00m · €160.00 earned');
+    expect(savedToastText(95, 0)).toBe('Shift saved — 1h 35m');
+    expect(savedToastText(null, 20)).toBe('Shift saved');
+  });
+
+  it('warns about a zero-length or unusually long shift', () => {
+    expect(recoveryEndNote('09:00', '09:00', 20)).toEqual({ text: 'Must be after the start (09:00)', tone: 'warning' });
+    const long = recoveryEndNote('08:00', '06:30', 0)!;
+    expect(long.tone).toBe('warning');
+    expect(long.text).toBe('22h 30m · €0.00 (+1 day) — unusually long');
   });
 });

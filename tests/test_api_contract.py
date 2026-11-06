@@ -153,6 +153,8 @@ def test_every_method_returns_json(rig):
         ("get_timer", ()), ("timer_start", ("now", None, None, None)),
         ("timer_stop", ("button", None)), ("timer_discard", (None,)),
         ("get_recovery", ()), ("recovery_resolve", ("discard", None, None)),
+        ("timer_stop_at", ("17:00", None)),
+        ("timer_adjust", ("2026-09-23T09:00:00", "09:00", None, None)),
         ("list_month", (2026, 9)), ("get_entry", ("missing",)),
         ("save_entry", ({"date": "2026-09-01", "time_in": "08:00", "time_out": "16:00",
                          "job_shift": "Sales"}, None)),

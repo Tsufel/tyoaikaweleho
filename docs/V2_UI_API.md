@@ -97,8 +97,8 @@ current state (e.g. a different shift is now running) it returns
 | `over_24h` | `timer_stop` any source, elapsed ≥24 h | `save` "Save until HH:MM", `discard` (danger), `keep` "Keep running" | `keep` / `keep` |
 | `discard_shift` | after `over_24h=discard`; `recovery_resolve('discard')`; `timer_discard` | `discard` (danger), `cancel` | `cancel` / `cancel` |
 | `start_ahead` | `timer_start` mode `at`, picked time 0–6 h ahead of now | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel` |
-| `start_backdate` | `timer_start` mode `at`, resolved start ≥6 h behind now (not asked after `start_ahead`) | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel`; icon warning |
-| `long_entry` | `save_entry`, `update_entry_field` when result >14 h | `save` "Save anyway", `cancel` | `save` / `cancel` |
+| `start_backdate` | `timer_start` mode `at`, resolved start ≥6 h behind now (not asked after `start_ahead`); `timer_adjust` moving the start earlier to ≥6 h behind (token = old `start_iso`, only `earlier` and `cancel` "Keep HH:MM", default `cancel`) | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel`; icon warning |
+| `long_entry` | `save_entry`, `update_entry_field`, `recovery_resolve('save')`, `timer_stop_at` when result >14 h (recovery / stop at: token = session `start_iso`) | `save` "Save anyway", `cancel` | `save` / `cancel` |
 | `overlap` | `save_entry`, `update_entry_field` when the result overlaps a saved entry it didn't overlap before (after `long_entry`) | `save` "Save anyway", `cancel` "Go back" | `cancel` / `cancel`; icon warning; `details.overlaps` = count |
 | `delete_entry` | `delete_entry` | `delete` (danger), `cancel` | `cancel` / `cancel` |
 | `close_running` | `close_app` while a shift runs | `stop_close` "Stop, save & close", `close` "Close anyway", `cancel` "Stay open" | `stop_close` / `cancel` |
@@ -124,7 +124,9 @@ The current shift must never be lost:
    job** and leaves `session.json`; result is `error/save_failed`, the timer
    payload shows it running, and the user can press STOP again.
 4. "Close anyway" leaves `session.json`; next launch offers recovery.
-5. While recovery is pending, `timer_start` returns `error/recovery_pending`;
+5. While recovery is pending, `timer_start` returns `error/recovery_pending`
+   (a `session.json` naming an entry that was already saved doesn't count:
+   `recovery_pending` is false and START works);
    recovery is re-offered until saved, resumed or discarded (a failed save
    keeps it pending).
 6. `install_update` saves window placement first; the session file is left
@@ -154,8 +156,10 @@ The current shift must never be lost:
 | `get_timer()` | — | `R<{timer: T}>` |
 | `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
 | `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
-| `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded` |
+| `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded`; idle → `error(not_running)` |
 | `get_recovery()` | — | `R<{timer: T, recovery: Recovery\|null, data_recovery: DataRecovery\|null}>`. Read-only re-check for §6.3 (the Review link, `recovery_pending`); unlike `bootstrap` it writes nothing. `data_recovery` is a data.json repair since bootstrap, handed over once. |
+| `timer_stop_at(end, confirm?)` | `HH:MM`, answers | `R<{timer: T, entry?: E}>` §6.3a |
+| `timer_adjust(start_iso, time?, job_shift?, confirm?)` | running `start_iso`, `HH:MM`, `string`, answers | `R<{timer: T}>` §6.3a |
 | `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
 
 ### Entries
@@ -238,7 +242,9 @@ Order of checks (port of `TimerPanel.stop` / `toggle`):
      the saved shift overlaps another entry; never asked, the shift is already
      over) turns the "Shift saved" toast into a 12 s warning that appends it.
 
-`token` for 1–5 = running `start_iso`.
+`token` for 1–5 = running `start_iso`. The 24 h and 14 h limits (steps 4–5)
+go by whole clock minutes (seconds dropped on both ends), the way the HH:MM
+entry counts them, so a shift is never saved as `HH:MM–HH:MM` = 0 min.
 
 ### 6.2 Timer start — `timer_start(mode, time, job_shift, confirm)`
 - Running → `error(already_running)`; recovery pending → `error(recovery_pending)`.
@@ -266,13 +272,40 @@ session (an invalid one is cleared silently). It carries `start_iso`,
 **after** the changelog modal; START is blocked until resolved.
 
 - `resume` (also Esc / closing the modal) → timer runs from the saved start;
-  `ok{timer, recovery:null}`; frontend jumps to the start's month.
+  `ok{timer, recovery:null}`; frontend jumps to the start's month. When
+  `over_limit`, Esc only puts the modal aside (no call; the Timer view's
+  "blocked" banner offers it again) and Save takes the first focus.
 - `save` with `end` → invalid end → `invalid(field:'end')` ("End time must be a
-  valid time (e.g. 17:00)."). OSError → `error(save_failed)` and
+  valid time (e.g. 17:00)."); end = start minute → `invalid(field:'end')`
+  ("End time must be after the start (HH:MM)."); > 14 h →
+  `needs_confirm(long_entry)` (token = `start_iso`, payload keeps `recovery`). OSError → `error(save_failed)` and
   `recovery` returned again with `suggested_end = end` (modal stays). OK →
   clear session → `saved{entry, recovery:null, overlap_warning?}`; frontend
   shows the entry (and the warning as a toast).
 - `discard` → `needs_confirm(discard_shift)` → `discarded{recovery:null}`.
+
+### 6.3a Running shift — `timer_stop_at`, `timer_adjust`
+Both → `error(not_running)` when idle.
+
+`timer_stop_at(end)` saves the running shift as ending at `end`, the first
+such HH:MM after the start (so a shift left running for days can still be
+saved with its real end). Unparseable → `invalid(field:'end')`; end = start
+minute → `invalid` ("End time must be after the start (HH:MM)."); an end
+still ahead of now → `invalid` ("T hasn't come yet (it's HH:MM now)."); >14 h
+→ `needs_confirm(long_entry)` (token = `start_iso`); then as `timer_stop`'s
+save (§6.1 step 6, `save_failed` keeps it running). The STOP button's "▾"
+opens a small HH:MM field for it, prefilled with now.
+
+`timer_adjust(start_iso, time?, job_shift?)` changes the running shift and
+rewrites `session.json` (atomic; a write failure → `error(save_failed)`, old
+values kept). `start_iso` other than the running one → `error(stale)`.
+`time` resolves like `timer_start('at')` to the last HH:MM at or before now;
+one 0–6 h ahead → `invalid(field:'time')`. Moving the start earlier to ≥6 h
+behind now → `needs_confirm(start_backdate)` with `earlier` / `cancel`.
+`job_shift` blank → `"—"`; `null` keeps it. → `ok{timer}`. In TimerView the
+running status line's start time and job are buttons opening the same field.
+The ring's line under the clock reads "62% of 8h · done 16:30", then
+"8h reached" / "0h 45m over 8h" (`targetText`).
 
 ### 6.4 Inline edit — `update_entry_field(id, field, value, confirm)`
 JS owns the editor (Enter = strict, Tab/blur/click elsewhere/scroll = lenient,

@@ -6,6 +6,8 @@ import type { ConfirmRequest, TimerState } from '../src/lib/api/types';
 const fakeApi = vi.hoisted(() => ({
   timer_start: vi.fn(),
   timer_stop: vi.fn(),
+  timer_stop_at: vi.fn(),
+  timer_adjust: vi.fn(),
   close_app: vi.fn(),
   get_timer: vi.fn(),
   bootstrap: vi.fn(),
@@ -166,7 +168,7 @@ describe('stop (§6.1)', () => {
     unsub();
     expect(get(actions.burst)).toBe(burst0 + 1);
     expect(spies.showEntry).toHaveBeenCalledWith(entry);
-    expect(get(toasts)[0].message).toBe('Shift saved — 8h 00m');
+    expect(get(toasts)[0].message).toBe(`Shift saved — 8h 00m · €${(8 * idle.pay_rate).toFixed(2)} earned`);
     expect(fx).toEqual([{ kind: 'blast', minutes: 480 }]);
     expect(fxAtShow).toEqual(fx);
     expect(atBlast).toEqual({ burst: burst0 + 1, toasts: 0 });
@@ -212,6 +214,63 @@ describe('stop (§6.1)', () => {
     await actions.stopShift('button');
     expect(fakeApi.get_timer).toHaveBeenCalled();
     expect(fx).toEqual([]);
+  });
+});
+
+describe('stop at / adjust (§6.3a)', () => {
+  const entry = { id: 'e2', date: '2026-10-29', job_shift: 'Support', time_in: '09:00', time_out: '17:00', minutes: 480 };
+
+  it('stop at saves like STOP, with the pay in the toast', async () => {
+    setTimer(running);
+    fakeApi.timer_stop_at.mockResolvedValueOnce({ ok: true, status: 'saved', timer: { ...idle, pay_rate: 20 }, entry });
+    await actions.stopShiftAt('17:00');
+    expect(fakeApi.timer_stop_at).toHaveBeenCalledWith('17:00', undefined);
+    expect(get(toasts)[0].message).toBe('Shift saved — 8h 00m · €160.00 earned');
+    expect(fx).toEqual([{ kind: 'blast', minutes: 480 }]);
+    expect(spies.showEntry).toHaveBeenCalledWith(entry);
+  });
+
+  it('stop at a time still ahead → alert, keeps running, no fx', async () => {
+    setTimer(running);
+    fakeApi.timer_stop_at.mockResolvedValueOnce({ ok: false, status: 'invalid', field: 'end', message: 'ahead', timer: running });
+    await actions.stopShiftAt('23:00');
+    expect(shown.at(-1)?.title).toBe('Invalid end time');
+    expect(get(timer).running).toBe(true);
+    expect(fx).toEqual([]);
+  });
+
+  it('stop at a long shift asks long_entry with the token', async () => {
+    setTimer(running);
+    fakeApi.timer_stop_at
+      .mockResolvedValueOnce(needs('long_entry', ['save', 'cancel'], 'save', 'cancel'))
+      .mockResolvedValueOnce({ ok: true, status: 'cancelled', timer: running });
+    script = ['cancel'];
+    await actions.stopShiftAt('06:00');
+    expect(fakeApi.timer_stop_at).toHaveBeenLastCalledWith('06:00', [{ kind: 'long_entry', choice: 'cancel', token: START }]);
+    expect(fx).toEqual([]);
+  });
+
+  it('adjust sends the shown start and applies the new timer', async () => {
+    setTimer(running);
+    const moved = { ...running, start_iso: '2026-10-29T08:30:00', job_shift: 'Sales' };
+    fakeApi.timer_adjust.mockResolvedValueOnce({ ok: true, status: 'ok', timer: moved });
+    await actions.adjustShift('08:30', 'Sales');
+    expect(fakeApi.timer_adjust).toHaveBeenCalledWith(START, '08:30', 'Sales', undefined);
+    expect(get(timer)).toEqual(moved);
+  });
+
+  it('adjust that went stale re-reads the timer', async () => {
+    setTimer(running);
+    fakeApi.timer_adjust.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'stale', message: 'changed' } });
+    await actions.adjustShift('08:30', null);
+    expect(fakeApi.get_timer).toHaveBeenCalled();
+    expect(get(toasts).at(-1)?.message).toBe('changed');
+  });
+
+  it('adjust does nothing while idle', async () => {
+    setTimer(idle);
+    await actions.adjustShift('08:30', null);
+    expect(fakeApi.timer_adjust).not.toHaveBeenCalled();
   });
 });
 

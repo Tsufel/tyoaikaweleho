@@ -7,7 +7,8 @@ import { showEntry } from '../../lib/stores/entries';
 import { offerRecovery } from '../../lib/stores/recovery';
 import { refreshTimer, setTimer, timer } from '../../lib/stores/timer';
 import { toast } from '../../lib/stores/toasts';
-import { formatDuration, hhmm } from '../../lib/time';
+import { hhmm } from '../../lib/time';
+import { savedToastText } from './timerLogic';
 
 // Module-level so F5 keeps working while TimerView is unmounted (stats route).
 
@@ -77,30 +78,65 @@ export function startShift(
 /** §6.1 — STOP button ('button') or F5 ('shortcut'). A failed save leaves the
  *  shift running (Python restarts it); the timer payload says so. */
 export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopResult | undefined> {
+  return guarded(async () => afterStop(await runFlow((c) => api.timer_stop(source, c))));
+}
+
+/** STOP ▾: save the running shift as ending at a past HH:MM (§6.3a). */
+export function stopShiftAt(end: HHMM): Promise<StopResult | undefined> {
   return guarded(async () => {
-    const r = await runFlow((c) => api.timer_stop(source, c));
+    const r = await runFlow((c) => api.timer_stop_at(end, c));
+    if (r.status === 'invalid') {
+      if (r.timer) setTimer(r.timer);
+      await alert('Invalid end time', r.message, 'error');
+      return r;
+    }
+    return afterStop(r);
+  });
+}
+
+/** Shared tail of STOP and STOP at: fx, toast, show the saved entry. */
+async function afterStop(r: StopResult): Promise<StopResult> {
+  if (r.timer) setTimer(r.timer);
+  else await refreshTimer();
+  if (r.status === 'saved') {
+    savedEntry.set(r.entry ?? null);
+    burst.update((n) => n + 1);
+    emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
+    if (r.entry) {
+      const mins = r.entry.minutes;
+      if (r.overlap_warning) toast(`${savedToastText(mins, 0)}. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
+      else toast(savedToastText(mins, r.timer?.pay_rate ?? 0), { tone: 'success', ms: 4000 });
+      await showEntry(r.entry);
+    }
+  } else if (r.status === 'discarded') {
+    emitFx({ kind: 'fizzle' });
+    toast(r.message ?? 'Shift discarded', { tone: 'warning', ms: 5000 });
+  } else if (r.status === 'error') {
+    if (r.error.code === 'stale' || r.error.code === 'not_running') {
+      await refreshTimer();
+      toast(r.error.message || 'The shift changed in the meantime.', { tone: 'warning', ms: 5000 });
+    } else {
+      await reportError(r, 'Could not save shift');
+    }
+  }
+  return r;
+}
+
+/** Fix the running shift's start (HH:MM) and/or job (§6.3a). */
+export function adjustShift(time: HHMM | null, job: string | null): Promise<TimerResult | undefined> {
+  return guarded(async () => {
+    const startIso = get(timer).start_iso;
+    if (!startIso) return undefined;
+    const r = await runFlow((c) => api.timer_adjust(startIso, time, job, c));
     if (r.timer) setTimer(r.timer);
-    else await refreshTimer();
-    if (r.status === 'saved') {
-      savedEntry.set(r.entry ?? null);
-      burst.update((n) => n + 1);
-      emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
-      if (r.entry) {
-        const mins = r.entry.minutes;
-        const saved = `Shift saved${mins != null ? ` — ${formatDuration(mins)}` : ''}`;
-        if (r.overlap_warning) toast(`${saved}. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
-        else toast(saved, { tone: 'success', ms: 4000 });
-        await showEntry(r.entry);
-      }
-    } else if (r.status === 'discarded') {
-      emitFx({ kind: 'fizzle' });
-      toast(r.message ?? 'Shift discarded', { tone: 'warning', ms: 5000 });
+    if (r.status === 'invalid') {
+      await alert('Invalid start time', r.message, 'error');
     } else if (r.status === 'error') {
       if (r.error.code === 'stale' || r.error.code === 'not_running') {
         await refreshTimer();
         toast(r.error.message || 'The shift changed in the meantime.', { tone: 'warning', ms: 5000 });
       } else {
-        await reportError(r, 'Could not save shift');
+        await reportError(r, 'Could not change the shift');
       }
     }
     return r;

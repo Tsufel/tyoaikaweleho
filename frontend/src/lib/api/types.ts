@@ -512,6 +512,14 @@ export interface Api {
   timer_discard(confirm?: ConfirmList): Promise<TimerResult>;
   // get_recovery: re-offer recovery without re-running bootstrap
   get_recovery(): Promise<GetRecoveryResult>;
+  // running shift: stop at a past time, fix the start or job
+  timer_stop_at(end: string, confirm?: ConfirmList): Promise<StopResult>;
+  timer_adjust(
+    start_iso: string,
+    time?: string | null,
+    job_shift?: string | null,
+    confirm?: ConfirmList,
+  ): Promise<TimerResult>;
   recovery_resolve(
     action: RecoveryAction,
     end?: string | null,

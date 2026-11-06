@@ -6,12 +6,14 @@
   import { offerRecovery, pendingRecovery } from '../../lib/stores/recovery';
   import { settings, shifts } from '../../lib/stores/settings';
   import { elapsedSeconds, liveEarnings, timer } from '../../lib/stores/timer';
-  import { formatClock, formatMoney, hhmm } from '../../lib/time';
+  import { formatClock, formatMoney, hhmm, parseTimeInput } from '../../lib/time';
   import { tooltip } from '../../lib/ui/actions';
+  import Button from '../../lib/ui/Button.svelte';
   import Combobox from '../../lib/ui/Combobox.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
   import Kbd from '../../lib/ui/Kbd.svelte';
   import Popover from '../../lib/ui/Popover.svelte';
+  import TextInput from '../../lib/ui/TextInput.svelte';
   import TimePicker from '../../lib/ui/TimePicker.svelte';
   import PetCompanion from '../pet/PetCompanion.svelte';
   import PetHint from '../pet/PetHint.svelte';
@@ -19,7 +21,17 @@
   import RollingText from './RollingText.svelte';
   import StartDial from './StartDial.svelte';
   import './setup';
-  import { burst, busy, jobDraft, startDialShift, startShift, stopShift, wallClock } from './timerActions';
+  import {
+    adjustShift,
+    burst,
+    busy,
+    jobDraft,
+    startDialShift,
+    startShift,
+    stopShift,
+    stopShiftAt,
+    wallClock,
+  } from './timerActions';
   import {
     DIAL_RESET_MS,
     IDLE_TEXT,
@@ -32,6 +44,7 @@
     snapStart,
     spokenDuration,
     startedText,
+    targetText,
   } from './timerLogic';
 
   const loadFire = () => import('../../fx/fire/FireLayer.svelte');
@@ -119,7 +132,6 @@
   });
   onDestroy(() => clearTimeout(flareTimer));
   const blocked = $derived(!!$pendingRecovery || $timer.recovery_pending);
-  const pct = $derived(Math.round(progress * 100));
 
   let seenBurst = $burst;
   $effect(() => {
@@ -148,6 +160,56 @@
   function openPicker(e?: MouseEvent) {
     e?.preventDefault();
     if (!$busy) pickerOpen = true;
+  }
+
+  // running shift: STOP ▾ ends it at a past time; the start and job in the
+  // status line can be corrected (§6.3a)
+  type EditKind = 'stop' | 'start' | 'job';
+  const EDITS: Record<EditKind, { title: string; field: string; action: string }> = {
+    stop: { title: 'Stop at an earlier time', field: 'Ended at', action: 'Save shift' },
+    start: { title: 'Change the start time', field: 'Started at', action: 'Change' },
+    job: { title: 'Change the job', field: 'Job / shift', action: 'Change' },
+  };
+  let edit = $state<EditKind | null>(null);
+  let editDraft = $state('');
+  let editInvalid = $state(false);
+  let editInput = $state<HTMLInputElement>();
+  let stopAtBtn = $state<HTMLButtonElement>();
+  let startBtn = $state<HTMLButtonElement>();
+  let jobBtn = $state<HTMLButtonElement>();
+  const editAnchor = $derived(edit === 'stop' ? stopAtBtn : edit === 'start' ? startBtn : jobBtn);
+  $effect(() => {
+    if (!running) edit = null;
+  });
+
+  function openEdit(kind: EditKind) {
+    if ($busy || !running) return;
+    editDraft =
+      kind === 'stop' ? hhmm(new Date()) : kind === 'start' ? ($timer.start_iso ?? '').slice(11, 16) : $timer.job_shift;
+    editInvalid = false;
+    edit = kind;
+    void tick().then(() => editInput?.select());
+  }
+
+  function submitEdit(e: SubmitEvent) {
+    e.preventDefault();
+    const kind = edit;
+    if (!kind) return;
+    if (kind === 'job') {
+      const job = editDraft.trim();
+      edit = null;
+      if (job !== ($timer.job_shift || '').trim()) void adjustShift(null, job);
+      return;
+    }
+    const t = parseTimeInput(editDraft);
+    if (!t) {
+      editInvalid = true;
+      editInput?.focus();
+      return;
+    }
+    edit = null;
+    if (kind === 'stop') void stopShiftAt(t);
+    else void adjustShift(t, null);
   }
 </script>
 
@@ -187,7 +249,7 @@
             <span class="money num"><RollingText text={formatMoney($liveEarnings)} /></span>
             <span class="earn-note">~{formatMoney($liveEarnings)} earned so far</span>
           </span>
-          <span class="target num" in:fade={{ duration: 200 }}>{pct}% of {target}h</span>
+          <span class="target num" in:fade={{ duration: 200 }}>{targetText($elapsedSeconds, target, $wallClock)}</span>
         {:else}
           <button
             type="button"
@@ -213,7 +275,25 @@
 
   <p class="status" class:live={running} aria-live="polite">
     {#if running}
-      {startedLabel}<span class="sep">·</span><strong>{$timer.job_shift || '—'}</strong><span class="sep">·</span><span class="dots">running</span>
+      <button
+        type="button"
+        class="edit"
+        bind:this={startBtn}
+        disabled={$busy}
+        aria-haspopup="dialog"
+        aria-expanded={edit === 'start'}
+        onclick={() => openEdit('start')}
+        use:tooltip={'Change the start time'}>{startedLabel}</button
+      ><span class="sep">·</span><button
+        type="button"
+        class="edit"
+        bind:this={jobBtn}
+        disabled={$busy}
+        aria-haspopup="dialog"
+        aria-expanded={edit === 'job'}
+        onclick={() => openEdit('job')}
+        use:tooltip={'Change the job'}><strong>{$timer.job_shift || '—'}</strong></button
+      ><span class="sep">·</span><span class="dots">running</span>
     {:else if dialTime}
       Starts {dialYesterday ? 'yesterday at' : 'at'} <strong class="num">{dialTime}</strong><span class="sep">·</span><button
         type="button"
@@ -227,19 +307,29 @@
 
   <div class="controls" bind:this={controlsEl}>
     {#if running}
-      <button
-        bind:this={stopBtn}
-        class="cta stop"
-        type="button"
-        disabled={$busy}
-        onclick={() => void stopShift('button')}
-        in:fly={{ y: 8, duration: 260 }}
-      >
-        <span class="cta-bg" aria-hidden="true"></span>
-        <Icon name="stop" size={20} />
-        <span>STOP</span>
-        <Kbd keys="F5" />
-      </button>
+      <div class="stop-row" in:fly={{ y: 8, duration: 260 }}>
+        <button bind:this={stopBtn} class="cta stop" type="button" disabled={$busy} onclick={() => void stopShift('button')}>
+          <span class="cta-bg" aria-hidden="true"></span>
+          <Icon name="stop" size={20} />
+          <span>STOP</span>
+          <Kbd keys="F5" />
+        </button>
+        <div class="split" role="group" aria-label="Stop at a set time">
+          <button
+            type="button"
+            class="more"
+            bind:this={stopAtBtn}
+            disabled={$busy}
+            aria-label="Stop at an earlier time"
+            aria-haspopup="dialog"
+            aria-expanded={edit === 'stop'}
+            onclick={() => openEdit('stop')}
+            use:tooltip={'Stop at an earlier time'}
+          >
+            <Icon name="chevron-down" size={16} />
+          </button>
+        </div>
+      </div>
       <span class="sr-only">{formatClock($elapsedSeconds)}</span>
     {:else}
       <div class="idle" in:fly={{ y: 8, duration: 260 }}>
@@ -299,6 +389,37 @@
 {#if pickerOpen}
   <Popover anchor={pickerBtn} onclose={() => (pickerOpen = false)} placement="bottom-end" label="Pick a start time">
     <TimePicker value={$timer.default_start_time} label="Start time" onpick={startAt} />
+  </Popover>
+{/if}
+
+{#if edit}
+  {@const e = EDITS[edit]}
+  <Popover anchor={editAnchor} onclose={() => (edit = null)} placement={edit === 'stop' ? 'bottom-end' : 'bottom-start'} label={e.title}>
+    <form class="edit-form" onsubmit={submitEdit}>
+      <label for="timer-edit">{e.field}</label>
+      <div class="edit-row">
+        {#if edit === 'job'}
+          <TextInput id="timer-edit" size="sm" bind:el={editInput} bind:value={editDraft} list="timer-edit-jobs" placeholder="Job / shift" />
+          <datalist id="timer-edit-jobs">
+            {#each $shifts as s (s)}<option value={s}></option>{/each}
+          </datalist>
+        {:else}
+          <TextInput
+            id="timer-edit"
+            size="sm"
+            mono
+            bind:el={editInput}
+            bind:value={editDraft}
+            invalid={editInvalid}
+            placeholder="HH:MM"
+            aria-describedby={editInvalid ? 'timer-edit-err' : undefined}
+            oninput={() => (editInvalid = false)}
+          />
+        {/if}
+        <Button type="submit" size="sm" variant={edit === 'stop' ? 'danger' : 'primary'}>{e.action}</Button>
+      </div>
+      {#if editInvalid}<p id="timer-edit-err" class="edit-err">Use HH:MM, e.g. 16:45</p>{/if}
+    </form>
   </Popover>
 {/if}
 
@@ -577,6 +698,54 @@
     display: flex;
     gap: 10px;
   }
+  /* start time and job in the running status line open a small editor */
+  .edit {
+    background: none;
+    border: 0;
+    padding: 2px 2px;
+    color: inherit;
+    font: inherit;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .edit:hover:not(:disabled) {
+    color: var(--text);
+    text-decoration-style: solid;
+  }
+  .edit:disabled {
+    cursor: progress;
+  }
+  .edit:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 12px;
+    width: 250px;
+  }
+  .edit-form label {
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+  }
+  .edit-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .edit-row > :global(.field-box) {
+    flex: 1;
+    min-width: 0;
+  }
+  .edit-err {
+    margin: 0;
+    font-size: var(--fs-xs);
+    color: var(--danger-text);
+  }
 
   .cta {
     position: relative;
@@ -626,9 +795,12 @@
       0 10px 28px -10px var(--success-glow),
       inset 0 1px 0 rgba(255, 255, 255, 0.35);
   }
-  .stop {
+  .stop-row {
     width: min(100%, 380px);
-    flex: none;
+    display: flex;
+    gap: 10px;
+  }
+  .stop {
     min-height: 56px;
     box-shadow:
       0 12px 32px -10px var(--danger-glow),

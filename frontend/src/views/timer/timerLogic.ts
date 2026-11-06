@@ -1,4 +1,15 @@
-import { fromIsoDateTime, hhmm, strftime, toIsoDate } from '../../lib/time';
+import {
+  entryMinutes,
+  formatDuration,
+  formatMoney,
+  fromIsoDateTime,
+  hhmm,
+  isLongShift,
+  isOvernight,
+  parseTimeInput,
+  strftime,
+  toIsoDate,
+} from '../../lib/time';
 
 export const IDLE_TEXT = 'Press START (F5) to begin tracking';
 
@@ -11,6 +22,19 @@ export const RING_INNER = RING.r - RING.stroke / 2 - 9;
 export function ringProgress(elapsedSeconds: number, targetHours: number): number {
   const target = Math.max(1, targetHours || 8) * 3600;
   return Math.max(0, elapsedSeconds) / target;
+}
+
+/** Line under the running clock: "62% of 8h · done 16:30" while short of the
+ *  daily target, then "8h reached" and "0h 45m over 8h" past it. */
+export function targetText(elapsedSeconds: number, targetHours: number, now: number = Date.now()): string {
+  const hours = Math.max(1, targetHours || 8);
+  const left = hours * 3600 - Math.max(0, elapsedSeconds);
+  if (left > 0) {
+    const pct = Math.floor(ringProgress(elapsedSeconds, hours) * 100);
+    return `${pct}% of ${hours}h · done ${hhmm(new Date(now + left * 1000))}`;
+  }
+  const over = Math.floor(-left / 60);
+  return over < 1 ? `${hours}h reached` : `${formatDuration(over)} over ${hours}h`;
 }
 
 // violet → cyan → teal (target reached) → lime → amber (double target)
@@ -119,6 +143,39 @@ export function recoveryDate(startIso: string): string {
 export function elapsedHM(fromMs: number, nowMs: number = Date.now()): string {
   const m = Math.max(0, Math.floor((nowMs - fromMs) / 60_000));
   return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
+}
+
+/** Toast after a saved shift: 'Shift saved — 8h 00m · €160.00 earned' (pay
+ *  only with a pay rate set). */
+export function savedToastText(minutes: number | null | undefined, payRate: number): string {
+  if (minutes == null) return 'Shift saved';
+  const pay = payRate > 0 ? ` · ${formatMoney((minutes / 60) * payRate)} earned` : '';
+  return `Shift saved — ${formatDuration(minutes)}${pay}`;
+}
+
+/** "5 hours ago" / "2 days ago" for how long an unfinished shift has sat. */
+export function sinceText(minutes: number): string {
+  const h = Math.floor(Math.max(0, minutes) / 60);
+  if (h < 1) return 'less than an hour ago';
+  if (h < 48) return `${h} hour${h === 1 ? '' : 's'} ago`;
+  return `${Math.floor(h / 24)} days ago`;
+}
+
+/** Hint beside the recovery end time: length and pay, '(+1 day)' past
+ *  midnight, a warning for nothing or an unusually long shift. */
+export function recoveryEndNote(
+  timeIn: string,
+  end: string,
+  payRate: number,
+): { text: string; tone: 'muted' | 'warning' } | null {
+  const t = parseTimeInput(end);
+  if (!t) return null;
+  const minutes = entryMinutes(timeIn, t);
+  if (minutes === 0) return { text: `Must be after the start (${timeIn})`, tone: 'warning' };
+  let text = `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m · ${formatMoney((minutes / 60) * (payRate || 0))}`;
+  if (isOvernight(timeIn, t)) text += ' (+1 day)';
+  if (isLongShift(minutes)) return { text: `${text} — unusually long`, tone: 'warning' };
+  return { text, tone: 'muted' };
 }
 
 // ── Start dial: drag the idle ring to back-date the start ─────────────────────
