@@ -2042,3 +2042,110 @@ def test_export_remembers_last_path(env, monkeypatch):
     assert ctrl.last_export() is None
     ctrl.export_month(2026, 9, "C:/x/out.xlsx")
     assert ctrl.last_export() == "C:/x/out.xlsx"
+
+
+# ── your data: backups & restore ─────────────────────────────────────────────
+
+def test_backup_now_and_list(env):
+    ctrl, _ = env
+    r = ctrl.backup_now()
+    assert r["status"] == "ok" and r["backup"] is None   # nothing saved yet
+    _add()
+    r = ctrl.backup_now()
+    assert r["status"] == "saved" and r["backup"].startswith("manual-")
+    listed = ctrl.list_backups()
+    assert listed["ok"] and listed["data_dir"] == storage.DATA_DIR
+    assert r["backup"] in [b["name"] for b in listed["backups"]]
+
+
+def test_backup_now_write_failure(env, monkeypatch):
+    ctrl, _ = env
+    _add()
+    monkeypatch.setattr(storage, "_stamped_copy", _fail)
+    r = ctrl.backup_now()
+    assert r["error"]["code"] == "save_failed"
+
+
+def test_restore_backup_flow(env, tmp_storage):
+    ctrl, _ = env
+    keep = _add(date="2026-09-01")
+    name = ctrl.backup_now()["backup"]
+    _add(date="2026-09-02")
+    _add(date="2026-09-03")
+    r = ctrl.restore_backup(name)
+    assert r["status"] == "needs_confirm"
+    c = r["confirm"]
+    assert c["kind"] == "restore_backup" and c["default"] == "cancel"
+    assert c["details"]["name"] == name
+    assert c["details"]["entries"] == 1 and c["details"]["current_entries"] == 3
+    assert "(1 shift)" in c["message"] and "3 shifts now" in c["message"]
+    # cancel changes nothing
+    r = ctrl.restore_backup(name, _answer("restore_backup", "cancel", c["token"]))
+    assert r["status"] == "cancelled"
+    assert len(storage.load_all_entries()) == 3
+    r = ctrl.restore_backup(name, _answer("restore_backup", "restore", c["token"]))
+    assert r["status"] == "saved", r
+    assert [e.id for e in storage.load_all_entries()] == [keep.id]
+    assert r["restored"] == name and r["safety_copy"].startswith("pre-restore-")
+    safety = os.path.join(storage.backups_dir(), r["safety_copy"])
+    with open(safety, encoding="utf-8") as f:
+        assert len(json.load(f)["entries"]) == 3
+    assert "settings" in r and "timer" in r and "shifts" in r
+
+
+def test_restore_backup_rejects_names_outside_the_list(env):
+    ctrl, _ = env
+    _add()
+    os.makedirs(storage.backups_dir(), exist_ok=True)
+    with open(os.path.join(storage.backups_dir(), "mine.json"), "w", encoding="utf-8") as f:
+        f.write('{"entries": []}')
+    for bad in ("mine.json", "../data.json", storage.DATA_FILE, None, 3):
+        r = ctrl.restore_backup(bad, _answer("restore_backup", "restore"))
+        assert r["status"] == "invalid" and r["field"] == "name"
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_restore_backup_refuses_a_damaged_copy(env):
+    ctrl, _ = env
+    _add()
+    os.makedirs(storage.backups_dir(), exist_ok=True)
+    with open(os.path.join(storage.backups_dir(), "data-2020-01-01.json"), "w",
+              encoding="utf-8") as f:
+        f.write("{oops")
+    r = ctrl.restore_backup("data-2020-01-01.json", _answer("restore_backup", "restore"))
+    assert r["status"] == "invalid"
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_restore_backup_stale_token(env):
+    ctrl, _ = env
+    _add()
+    name = ctrl.backup_now()["backup"]
+    token = ctrl.restore_backup(name)["confirm"]["token"]
+    with open(os.path.join(storage.backups_dir(), name), "w", encoding="utf-8") as f:
+        f.write('{"entries": [], "pay_rate": 5, "padding": "changed"}')
+    r = ctrl.restore_backup(name, _answer("restore_backup", "restore", token))
+    assert r["error"]["code"] == "stale"
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_restore_backup_write_failure_changes_nothing(env, monkeypatch):
+    ctrl, _ = env
+    _add()
+    name = ctrl.backup_now()["backup"]
+    _add(date="2026-09-02")
+    token = ctrl.restore_backup(name)["confirm"]["token"]
+    monkeypatch.setattr(storage, "_stamped_copy", _fail)
+    r = ctrl.restore_backup(name, _answer("restore_backup", "restore", token))
+    assert r["error"]["code"] == "save_failed"
+    assert len(storage.load_all_entries()) == 2
+
+
+def test_restore_backup_keeps_a_running_shift(env):
+    ctrl, clock = env
+    _add(date="2026-09-01")
+    name = ctrl.backup_now()["backup"]
+    _started(ctrl, clock)
+    token = ctrl.restore_backup(name)["confirm"]["token"]
+    r = ctrl.restore_backup(name, _answer("restore_backup", "restore", token))
+    assert r["status"] == "saved" and r["timer"]["running"]

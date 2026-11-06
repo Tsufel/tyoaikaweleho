@@ -1,4 +1,6 @@
 """Tests for storage — entry CRUD, settings, shift list."""
+import os
+
 import pytest
 import storage
 from storage import WorkEntry
@@ -490,8 +492,150 @@ def test_daily_snapshots_pruned(tmp_storage):
     storage.save_entry(_entry(date="2026-05-10"))
     storage.save_entry(_entry(date="2026-05-11"))   # triggers today's snapshot + prune
     names = sorted(p.name for p in snap_dir.iterdir())
-    assert len(names) == storage._SNAPSHOT_KEEP
+    # the newest 14 days, plus Jan 4 as the newest of ISO week 2026-W01
+    assert len(names) == storage._SNAPSHOT_KEEP + 1
+    assert "data-2026-01-04.json" in names
     assert "data-2026-01-01.json" not in names
+    assert "data-2026-01-07.json" not in names
+
+
+def test_snapshot_retention_keeps_daily_weekly_and_monthly(tmp_storage):
+    import datetime as dt
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir()
+    today = dt.date.today()
+    days = [today - dt.timedelta(days=n) for n in range(1, 401)]
+    for d in days:
+        (snap_dir / f"data-{d.isoformat()}.json").write_text("{}", encoding="utf-8")
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-11"))   # today's snapshot + prune
+    kept = {dt.date.fromisoformat(p.name[5:15]) for p in snap_dir.iterdir()}
+    everything = set(days) | {today}
+    newest = sorted(everything, reverse=True)
+    # nothing from the newest 14 days went
+    assert set(newest[:storage._SNAPSHOT_KEEP]) <= kept
+    weeks = {d.isocalendar()[:2] for d in kept}
+    months = {(d.year, d.month) for d in kept}
+    assert len(weeks) >= storage._SNAPSHOT_WEEKS
+    assert len(months) == storage._SNAPSHOT_MONTHS
+    # each kept month / week is represented by its newest day
+    for d in kept:
+        same_month = [x for x in everything if (x.year, x.month) == (d.year, d.month)]
+        same_week = [x for x in everything if x.isocalendar()[:2] == d.isocalendar()[:2]]
+        assert d in newest[:storage._SNAPSHOT_KEEP] or d == max(same_month) or d == max(same_week)
+    assert len(kept) <= storage._SNAPSHOT_KEEP + storage._SNAPSHOT_WEEKS + storage._SNAPSHOT_MONTHS
+    # a year-old Monday that isn't a month's newest day is gone
+    assert len(kept) < 50
+
+
+def test_pruning_and_recovery_ignore_files_the_app_did_not_make(tmp_storage):
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir()
+    for day in range(1, 21):
+        (snap_dir / f"data-2026-01-{day:02d}.json").write_text("{}", encoding="utf-8")
+    own = ["data-2026-01-01 - Copy.json", "data-before-restore-x.json", "data-2026-13-45.json",
+           "manual-20260101-120000.json", "pre-restore-20260101-120000.json", "notes.txt"]
+    for name in own:
+        (snap_dir / name).write_text('{"entries": []}', encoding="utf-8")
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-11"))
+    names = {p.name for p in snap_dir.iterdir()}
+    assert set(own) <= names
+    candidates = [os.path.basename(c) for c in storage._backup_candidates()]
+    assert "data-2026-01-01 - Copy.json" not in candidates
+    assert "data-before-restore-x.json" not in candidates
+
+
+# ── backups list / back up now / restore ─────────────────────────────────────
+
+def test_list_backups_empty_and_read_only(tmp_storage):
+    assert storage.list_backups() == []
+    assert not (tmp_storage / "backups").exists()
+    assert not (tmp_storage / "data.json").exists()
+
+
+def test_list_backups_kinds_and_summary(tmp_storage):
+    storage.save_entry(_entry(date="2026-05-10"))
+    storage.save_entry(_entry(date="2026-05-12"))   # .bak + today's snapshot
+    snap_dir = tmp_storage / "backups"
+    (snap_dir / "data-2020-01-01.json").write_text("{not json", encoding="utf-8")
+    (snap_dir / "data-2026-01-01 - Copy.json").write_text('{"entries": []}', encoding="utf-8")
+    upd = snap_dir / "pre-update-v2.1.3-to-v2.1.4"
+    upd.mkdir()
+    (upd / "data.json").write_text('{"entries": []}', encoding="utf-8")
+    manual = storage.manual_backup()
+    assert os.path.basename(manual).startswith("manual-")
+    before = {p.name: p.read_bytes() for p in snap_dir.iterdir() if p.is_file()}
+    listed = {b["name"]: b for b in storage.list_backups()}
+    assert {b["kind"] for b in listed.values()} == {"bak", "daily", "manual", "pre-update"}
+    assert "data-2026-01-01 - Copy.json" not in listed
+    assert listed["data.json.bak"]["entries"] == 1
+    assert listed["data.json.bak"]["last_entry_date"] == "2026-05-10"
+    assert listed[os.path.basename(manual)]["entries"] == 2
+    assert listed["data-2020-01-01.json"]["ok"] is False
+    assert listed["data-2020-01-01.json"]["entries"] is None
+    assert listed["pre-update-v2.1.3-to-v2.1.4/data.json"]["ok"] is True
+    assert {p.name: p.read_bytes() for p in snap_dir.iterdir() if p.is_file()} == before
+
+
+def test_manual_backup_without_data_is_empty(tmp_storage):
+    assert storage.manual_backup() == ""
+    assert not (tmp_storage / "backups").exists()
+
+
+def test_manual_backups_in_the_same_second_do_not_overwrite(tmp_storage):
+    storage.save_entry(_entry())
+    a = storage.manual_backup()
+    b = storage.manual_backup()
+    assert a != b and os.path.exists(a) and os.path.exists(b)
+
+
+def test_restore_backup_round_trip_with_safety_copy(tmp_storage):
+    import json
+    keep = _entry(date="2026-05-10")
+    storage.save_entry(keep)
+    copy = os.path.basename(storage.manual_backup())
+    storage.save_entry(_entry(date="2026-05-11"))
+    storage.set_pay_rate(31.0)
+    current = (tmp_storage / "data.json").read_bytes()
+    safety = storage.restore_backup(copy)
+    assert os.path.basename(safety).startswith("pre-restore-")
+    with open(safety, "rb") as f:
+        assert f.read() == current
+    assert [e.id for e in storage.load_all_entries()] == [keep.id]
+    assert storage.get_pay_rate() == 20.0
+    # the safety copy is itself listed, so the restore can be undone
+    assert any(b["name"] == os.path.basename(safety) and b["kind"] == "pre-restore"
+               for b in storage.list_backups())
+    json.loads((tmp_storage / "data.json").read_text(encoding="utf-8"))
+
+
+def test_restore_backup_rejects_unknown_and_damaged(tmp_storage):
+    storage.save_entry(_entry())
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir(exist_ok=True)
+    (snap_dir / "data-2020-01-01.json").write_text('{"entries": {"x": 1}}', encoding="utf-8")
+    (snap_dir / "mine.json").write_text('{"entries": []}', encoding="utf-8")
+    before = (tmp_storage / "data.json").read_bytes()
+    for name in ("data-2020-01-01.json", "mine.json", "../data.json", "nope.json"):
+        with pytest.raises(LookupError):
+            storage.restore_backup(name)
+    assert (tmp_storage / "data.json").read_bytes() == before
+    assert not list(snap_dir.glob("pre-restore-*"))
+
+
+def test_restore_backup_keeps_data_when_the_safety_copy_fails(tmp_storage, monkeypatch):
+    storage.save_entry(_entry())
+    copy = os.path.basename(storage.manual_backup())
+    storage.save_entry(_entry(date="2026-05-11"))
+    before = (tmp_storage / "data.json").read_bytes()
+
+    def boom(*a, **k):
+        raise OSError("disk full")
+    monkeypatch.setattr(storage, "_stamped_copy", boom)
+    with pytest.raises(OSError):
+        storage.restore_backup(copy)
+    assert (tmp_storage / "data.json").read_bytes() == before
 
 
 # ── appearance mode ───────────────────────────────────────────────────────────

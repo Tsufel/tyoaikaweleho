@@ -46,6 +46,7 @@
     type FormField,
   } from './settingsLogic';
   import { dlcBusy, installDlc, openDownloadPage, promptUpdate, removeDlc } from './updateFlow';
+  import DataCard from './DataCard.svelte';
   import { DEFAULT_PET_NAME, PET_NAME_MAX } from '../pet/petLogic';
   import { commitPetName } from '../pet/petState';
 
@@ -552,6 +553,9 @@
         </div>
       </div>
     </GlassCard>
+
+    <!-- Your data: folder, backups, restore -->
+    <DataCard index={6} />
 
     <!-- Shortcuts -->
     <GlassCard tag="section" class="card wide" aria-labelledby="s-keys" padding="20px" radius="lg">

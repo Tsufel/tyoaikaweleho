@@ -1,6 +1,6 @@
 # Työaikaweleho v2.x — Timesheet day: names, shifts, export, restore (design plan)
 
-> Status: **planning** — nothing in this document is implemented yet.
+> Status: **planning** — only *Restore from backup* is built so far.
 > Release: **2.3**. Soft-depends on [V2_ACCURATE_PAY_PLAN.md](V2_ACCURATE_PAY_PLAN.md)
 > (2.2: the export gains Break/Note columns there first).
 > Listed in [BACKLOG.md](BACKLOG.md). Interacts with
@@ -100,22 +100,22 @@ That chore has rough edges today:
 
 ### Restore from backup
 
-- `list_backups()` → `[{name, kind: "daily"|"bak"|"before_restore", date,
-  entries, last_entry_date, ok}]` for `backups/data-*.json` and
-  `data.json.bak`; `ok` = parses as JSON with an `entries` list. Newest
-  first.
-- `restore_backup(name, confirm)`:
-  - refused (`invalid`) while a shift is running;
-  - confirm kind `restore_backup`: "Replace your data with the copy from
-    {date} ({n} shifts)? Your current data is saved first." —
-    *Restore* (danger) / *Cancel*;
-  - copies the current `data.json` to
-    `backups/data-before-restore-<YYYYmmdd-HHMMSS>.json` — not matched by the
-    daily pruning (`_SNAPSHOT_KEEP`), so it is never pruned automatically;
-  - swaps in the chosen file with the same atomic write as `_save_raw`, then
-    emits `data:changed` so every view reloads.
-- UI: Settings → *Data* group → *Restore from backup…* opens a sheet listing
-  them. *Open data folder* sits beside it.
+Built: see V2_UI_API.md §5 *Your data* for the contract. In short:
+
+- `list_backups()` lists only copies the app made (`data.json.bak`, daily
+  `data-YYYY-MM-DD.json`, `manual-*`, `pre-import-*`, `pre-restore-*`,
+  `pre-update-*/data.json`), newest first; `ok` = reads as app data through
+  the normal loader.
+- `restore_backup(name, confirm)` asks `restore_backup`, copies the current
+  `data.json` to `backups/pre-restore-<YYYYmmdd-HHMMSS>.json` (an earlier
+  draft said `data-before-restore-*`: that name starts with `data-` and
+  would have looked like a daily snapshot to recovery; the daily pattern is
+  now matched exactly, and pre-restore copies are never pruned), then swaps
+  in the backup with `_save_raw` and emits `data:changed`. It is **not**
+  refused while a shift runs: the running shift lives in `session.json` and
+  is saved into the restored data when stopped.
+- UI: Settings → *Your data* card: the data folder, backup count and last
+  snapshot, *Back up now*, *Open data folder* and a list with *Restore*.
 
 ## Data model changes
 

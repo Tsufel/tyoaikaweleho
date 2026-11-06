@@ -106,7 +106,7 @@ def _backup_candidates() -> list[str]:
     backup_dir = os.path.join(os.path.dirname(DATA_FILE), "backups")
     try:
         snaps = sorted((f for f in os.listdir(backup_dir)
-                        if f.startswith("data-") and f.endswith(".json")), reverse=True)
+                        if _DAILY_SNAPSHOT.fullmatch(f)), reverse=True)
     except OSError:
         snaps = []
     out += [os.path.join(backup_dir, f) for f in snaps]
@@ -243,13 +243,54 @@ def _save_raw(data: dict):
         raise
 
 
+# Daily snapshots are kept grandfather-father-son style: the newest
+# _SNAPSHOT_KEEP days, plus the newest of each of the _SNAPSHOT_WEEKS newest
+# ISO weeks and of the _SNAPSHOT_MONTHS newest months that have one, so a
+# mistake noticed weeks later still has a copy from before it.
 _SNAPSHOT_KEEP = 14
+_SNAPSHOT_WEEKS = 8
+_SNAPSHOT_MONTHS = 12
+# Only exactly this name is a daily snapshot: pruning and recovery never
+# touch anything else in backups/ (a copy made in Explorer, a manual or
+# pre-import/-restore/-update copy).
+_DAILY_SNAPSHOT = re.compile(r"data-(\d{4}-\d{2}-\d{2})\.json")
+
+
+def _snapshots_to_keep(days) -> set:
+    days = sorted(set(days), reverse=True)
+    keep = set(days[:_SNAPSHOT_KEEP])
+    weeks: dict = {}
+    months: dict = {}
+    for d in days:   # newest first: the first one seen is its period's newest
+        weeks.setdefault(d.isocalendar()[:2], d)
+        months.setdefault((d.year, d.month), d)
+    keep.update(sorted(weeks.values(), reverse=True)[:_SNAPSHOT_WEEKS])
+    keep.update(sorted(months.values(), reverse=True)[:_SNAPSHOT_MONTHS])
+    return keep
+
+
+def _prune_snapshots(backup_dir: str):
+    """Delete the daily snapshots _snapshots_to_keep doesn't keep. A name
+    that doesn't parse as a date is left alone."""
+    dated = {}
+    for f in os.listdir(backup_dir):
+        m = _DAILY_SNAPSHOT.fullmatch(f)
+        if not m:
+            continue
+        try:
+            dated[f] = date.fromisoformat(m.group(1))
+        except ValueError:
+            continue
+    keep = _snapshots_to_keep(dated.values())
+    for f, d in dated.items():
+        if d not in keep:
+            os.remove(os.path.join(backup_dir, f))
 
 
 def _daily_snapshot():
     """Keep one copy of data.json per day (as it was before the day's first
-    save) in backups/, pruned to the newest _SNAPSHOT_KEEP. The .bak file
-    only ever holds the state from one save ago."""
+    save) in backups/, pruned by _prune_snapshots. The .bak file only ever
+    holds the state from one save ago."""
     try:
         backup_dir = os.path.join(os.path.dirname(DATA_FILE), "backups")
         target = os.path.join(backup_dir, f"data-{date.today().isoformat()}.json")
@@ -257,10 +298,7 @@ def _daily_snapshot():
             return
         os.makedirs(backup_dir, exist_ok=True)
         shutil.copy2(DATA_FILE, target)
-        snapshots = sorted(f for f in os.listdir(backup_dir)
-                           if f.startswith("data-") and f.endswith(".json"))
-        for old in snapshots[:-_SNAPSHOT_KEEP]:
-            os.remove(os.path.join(backup_dir, old))
+        _prune_snapshots(backup_dir)
     except OSError:
         pass
 
@@ -321,6 +359,139 @@ def pre_update_copy(current: str, new: str) -> str:
     except OSError:
         pass
     return target
+
+
+# ── backups the user can see and restore (Settings → Your data) ──────────────
+# Every kind below is a copy this app made. Anything else in backups/ (a copy
+# made by hand) is neither listed, restored from, nor pruned.
+
+_BACKUP_KINDS = (   # (kind, file-name pattern inside backups/)
+    ("daily", _DAILY_SNAPSHOT),
+    ("manual", re.compile(r"manual-\d{8}-\d{6}(?:-\d+)?\.json")),
+    ("pre-import", re.compile(r"pre-import-\d{8}-\d{6}\.json")),
+    ("pre-restore", re.compile(r"pre-restore-\d{8}-\d{6}(?:-\d+)?\.json")),
+)
+_PRE_UPDATE_DIR = re.compile(r"pre-update-v[0-9A-Za-z.+_-]+-to-v[0-9A-Za-z.+_-]+")
+# path -> ((mtime_ns, size), summary): a listing doesn't re-parse old copies
+_backup_summaries: dict = {}
+
+
+def backups_dir() -> str:
+    return os.path.join(os.path.dirname(DATA_FILE), "backups")
+
+
+def _backup_files() -> list[tuple[str, str, str]]:
+    """(name, kind, path) for every backup this app made. *name* is the
+    only handle the UI gets: restore looks it up here again, so no path from
+    outside is ever opened."""
+    out = []
+    bak = DATA_FILE + ".bak"
+    if os.path.isfile(bak):
+        out.append(("data.json.bak", "bak", bak))
+    folder = backups_dir()
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return out
+    for f in names:
+        path = os.path.join(folder, f)
+        kind = next((k for k, rx in _BACKUP_KINDS if rx.fullmatch(f)), None)
+        if kind and os.path.isfile(path):
+            out.append((f, kind, path))
+        elif _PRE_UPDATE_DIR.fullmatch(f) and os.path.isfile(os.path.join(path, "data.json")):
+            out.append((f"{f}/data.json", "pre-update", os.path.join(path, "data.json")))
+    return out
+
+
+def _check_backup(data) -> bool:
+    """A copy is restorable when it reads as this app's data: a JSON object
+    whose entries (if any) are a list the normal loader can read."""
+    if not isinstance(data, dict) or not isinstance(data.get("entries", []), list):
+        return False
+    try:
+        _entries(data)
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return True
+
+
+def _summarise(path: str) -> dict:
+    st = os.stat(path)
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _backup_summaries.get(path)
+    if hit and hit[0] == key:
+        return dict(hit[1])
+    data = _read_data_file(path)
+    ok = _check_backup(data)
+    entries = _entries(data) if ok else []
+    summary = {
+        "ok": ok,
+        "entries": len(entries) if ok else None,
+        "last_entry_date": max((e.date for e in entries), default=None),
+        "size": st.st_size,
+        "saved_at": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+    }
+    _backup_summaries[path] = (key, summary)
+    return dict(summary)
+
+
+def list_backups() -> list[dict]:
+    """Every backup this app made, newest first: {name, kind, saved_at (when
+    that data was last saved), size, ok, entries, last_entry_date}. Read-only."""
+    out = []
+    for name, kind, path in _backup_files():
+        try:
+            out.append({"name": name, "kind": kind, **_summarise(path)})
+        except OSError:
+            continue   # vanished or locked mid-listing
+    out.sort(key=lambda b: (b["saved_at"], b["name"]), reverse=True)
+    return out
+
+
+def _stamped_copy(prefix: str) -> str:
+    """Copy data.json to backups/<prefix>-<timestamp>.json, never over an
+    existing file. Raises OSError."""
+    folder = backups_dir()
+    os.makedirs(folder, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    target = os.path.join(folder, f"{prefix}-{stamp}.json")
+    n = 2
+    while os.path.exists(target):
+        target = os.path.join(folder, f"{prefix}-{stamp}-{n}.json")
+        n += 1
+    shutil.copy2(DATA_FILE, target)
+    return target
+
+
+def manual_backup() -> str:
+    """'Back up now': copy data.json to backups/manual-<timestamp>.json.
+    Never pruned. Returns the copy's path ("" when there is no data.json yet).
+    Raises OSError."""
+    if not os.path.exists(DATA_FILE):
+        return ""
+    return _stamped_copy("manual")
+
+
+def read_backup(name: str) -> dict | None:
+    """The data in the listed backup *name*, or None when there is no such
+    backup or it doesn't read as app data."""
+    path = next((p for n, _k, p in _backup_files() if n == name), None)
+    data = _read_data_file(path) if path else None
+    return data if _check_backup(data) else None
+
+
+def restore_backup(name: str) -> str:
+    """Replace data.json with the listed backup *name*. The current
+    data.json is copied to backups/pre-restore-<timestamp>.json first (never
+    pruned); if that copy fails nothing is replaced. Returns the copy's path
+    ("" when there was no data.json). Raises LookupError for an unknown or
+    unreadable backup, OSError when a write fails."""
+    data = read_backup(name)
+    if data is None:
+        raise LookupError(name)
+    safety = _stamped_copy("pre-restore") if os.path.exists(DATA_FILE) else ""
+    _save_raw(data)
+    return safety
 
 
 _ISO_DATE =re.compile(r"\d{4}-\d{2}-\d{2}")

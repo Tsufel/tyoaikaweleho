@@ -103,10 +103,13 @@ current state (e.g. a different shift is now running) it returns
 | `delete_entry` | `delete_entry` | `delete` (danger), `cancel` | `cancel` / `cancel` |
 | `close_running` | `close_app` while a shift runs | `stop_close` "Stop, save & close", `close` "Close anyway", `cancel` "Stay open" | `stop_close` / `cancel` |
 | `remove_dlc` | `dlc_remove` | `remove` (danger), `cancel` | `cancel` / `cancel` |
+| `restore_backup` | `restore_backup` | `restore` "Restore" (danger), `cancel` | `cancel` / `cancel`; icon warning |
 
 Messages are the v1.3 texts (see `ui/timer_panel.py`, `ui/dialogs.py`,
 `ui/main_window.py`). `details` carries machine values for custom renderers:
-`{start_iso, elapsed_minutes, capped_end?, time_in?, time_out?, overnight?, overlaps?}`.
+`{start_iso, elapsed_minutes, capped_end?, time_in?, time_out?, overnight?, overlaps?}`;
+`restore_backup` sends `{name, entries, current_entries (null when data.json
+can't be read), saved_at}` instead.
 
 Two shifts overlap when their spans share more than an instant (touching
 end-to-start doesn't count; overnight shifts run into the next day; open
@@ -179,6 +182,32 @@ The current shift must never be lost:
 | `save_settings(draft)` | `SettingsDraft` | `R<{settings: Settings, shifts: string[]}>` §6.9 |
 | `add_job_shift(name)` | `string` | `R<{added: boolean, shifts: string[]}>`; `added:false` + message `"'X' is already in the shift list."` when present (case-insensitive); `invalid` when blank |
 | `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects/Liquid glass) that do not go through the Settings Save button |
+
+### Your data (Settings → Your data)
+| method | params | returns |
+|---|---|---|
+| `open_data_folder()` | — | `R`: Explorer on the data folder (`bootstrap.data_dir`); `error(internal)` when it can't open |
+| `list_backups()` | — | `R<{backups: BackupInfo[], data_dir, backups_dir}>`, newest first. Read-only |
+| `backup_now()` | — | `saved{backup, backups}` (copy at `backups/manual-<YYYYMMDD-HHMMSS>.json`, never pruned) / `ok{backup: null}` + message when nothing is saved yet / `error(save_failed)` |
+| `restore_backup(name, confirm?)` | a `name` from `list_backups`, answers | needs `restore_backup`; then `saved{restored, safety_copy, settings, shifts, timer, backups}` and emits `data:changed {reason:'restore_backup'}` + `timer:changed`. `invalid(field:'name')` for a name not in the list or a copy that doesn't read as app data; `error(stale)` when the copy changed while asking; `error(save_failed)` (nothing changed) when a write fails |
+
+`BackupInfo = {name, kind, saved_at, size, ok, entries, last_entry_date}`.
+`kind`: `bak` (`data.json.bak`, the previous save), `daily`
+(`data-YYYY-MM-DD.json`), `manual`, `pre-import`, `pre-restore` or
+`pre-update` (`pre-update-vX-to-vY/data.json`). Only copies the app made are
+listed, restored from or pruned; anything else in `backups/` is left alone.
+Rows with `ok:false` (unreadable) are listed but can't be restored.
+
+Restore order: the backup is read and checked with the normal loader; the
+current `data.json` is copied to `backups/pre-restore-<ts>.json` (never
+pruned; if that copy fails nothing is replaced); then the backup is written
+with the usual atomic save. A running shift lives in `session.json`, so it
+keeps running and is saved into the restored data when stopped. The frontend
+applies the returned settings and goes back to the main view.
+
+Daily snapshots keep the newest 14 days, plus the newest per ISO week for 8
+weeks and per month for 12 months. `pre-import-*` and `pre-update-*` keep
+their own pruning; `manual-*` and `pre-restore-*` are never pruned.
 
 ### Stats
 | method | params | returns |
@@ -564,7 +593,7 @@ payload}}))`, emitted only by the `EventBus` pump thread. Subscribe with
 | `dlc:update` | `{version}` |
 | `dlc:status` | `DlcStatus` |
 | `timer:changed` | `TimerState` — any timer change not initiated by the awaiting call (e.g. stop during close) |
-| `data:changed` | `{reason: 'import'\|'ocr'\|'recovery'\|'restore'}` — refetch month/stats |
+| `data:changed` | `{reason: 'import'\|'ocr'\|'recovery'\|'restore'\|'restore_backup'}` — refetch month/stats |
 
 ## 12. Frontend file ownership
 
@@ -756,8 +785,6 @@ through untouched.
 | `set_shift_hidden(name, hidden)` | `string`, `boolean` | `R<{settings: Settings, shifts}>` |
 | `reorder_shifts(names)` | `string[]` (every name, new order) | `R<{settings: Settings, shifts}>`; `invalid` if the set differs |
 | `export_range(start, end, kind)` | `IsoDate`, `IsoDate`, `'xlsx'\|'csv'` | **Shipped early**, see §5 Import / export / OCR. `export_month` stays |
-| `list_backups()` | — | `R<{backups: [{name, kind:'daily'\|'bak'\|'before_restore', date, entries, last_entry_date, ok}]}>` newest first |
-| `restore_backup(name, confirm?)` | `string`, answers | needs `restore_backup`; `invalid` while a shift runs or `ok` is false; on success the current data is copied to `backups/data-before-restore-<ts>.json` first, then `data:changed` is emitted |
 
 **Confirm kinds**
 
@@ -765,4 +792,3 @@ through untouched.
 |---|---|---|---|
 | `pay_rate_change` (2.2) | `save_settings` when `pay_rate` changes | `today` "From today", `from_date` "From date…" (`details.date`), `all` "Correct all history", `cancel` | `today` / `cancel` |
 | `rename_shift` (2.3) | `rename_shift` when N entries use the old name | `everywhere` "Rename everywhere", `list_only` "Only in the list", `cancel` | `everywhere` / `cancel` |
-| `restore_backup` (2.3) | `restore_backup` | `restore` (danger), `cancel` | `cancel` / `cancel` |
