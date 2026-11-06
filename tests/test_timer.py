@@ -149,3 +149,31 @@ def test_session_write_is_atomic(tmp_timer):
     t.start("Sales")
     assert not (tmp_timer / "session.json.tmp").exists()
     assert load_saved_session()["job_shift"] == "Sales"
+
+
+def test_set_start_rewrites_session(tmp_timer):
+    t = WorkTimer()
+    t.start("Sales", start_time=datetime(2026, 9, 23, 10, 0))
+    t.set_start(datetime(2026, 9, 23, 9, 15), "Support")
+    assert t.start_dt == datetime(2026, 9, 23, 9, 15) and t.job_shift == "Support"
+    assert load_saved_session() == {"job_shift": "Support", "start": "2026-09-23T09:15:00"}
+
+
+def test_set_start_keeps_old_values_when_write_fails(tmp_timer, monkeypatch):
+    t = WorkTimer()
+    t.start("Sales", start_time=datetime(2026, 9, 23, 10, 0))
+
+    def fail(*a, **k):
+        raise OSError("locked")
+
+    monkeypatch.setattr(WorkTimer, "_save_session", fail)
+    with pytest.raises(OSError):
+        t.set_start(datetime(2026, 9, 23, 9, 0), "Other")
+    assert t.start_dt == datetime(2026, 9, 23, 10, 0) and t.job_shift == "Sales"
+    assert load_saved_session()["start"] == "2026-09-23T10:00:00"
+
+
+def test_set_start_when_idle_does_nothing(tmp_timer):
+    t = WorkTimer()
+    t.set_start(datetime(2026, 9, 23, 9, 0), "Other")
+    assert not t.is_running and load_saved_session() is None

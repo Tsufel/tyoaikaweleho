@@ -436,6 +436,130 @@ def test_discard_stale(env):
     assert r["error"]["code"] == "stale" and r["timer"]["running"]
 
 
+# ── stop at / adjust the running shift ───────────────────────────────────────
+
+def test_stop_at_saves_the_given_end(env, tmp_timer):
+    ctrl, clock = env
+    _started(ctrl, clock, T0.replace(hour=9, second=40))
+    clock.now = T0.replace(hour=17, minute=45)
+    r = ctrl.timer_stop_at("17:00")
+    assert r["status"] == "saved" and not r["timer"]["running"]
+    assert (r["entry"]["time_in"], r["entry"]["time_out"]) == ("09:00", "17:00")
+    assert r["entry"]["minutes"] == 480
+    assert not os.path.exists(tm._SESSION_FILE)
+
+
+def test_stop_at_refuses_bad_times(env, tmp_timer):
+    ctrl, clock = env
+    _started(ctrl, clock, T0.replace(hour=9))
+    clock.now = T0.replace(hour=12)
+    assert ctrl.timer_stop_at("nope")["field"] == "end"
+    r = ctrl.timer_stop_at("09:00")
+    assert r["status"] == "invalid" and "after the start (09:00)" in r["message"]
+    r = ctrl.timer_stop_at("12:01")                       # still ahead
+    assert r["status"] == "invalid" and "hasn't come yet" in r["message"]
+    r = ctrl.timer_stop_at("08:00")                       # 23 h on: also ahead
+    assert r["status"] == "invalid"
+    assert ctrl.timer_state()["running"]
+    assert ctrl.timer_stop_at("12:00")["status"] == "saved"
+
+
+def test_stop_at_when_idle(env):
+    ctrl, _ = env
+    assert ctrl.timer_stop_at("17:00")["error"]["code"] == "not_running"
+
+
+def test_stop_at_long_asks_first(env, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0.replace(hour=6))
+    clock.now = T0 + timedelta(hours=14)                  # Thu 00:00
+    r = ctrl.timer_stop_at("22:00")
+    assert r["confirm"]["kind"] == "long_entry" and r["confirm"]["token"] == token
+    r = ctrl.timer_stop_at("22:00", _answer("long_entry", "cancel", token))
+    assert r["status"] == "cancelled" and ctrl.timer_state()["running"]
+    r = ctrl.timer_stop_at("22:00", _answer("long_entry", "save", "other"))
+    assert r["error"]["code"] == "stale"
+    r = ctrl.timer_stop_at("22:00", _answer("long_entry", "save", token))
+    assert r["status"] == "saved" and r["entry"]["minutes"] == 16 * 60
+
+
+def test_stop_at_rescues_a_shift_over_24h(env, tmp_timer):
+    ctrl, clock = env
+    _started(ctrl, clock, T0.replace(hour=9))
+    clock.now = T0 + timedelta(days=2)
+    r = ctrl.timer_stop_at("17:30")
+    assert r["status"] == "saved"
+    assert (r["entry"]["date"], r["entry"]["time_out"]) == ("2026-09-23", "17:30")
+
+
+def test_stop_at_save_failure_keeps_running(env, monkeypatch, tmp_timer):
+    ctrl, clock = env
+    _started(ctrl, clock, T0.replace(hour=9))
+    clock.now = T0
+    monkeypatch.setattr(storage, "save_entry", _fail)
+    r = ctrl.timer_stop_at("09:45")
+    assert r["error"]["code"] == "save_failed"
+    assert ctrl.timer_state()["running"] and os.path.exists(tm._SESSION_FILE)
+
+
+def test_adjust_moves_start_and_job(env, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0)
+    r = ctrl.timer_adjust(token, time="09:15", job_shift="  Support ")
+    assert r["status"] == "ok"
+    assert r["timer"]["start_iso"] == "2026-09-23T09:15:00" and r["timer"]["job_shift"] == "Support"
+    saved = tm.load_saved_session()
+    assert saved == {"job_shift": "Support", "start": "2026-09-23T09:15:00"}
+    r = ctrl.timer_adjust(r["timer"]["start_iso"], job_shift="")
+    assert r["timer"]["job_shift"] == "—" and r["timer"]["start_iso"] == "2026-09-23T09:15:00"
+
+
+def test_adjust_refuses_ahead_and_stale(env, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0)
+    r = ctrl.timer_adjust(token, time="11:00")
+    assert r["status"] == "invalid" and r["field"] == "time"
+    assert ctrl.timer_adjust(token, time="xx")["field"] == "time"
+    assert ctrl.timer_adjust("2026-09-23T08:00:00", time="09:00")["error"]["code"] == "stale"
+    assert ctrl.timer_state()["start_iso"] == token
+
+
+def test_adjust_far_back_asks_first(env, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0)
+    r = ctrl.timer_adjust(token, time="22:00")            # yesterday 22:00
+    c = r["confirm"]
+    assert c["kind"] == "start_backdate" and c["token"] == token
+    assert [o["id"] for o in c["options"]] == ["earlier", "cancel"]
+    r = ctrl.timer_adjust(token, "22:00", confirm=_answer("start_backdate", "cancel", token))
+    assert r["status"] == "cancelled" and ctrl.timer_state()["start_iso"] == token
+    r = ctrl.timer_adjust(token, "22:00", confirm=_answer("start_backdate", "earlier", token))
+    assert r["timer"]["start_iso"] == "2026-09-22T22:00:00"
+
+
+def test_adjust_later_start_needs_no_confirm(env, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0 - timedelta(hours=8))   # 02:00
+    clock.now = T0
+    r = ctrl.timer_adjust(token, time="03:00")
+    assert r["status"] == "ok" and r["timer"]["start_iso"] == "2026-09-23T03:00:00"
+
+
+def test_adjust_write_failure_keeps_the_old_start(env, monkeypatch, tmp_timer):
+    ctrl, clock = env
+    token = _started(ctrl, clock, T0)
+    monkeypatch.setattr(WorkTimer, "_save_session", _fail)
+    r = ctrl.timer_adjust(token, time="09:00", job_shift="Other")
+    assert r["error"]["code"] == "save_failed"
+    assert r["timer"]["start_iso"] == token and r["timer"]["job_shift"] == "Sales"
+    assert tm.load_saved_session()["start"] == token
+
+
+def test_adjust_when_idle(env):
+    ctrl, _ = env
+    assert ctrl.timer_adjust("x", time="09:00")["error"]["code"] == "not_running"
+
+
 # ── recovery ─────────────────────────────────────────────────────────────────
 
 def _crash(start, job="Support"):

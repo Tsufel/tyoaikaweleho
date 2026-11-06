@@ -97,8 +97,8 @@ current state (e.g. a different shift is now running) it returns
 | `over_24h` | `timer_stop` any source, elapsed ≥24 h | `save` "Save until HH:MM", `discard` (danger), `keep` "Keep running" | `keep` / `keep` |
 | `discard_shift` | after `over_24h=discard`; `recovery_resolve('discard')`; `timer_discard` | `discard` (danger), `cancel` | `cancel` / `cancel` |
 | `start_ahead` | `timer_start` mode `at`, picked time 0–6 h ahead of now | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel` |
-| `start_backdate` | `timer_start` mode `at`, resolved start ≥6 h behind now (not asked after `start_ahead`) | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel`; icon warning |
-| `long_entry` | `save_entry`, `update_entry_field`, `recovery_resolve('save')` when result >14 h (recovery: token = session `start_iso`) | `save` "Save anyway", `cancel` | `save` / `cancel` |
+| `start_backdate` | `timer_start` mode `at`, resolved start ≥6 h behind now (not asked after `start_ahead`); `timer_adjust` moving the start earlier to ≥6 h behind (token = old `start_iso`, only `earlier` and `cancel` "Keep HH:MM", default `cancel`) | `now` "Start now (HH:MM)", `earlier` "From yesterday/today HH:MM", `cancel` | `now` / `cancel`; icon warning |
+| `long_entry` | `save_entry`, `update_entry_field`, `recovery_resolve('save')`, `timer_stop_at` when result >14 h (recovery / stop at: token = session `start_iso`) | `save` "Save anyway", `cancel` | `save` / `cancel` |
 | `overlap` | `save_entry`, `update_entry_field` when the result overlaps a saved entry it didn't overlap before (after `long_entry`) | `save` "Save anyway", `cancel` "Go back" | `cancel` / `cancel`; icon warning; `details.overlaps` = count |
 | `delete_entry` | `delete_entry` | `delete` (danger), `cancel` | `cancel` / `cancel` |
 | `close_running` | `close_app` while a shift runs | `stop_close` "Stop, save & close", `close` "Close anyway", `cancel` "Stay open" | `stop_close` / `cancel` |
@@ -157,6 +157,8 @@ The current shift must never be lost:
 | `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
 | `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
 | `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded`; idle → `error(not_running)` |
+| `timer_stop_at(end, confirm?)` | `HH:MM`, answers | `R<{timer: T, entry?: E}>` §6.3a |
+| `timer_adjust(start_iso, time?, job_shift?, confirm?)` | running `start_iso`, `HH:MM`, `string`, answers | `R<{timer: T}>` §6.3a |
 | `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
 
 ### Entries
@@ -279,6 +281,26 @@ session (an invalid one is cleared silently). It carries `start_iso`,
   clear session → `saved{entry, recovery:null, overlap_warning?}`; frontend
   shows the entry (and the warning as a toast).
 - `discard` → `needs_confirm(discard_shift)` → `discarded{recovery:null}`.
+
+### 6.3a Running shift — `timer_stop_at`, `timer_adjust`
+Both → `error(not_running)` when idle.
+
+`timer_stop_at(end)` saves the running shift as ending at `end`, the first
+such HH:MM after the start (so a shift left running for days can still be
+saved with its real end). Unparseable → `invalid(field:'end')`; end = start
+minute → `invalid` ("End time must be after the start (HH:MM)."); an end
+still ahead of now → `invalid` ("T hasn't come yet (it's HH:MM now)."); >14 h
+→ `needs_confirm(long_entry)` (token = `start_iso`); then as `timer_stop`'s
+save (§6.1 step 6, `save_failed` keeps it running). The STOP button's "▾"
+opens a time picker for it.
+
+`timer_adjust(start_iso, time?, job_shift?)` changes the running shift and
+rewrites `session.json` (atomic; a write failure → `error(save_failed)`, old
+values kept). `start_iso` other than the running one → `error(stale)`.
+`time` resolves like `timer_start('at')` to the last HH:MM at or before now;
+one 0–6 h ahead → `invalid(field:'time')`. Moving the start earlier to ≥6 h
+behind now → `needs_confirm(start_backdate)` with `earlier` / `cancel`.
+`job_shift` blank → `"—"`; `null` keeps it. → `ok{timer}`.
 
 ### 6.4 Inline edit — `update_entry_field(id, field, value, confirm)`
 JS owns the editor (Enter = strict, Tab/blur/click elsewhere/scroll = lenient,

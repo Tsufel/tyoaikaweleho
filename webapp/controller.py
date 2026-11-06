@@ -552,6 +552,100 @@ class ShiftController:
             self._end_shift()
             return R.discarded("Shift discarded", timer=self.timer_state())
 
+    # ── running shift: stop at a past time, fix the start or job ─────
+
+    def timer_stop_at(self, end: str, confirm=None) -> dict:
+        """Stop and save the running shift as ending at *end* (HH:MM), the
+        first such time after the start. A time still ahead is refused."""
+        with self._lock:
+            t = self._timer
+            if not t.is_running:
+                return R.error("not_running", "No shift is running.", timer=self.timer_state())
+            t_out = parse_time_input(end or "")
+            if t_out is None:
+                return R.invalid("end", "End time must be a valid time (e.g. 17:00).",
+                                 timer=self.timer_state())
+            start, job_shift = t.start_dt, t.job_shift
+            t_in = start.strftime("%H:%M")
+            minutes = entry_minutes(t_in, t_out)
+            if minutes == 0:
+                return R.invalid("end", f"End time must be after the start ({t_in}).",
+                                 timer=self.timer_state())
+            now = self._now()
+            if _wall_minutes(start, now) < minutes:
+                return R.invalid("end", f"{t_out} hasn't come yet (it's {now:%H:%M} now).",
+                                 timer=self.timer_state())
+            if is_long_shift(minutes):
+                token = _iso(start)
+                try:
+                    choice = answer(confirm, "long_entry", token)
+                except Stale:
+                    return R.stale(timer=self.timer_state())
+                if choice is None:
+                    return self._long_entry_confirm(t_in, t_out, minutes, token,
+                                                    timer=self.timer_state())
+                if choice != "save":
+                    return R.cancelled(timer=self.timer_state())
+            return self._save_stopped(start, job_shift, t_out)
+
+    def timer_adjust(self, start_iso: str, time: str | None = None,
+                     job_shift: str | None = None, confirm=None) -> dict:
+        """Move the running shift's start to *time* (the last HH:MM at or
+        before now) and/or change its job. *start_iso* is the start the user
+        saw; another one means the shift changed meanwhile."""
+        with self._lock:
+            t = self._timer
+            if not t.is_running:
+                return R.error("not_running", "No shift is running.", timer=self.timer_state())
+            old = t.start_dt
+            if start_iso != _iso(old):
+                return R.stale(timer=self.timer_state())
+            job = t.job_shift if job_shift is None else (job_shift.strip() or "—")
+            start = old
+            if time is not None:
+                tm = parse_time_input(time)
+                if tm is None:
+                    return R.invalid("time", "Start time must be a valid time (e.g. 09:30).",
+                                     timer=self.timer_state())
+                now = self._now().replace(microsecond=0)
+                h, m = map(int, tm.split(":"))
+                if start_time_needs_confirm(h, m, now):
+                    return R.invalid("time", f"{tm} hasn't come yet (it's {now:%H:%M} now).",
+                                     timer=self.timer_state())
+                start = resolve_start_time(h, m, now)
+                if start.replace(second=0) == old.replace(second=0, microsecond=0):
+                    start = old
+                elif start < old and start_far_behind(start, now):
+                    try:
+                        choice = answer(confirm, "start_backdate", start_iso)
+                    except Stale:
+                        return R.stale(timer=self.timer_state())
+                    if choice is None:
+                        day = "today" if start.date() == now.date() else "yesterday"
+                        return R.needs_confirm(
+                            "start_backdate", "Move the start that far back?",
+                            f"It's {now:%H:%M} now. Starting from {tm} {day} puts "
+                            f"{format_duration(_wall_minutes(start, now))} on the timer.",
+                            [opt("earlier", f"From {day} {tm}", "primary"),
+                             opt("cancel", f"Keep {old:%H:%M}", "neutral")],
+                            default="cancel", cancel="cancel", icon="warning",
+                            token=start_iso,
+                            details={"start_iso": _iso(start),
+                                     "elapsed_minutes": _wall_minutes(start, now)},
+                            timer=self.timer_state())
+                    if choice != "earlier":
+                        return R.cancelled(timer=self.timer_state())
+            if start == old and job == t.job_shift:
+                return R.ok(timer=self.timer_state())
+            try:
+                t.set_start(start, job)
+            except OSError as exc:
+                return R.error("save_failed",
+                               f"The change could not be saved:\n\n{exc}\n\n"
+                               f"{_LOCKED_HINT} and try again.",
+                               timer=self.timer_state())
+            return R.ok(timer=self.timer_state())
+
     # ── crash recovery ───────────────────────────────────────────
 
     def recovery(self) -> dict | None:

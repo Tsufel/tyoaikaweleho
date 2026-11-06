@@ -30,6 +30,19 @@ class WorkTimer:
         self.state = TimerState.RUNNING
         self._save_session()
 
+    def set_start(self, start_time: datetime, job_shift: str):
+        """Change the running shift's start and job. If session.json can't be
+        written the old values are kept and the OSError is raised."""
+        if self.state != TimerState.RUNNING:
+            return
+        old = (self._start_dt, self._job_shift)
+        self._start_dt, self._job_shift = start_time, job_shift
+        try:
+            self._save_session()
+        except OSError:
+            self._start_dt, self._job_shift = old
+            raise
+
     def stop(self) -> dict | None:
         """Stop and return the finished shift. session.json is left in place
         so the shift can still be recovered if saving it fails — call
