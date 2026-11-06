@@ -179,7 +179,12 @@ export interface EntryRow extends WorkEntry {
   week_key: string;
   /** list_month only: overlaps another saved entry by a minute or more. */
   overlap?: boolean;
+  /** list_month only: the entries it overlaps (may be in the previous month). */
+  overlap_with?: OverlapRef[];
 }
+
+/** An entry an EntryRow overlaps (list_month). */
+export type OverlapRef = WorkEntry;
 
 /** Raw text from the add/edit modal; id absent = new entry. */
 export interface EntryDraft {
@@ -586,6 +591,9 @@ export type CommandName =
   | 'entry.add'
   | 'entry.edit'
   | 'entry.delete'
+  | 'entry.duplicate'
+  | 'entry.copy'
+  | 'entry.filter'
   | 'undo'
   | 'export'
   | 'import.menu'

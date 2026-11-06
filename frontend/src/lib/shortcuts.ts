@@ -80,6 +80,9 @@ function bindingFor(e: KeyboardEvent): Binding | null {
       case ',': return { cmd: 'settings.open', typing: true, routes: ['main', 'stats'], alwaysPrevent: true };
       case 's': return { cmd: 'settings.save', typing: true, routes: ['settings'], alwaysPrevent: true };
       case 'z': return { cmd: 'undo', routes: ['main', 'stats'], when: () => get(undoAvailable) };
+      case 'd': return { cmd: 'entry.duplicate' };
+      case 'f': return { cmd: 'entry.filter', typing: true };
+      case 'c': return { cmd: 'entry.copy', inTable: true, when: () => !window.getSelection()?.toString() };
       case 'arrowleft':
       case 'pageup': return { cmd: 'month.prev' };
       case 'arrowright':
@@ -136,6 +139,9 @@ export const SHORTCUT_LABELS: Partial<Record<CommandName, string>> = {
   'entry.add': 'Ctrl+N',
   'entry.edit': 'Enter',
   'entry.delete': 'Del',
+  'entry.duplicate': 'Ctrl+D',
+  'entry.copy': 'Ctrl+C',
+  'entry.filter': 'Ctrl+F',
   undo: 'Ctrl+Z',
   export: 'Ctrl+E',
   'import.menu': 'Ctrl+I',

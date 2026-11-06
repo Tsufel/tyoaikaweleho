@@ -1,5 +1,16 @@
-import type { EntryRow, MonthData, WeekGroup } from '../../lib/api/types';
-import { addMonths, formatHM, formatMoney, parseTimeInput } from '../../lib/time';
+import type { EntryDraft, EntryRow, MonthData, OverlapRef, WeekGroup } from '../../lib/api/types';
+import {
+  addMonths,
+  formatDuration,
+  formatHM,
+  formatMoney,
+  fromIsoDate,
+  monthLabel,
+  parseDateInput,
+  parseTimeInput,
+  strftime,
+  toIsoDate,
+} from '../../lib/time';
 
 export type TableRow =
   | { kind: 'entry'; key: string; entry: EntryRow; index: number }
@@ -21,14 +32,35 @@ export function buildRows(m: MonthData | null): TableRow[] {
   return rows;
 }
 
-export const weekTotalText = (w: WeekGroup) => `Week ${w.week} total ${formatHM(w.minutes)} (${formatMoney(w.earnings)})`;
+/** True when the ISO week reaches into the month before or after `view`,
+ * so its total only counts this month's days. */
+export function weekCrossesMonth(w: WeekGroup, view: { year: number; month: number }): boolean {
+  const monIso = parseDateInput(`${w.iso_year}-W${String(w.week).padStart(2, '0')}`);
+  const mon = monIso ? fromIsoDate(monIso) : null;
+  if (!mon) return false;
+  const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+  const inView = (d: Date) => d.getFullYear() === view.year && d.getMonth() + 1 === view.month;
+  return !inView(mon) || !inView(sun);
+}
+
+/** "Week 39 total 15:30 (€232.50)"; with `view`, a week that spills into
+ * the month before or after says "(this month)". */
+export const weekTotalText = (w: WeekGroup, view?: { year: number; month: number }) =>
+  `Week ${w.week} total${view && weekCrossesMonth(w, view) ? ' (this month)' : ''} ${formatHM(w.minutes)} (${formatMoney(w.earnings)})`;
 
 export const monthTotalText = (m: MonthData | null) =>
   `Total: ${formatHM(m?.total_minutes ?? 0)} (${formatMoney(m?.earnings ?? 0)})`;
 
-export const emptyText = (label: string) => `No shifts in ${label}. Press START or + Add entry.`;
+/** Empty-month line: START only records today, so other months point at Add entry. */
+export const emptyText = (label: string, isCurrentMonth = true) =>
+  isCurrentMonth
+    ? `No shifts in ${label}. Press START or + Add entry.`
+    : `No shifts in ${label}. Add one by hand with + Add entry.`;
 /** Second line under the empty-month wizard. */
 export const EMPTY_HINT = 'The weleho is standing by — your hours land here once you clock out.';
+
+export const isSameMonth = (view: { year: number; month: number }, today: Date) =>
+  view.year === today.getFullYear() && view.month === today.getMonth() + 1;
 
 export type EditField = 'time_in' | 'time_out';
 
@@ -125,4 +157,199 @@ export function earlyExportMonth(
   if (today.getDate() > EARLY_EXPORT_DAYS) return null;
   if (view.year !== today.getFullYear() || view.month !== today.getMonth() + 1) return null;
   return addMonths(view.year, view.month, -1);
+}
+
+// ── New / duplicate entry drafts ─────────────────────────────────
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** "HH:MM" plus whole minutes, wrapping past midnight. */
+export function addMinutesToTime(t: string, minutes: number): string {
+  const [h, m] = t.split(':').map(Number);
+  const total = (((h * 60 + m + Math.round(minutes)) % 1440) + 1440) % 1440;
+  return `${pad2(Math.floor(total / 60))}:${pad2(total % 60)}`;
+}
+
+/** Defaults of a new entry: Time Out = start + the Daily target (Settings),
+ * so 7.5 h days get 09:00–16:30. An unusable target falls back to 8 h. */
+export function newEntryDraft(o: { date: string; startTime: string; targetHours: number; job: string }): EntryDraft {
+  const start = parseTimeInput(o.startTime);
+  const t = o.targetHours;
+  const hours = Number.isFinite(t) && t >= 1 && t < 24 ? t : 8;
+  return {
+    date: o.date,
+    job_shift: o.job,
+    time_in: o.startTime,
+    time_out: start ? addMinutesToTime(start, hours * 60) : '',
+  };
+}
+
+/** The first day after `iso` that has no entry in `taken` (ISO dates). */
+export function nextFreeDate(iso: string, taken: Iterable<string>): string {
+  const d = fromIsoDate(iso);
+  if (!d) return iso;
+  const used = new Set(taken);
+  const day = (i: number) => toIsoDate(new Date(d.getFullYear(), d.getMonth(), d.getDate() + i));
+  for (let i = 1; i <= 366; i++) if (!used.has(day(i))) return day(i);
+  return day(1);
+}
+
+/** A copy of `e` without an id, on the next day that has no shift. */
+export function duplicateDraft(
+  e: Pick<EntryRow, 'date' | 'job_shift' | 'time_in' | 'time_out'>,
+  takenDates: Iterable<string>,
+): EntryDraft {
+  return { date: nextFreeDate(e.date, takenDates), job_shift: e.job_shift, time_in: e.time_in, time_out: e.time_out };
+}
+
+/** True when the modal's fields differ from `init`, after normalising
+ * ("9" = "09:00", "23.9.2026" = "2026-09-23", outer spaces ignored). */
+export function draftChanged(init: EntryDraft, now: EntryDraft, today: Date = new Date()): boolean {
+  const date = (s: string) => parseDateInput(s, today) ?? s.trim();
+  const time = (s: string) => parseTimeInput(s) ?? s.trim();
+  return (
+    date(now.date) !== date(init.date) ||
+    now.job_shift.trim() !== init.job_shift.trim() ||
+    time(now.time_in) !== time(init.time_in) ||
+    time(now.time_out) !== time(init.time_out)
+  );
+}
+
+/** Soft note under the modal's date: catches a typoed year, a future date,
+ * or a date that saves outside the month on screen. Null = nothing to say. */
+export function dateHint(iso: string | null, today: Date, view: { year: number; month: number }): string | null {
+  const d = iso ? fromIsoDate(iso) : null;
+  if (!d) return null;
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const days = Math.round((d.getTime() - t.getTime()) / 86_400_000);
+  const years = Math.max(1, Math.abs(d.getFullYear() - t.getFullYear()));
+  const n = `${years} ${plural(years, 'year', 'years')}`;
+  if (days > 366) return `That's ${n} from now. Time traveller? Check the year.`;
+  if (days < -366) return `That's ${n} ago. Check the year.`;
+  const other = d.getFullYear() !== view.year || d.getMonth() + 1 !== view.month;
+  const where = other ? `Saves to ${monthLabel(d.getFullYear(), d.getMonth() + 1)}` : '';
+  if (days > 0) return where ? `${where}, which is in the future.` : "That's in the future.";
+  return where ? `${where}.` : null;
+}
+
+// ── Month summary, filter, copy as text ──────────────────────────
+
+export interface MonthSummary {
+  shifts: number;
+  /** Distinct dates with a shift. */
+  days: number;
+  /** Average of the finished shifts; null when none is finished. */
+  avgMinutes: number | null;
+}
+
+export function monthSummary(entries: EntryRow[]): MonthSummary {
+  const closed = entries.filter((e) => e.minutes !== null);
+  const sum = closed.reduce((a, e) => a + (e.minutes ?? 0), 0);
+  return {
+    shifts: entries.length,
+    days: new Set(entries.map((e) => e.date)).size,
+    avgMinutes: closed.length ? Math.round(sum / closed.length) : null,
+  };
+}
+
+/** "12 shifts · 9 days · avg 7:12" ('' for none). */
+export function summaryText(s: MonthSummary): string {
+  if (!s.shifts) return '';
+  const parts = [`${s.shifts} ${plural(s.shifts, 'shift', 'shifts')}`, `${s.days} ${plural(s.days, 'day', 'days')}`];
+  if (s.avgMinutes !== null) parts.push(`avg ${formatHM(s.avgMinutes)}`);
+  return parts.join(' · ');
+}
+
+export interface EntryFilter {
+  /** Exact job_shift, or null for every job. */
+  job: string | null;
+  /** Case-insensitive text in the date, job or times. */
+  text: string;
+}
+
+export const NO_FILTER: EntryFilter = { job: null, text: '' };
+export const isFiltering = (f: EntryFilter) => f.job !== null || f.text.trim() !== '';
+
+/** Distinct job names in the month, most used first (ties A–Z). */
+export function jobsInMonth(m: MonthData | null): string[] {
+  const n = new Map<string, number>();
+  for (const e of m?.entries ?? []) if (e.job_shift) n.set(e.job_shift, (n.get(e.job_shift) ?? 0) + 1);
+  return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([j]) => j);
+}
+
+const money2 = (x: number) => Math.round(x * 100) / 100;
+
+/** The month with only the matching rows; weeks and totals are recomputed
+ * from them (earnings at the month's pay rate, like list_month). */
+export function filterMonth(m: MonthData, f: EntryFilter): MonthData {
+  if (!isFiltering(f)) return m;
+  const q = f.text.trim().toLowerCase();
+  const entries = m.entries.filter((e) => {
+    if (f.job !== null && e.job_shift !== f.job) return false;
+    if (!q) return true;
+    return [e.date, e.display_date, e.job_shift, e.time_in, e.time_out].some((s) => (s ?? '').toLowerCase().includes(q));
+  });
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const weeks = m.weeks
+    .map((w) => {
+      const ids = w.entry_ids.filter((id) => byId.has(id));
+      const minutes = ids.reduce((a, id) => a + (byId.get(id)?.minutes ?? 0), 0);
+      return { ...w, entry_ids: ids, minutes, earnings: money2((minutes / 60) * m.pay_rate) };
+    })
+    .filter((w) => w.entry_ids.length);
+  const total = entries.reduce((a, e) => a + (e.minutes ?? 0), 0);
+  return { ...m, entries, weeks, total_minutes: total, earnings: money2((total / 60) * m.pay_rate) };
+}
+
+/** What the filter is showing: the job, or the quoted search text. */
+export function filterName(f: EntryFilter): string {
+  if (f.job !== null) return f.job || 'no job';
+  return `“${f.text.trim()}”`;
+}
+
+/** Footer label: "Total:" or, filtered, "Total (Sales):". */
+export const filterTotalLabel = (f: EntryFilter) => (isFiltering(f) ? `Total (${filterName(f)}):` : 'Total:');
+
+/** "Tue 23 Sep": the table's date without the year the month header already shows. */
+export function shortDate(iso: string): string {
+  const d = fromIsoDate(iso);
+  return d ? strftime(d, '%a %d %b') : iso;
+}
+
+/** Saturday or Sunday. */
+export function isWeekend(iso: string): boolean {
+  const d = fromIsoDate(iso);
+  return !!d && (d.getDay() === 0 || d.getDay() === 6);
+}
+
+/** "Tue 23 Sep  Kitchen  09:00–17:00  8h 00m" (one shift as plain text). */
+export function entryAsText(e: EntryRow): string {
+  const out = e.time_out ? e.time_out_display || e.time_out : '…';
+  const dur = e.minutes === null ? '—' : formatDuration(e.minutes);
+  return [shortDate(e.date), e.job_shift || '—', `${e.time_in}–${out}`, dur].join('  ');
+}
+
+/** The month as plain text for a chat or an email: shifts, week totals and the total. */
+export function monthAsText(m: MonthData, f: EntryFilter = NO_FILTER): string {
+  const lines = [isFiltering(f) ? `${m.label} (${filterName(f)})` : m.label];
+  const weeks = new Map(m.weeks.map((w) => [w.key, w]));
+  m.entries.forEach((e, i) => {
+    lines.push(entryAsText(e));
+    const next = m.entries[i + 1];
+    const w = weeks.get(e.week_key);
+    if (w && (!next || next.week_key !== e.week_key)) {
+      lines.push(`  Week ${w.week}: ${formatDuration(w.minutes)} (${formatMoney(w.earnings)})`);
+    }
+  });
+  const s = summaryText(monthSummary(m.entries));
+  lines.push(`Total: ${formatDuration(m.total_minutes)} (${formatMoney(m.earnings)})${s ? ` · ${s}` : ''}`);
+  return lines.join('\n');
+}
+
+/** The ⚠ tooltip: "Overlaps Sales 09:00–17:00 on Tue 22 Sep. Both count on the timesheet." */
+export function overlapText(others: OverlapRef[] | undefined): string {
+  if (!others?.length) return 'Overlaps another entry. Both count on the timesheet.';
+  const one = (o: OverlapRef) => `${o.job_shift || '—'} ${o.time_in}–${o.time_out || '…'} on ${shortDate(o.date)}`;
+  const names = others.length > 3 ? [...others.slice(0, 3).map(one), `${others.length - 3} more`] : others.map(one);
+  return `Overlaps ${names.join(', ')}. Both count on the timesheet.`;
 }
