@@ -9,7 +9,6 @@ reported in virtualised coordinates; all APIs agree on that space):
   PRIMARY     0,0   .. 1920,1080  taskbar at the bottom (work ends y=1040)
   RIGHT    1920,0   .. 3200,720   taskbar at the top    (work starts y=40)
 """
-import ctypes
 from ctypes import wintypes
 
 import pytest

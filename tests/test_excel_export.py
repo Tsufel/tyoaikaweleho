@@ -4,7 +4,6 @@ from datetime import timedelta
 import pytest
 from openpyxl import load_workbook
 
-import storage
 from storage import WorkEntry
 from excel_export import _time_fraction, export_month
 

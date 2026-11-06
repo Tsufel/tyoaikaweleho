@@ -7,7 +7,7 @@ import sys
 import unicodedata
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime
 
 from utils import parse_date_input, parse_time_input
 

@@ -152,7 +152,6 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
 def _export_full(entries: list[WorkEntry], year: int, month: int,
                  save_path: str, pay_rate: float):
-    import calendar
     wb = Workbook()
     wb.calculation.fullCalcOnLoad = True
     ws = wb.active
@@ -165,7 +164,6 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
     for col, w in widths.items():
         ws.column_dimensions[col].width = w
 
-    title_font  = Font(name="Arial", bold=True, size=14)
     header_font = Font(name="Arial", bold=True, size=10)
     label_font  = Font(name="Arial", bold=True, size=10)
     normal_font = Font(name="Arial", size=10)

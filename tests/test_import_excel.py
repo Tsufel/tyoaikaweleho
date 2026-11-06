@@ -1,5 +1,4 @@
 """Tests for import_excel — both formats, dedup, edge cases."""
-import pytest
 from datetime import datetime, time as dt_time
 from openpyxl import Workbook
 
