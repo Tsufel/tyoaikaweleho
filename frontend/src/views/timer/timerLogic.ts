@@ -210,11 +210,14 @@ export function elapsedHM(fromMs: number, nowMs: number = Date.now()): string {
 }
 
 /** Toast after a saved shift: 'Shift saved — 8h 00m · €160.00 earned' (pay
- *  only with a pay rate set). */
-export function savedToastText(minutes: number | null | undefined, payRate: number): string {
+ *  only with a pay rate set). With `fun` (Lulz on) the pay gets a fun
+ *  equivalent: '… earned. That's about 2 concert tickets'. */
+export function savedToastText(minutes: number | null | undefined, payRate: number, fun = false): string {
   if (minutes == null) return 'Shift saved';
-  const pay = payRate > 0 ? ` · ${formatMoney((minutes / 60) * payRate)} earned` : '';
-  return `Shift saved — ${formatDuration(minutes)}${pay}`;
+  const eur = (minutes / 60) * payRate;
+  const pay = payRate > 0 ? ` · ${formatMoney(eur)} earned` : '';
+  const extra = fun && payRate > 0 ? earningsEquivalent(eur) : null;
+  return `Shift saved — ${formatDuration(minutes)}${pay}${extra ? `. ${extra}` : ''}`;
 }
 
 /** "5 hours ago" / "2 days ago" for how long an unfinished shift has sat. */

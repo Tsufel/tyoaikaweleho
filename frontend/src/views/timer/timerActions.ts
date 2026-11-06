@@ -4,6 +4,7 @@ import { api, runFlow } from '../../lib/api';
 import type { ConfirmList, EntryRow, HHMM, StartMode, StopResult, StopSource, TimerResult } from '../../lib/api/types';
 import { alert, reportError } from '../../lib/stores/confirm';
 import { showEntry } from '../../lib/stores/entries';
+import { lulz } from '../../lib/stores/motion';
 import { offerRecovery } from '../../lib/stores/recovery';
 import { refreshTimer, setTimer, timer } from '../../lib/stores/timer';
 import { toast } from '../../lib/stores/toasts';
@@ -107,7 +108,7 @@ async function afterStop(r: StopResult): Promise<StopResult> {
     if (r.entry) {
       const mins = r.entry.minutes;
       if (r.overlap_warning) toast(`${savedToastText(mins, 0)}. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
-      else toast(savedToastText(mins, r.timer?.pay_rate ?? 0), { tone: 'success', ms: 4000 });
+      else toast(savedToastText(mins, r.timer?.pay_rate ?? 0, get(lulz)), { tone: 'success', ms: 4000 });
       await showEntry(r.entry);
     }
   } else if (r.status === 'discarded') {

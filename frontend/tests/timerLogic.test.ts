@@ -282,6 +282,10 @@ describe('recovery dialog', () => {
     expect(savedToastText(480, 20)).toBe('Shift saved — 8h 00m · €160.00 earned');
     expect(savedToastText(95, 0)).toBe('Shift saved — 1h 35m');
     expect(savedToastText(null, 20)).toBe('Shift saved');
+    // Lulz adds a fun equivalent, only when there is pay to compare
+    expect(savedToastText(480, 20, true)).toBe("Shift saved — 8h 00m · €160.00 earned. That's about 2 concert tickets");
+    expect(savedToastText(95, 0, true)).toBe('Shift saved — 1h 35m');
+    expect(savedToastText(5, 20, true)).toBe('Shift saved — 0h 05m · €1.67 earned');
   });
 
   it('warns about a zero-length or unusually long shift', () => {
