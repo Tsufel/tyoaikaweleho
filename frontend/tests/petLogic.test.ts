@@ -4,7 +4,12 @@ import {
   FRIDAY_LINES,
   TIRED_AT,
   TIRED_LINES,
+  TICKLE_LINE,
+  TICKLE_MS,
+  TICKLE_PETS,
+  currentStreak,
   energy,
+  happyLines,
   fridayShift,
   level,
   levelHours,
@@ -12,6 +17,7 @@ import {
   petPose,
   pickLine,
   rankOf,
+  tickle,
   tiredLines,
   usualWeekdays,
 } from '../src/views/pet/petLogic';
@@ -211,5 +217,74 @@ describe('lines', () => {
     expect(pickLine(['Koht himaan'], 'Koht himaan', () => 0.9)).toBe('Koht himaan');
     expect(pickLine(TIRED_LINES, null, () => 0)).toBe('Oispa kaljaa');
     expect(pickLine(TIRED_LINES, null, () => 0.999999)).toBe('Koht himaan');
+  });
+});
+
+// Mirrors the streak_5 cases in tests/test_achievements.py.
+describe('currentStreak', () => {
+  // 8 h on each date
+  const at = (...isos: string[]) => Object.fromEntries(isos.map((d) => [d, 480]));
+  const day = (iso: string, h = 12) => {
+    const [y, m, d] = iso.split('-').map(Number);
+    return new Date(y, m - 1, d, h);
+  };
+
+  it('counts Mon-Fri at target up to today', () => {
+    const days = at('2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09');
+    expect(currentStreak(days, 8, day('2026-10-09'))).toBe(5);
+  });
+
+  it("doesn't let today without a shift break it", () => {
+    const days = at('2026-10-05', '2026-10-06', '2026-10-07');
+    expect(currentStreak(days, 8, day('2026-10-08'))).toBe(3);
+    // nor today below the target yet
+    expect(currentStreak({ ...days, '2026-10-08': 120 }, 8, day('2026-10-08'))).toBe(3);
+  });
+
+  it('skips weekends: they neither count nor break it', () => {
+    // Thu, Fri, (weekend off), Mon
+    expect(currentStreak(at('2026-10-08', '2026-10-09', '2026-10-12'), 8, day('2026-10-12'))).toBe(3);
+    // weekend work at target does not count
+    expect(currentStreak(at('2026-10-09', '2026-10-10', '2026-10-11', '2026-10-12'), 8, day('2026-10-12'))).toBe(2);
+    // and on a Sunday the run up to Friday stands
+    expect(currentStreak(at('2026-10-08', '2026-10-09'), 8, day('2026-10-11'))).toBe(2);
+  });
+
+  it('is broken by a missed weekday or one below target', () => {
+    expect(currentStreak(at('2026-10-05', '2026-10-07'), 8, day('2026-10-07'))).toBe(1);
+    expect(currentStreak({ ...at('2026-10-05', '2026-10-07'), '2026-10-06': 470 }, 8, day('2026-10-07'))).toBe(1);
+    // yesterday missed: nothing running
+    expect(currentStreak(at('2026-10-05'), 8, day('2026-10-07'))).toBe(0);
+  });
+
+  it('uses the target hours', () => {
+    expect(currentStreak(at('2026-10-05', '2026-10-06'), 9, day('2026-10-06'))).toBe(0);
+    expect(currentStreak(at('2026-10-05', '2026-10-06'), 0, day('2026-10-06'))).toBe(2); // falls back to 8 h
+  });
+});
+
+describe('pet chatter', () => {
+  it('greets by time of day', () => {
+    expect(happyLines(new Date(2026, 9, 30, 7))).toContain('Huomenta!');
+    expect(happyLines(new Date(2026, 9, 30, 10))).toContain('Kahvitauko?');
+    expect(happyLines(new Date(2026, 9, 30, 16))).not.toContain('Kahvitauko?');
+    expect(happyLines(new Date(2026, 9, 30, 18))).toContain('Iltavuoro?');
+    for (const h of [7, 12, 16, 20]) expect(happyLines(new Date(2026, 9, 30, h)).length).toBeGreaterThan(1);
+  });
+
+  it('tickles after enough pets inside the window, then starts over', () => {
+    let times: number[] = [];
+    let tickled = false;
+    for (let i = 0; i < TICKLE_PETS; i++) ({ times, tickled } = tickle(times, 1000 + i * 100));
+    expect(tickled).toBe(true);
+    expect(times).toEqual([]);
+    expect(TICKLE_LINE).toBe('Älä kutita!');
+
+    // too slow: the old pets fall out of the window
+    times = [];
+    for (let i = 0; i < TICKLE_PETS * 2; i++) {
+      ({ times, tickled } = tickle(times, i * (TICKLE_MS / (TICKLE_PETS - 2))));
+      expect(tickled).toBe(false);
+    }
   });
 });

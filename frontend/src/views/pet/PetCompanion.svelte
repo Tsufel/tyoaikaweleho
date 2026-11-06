@@ -4,7 +4,8 @@
   // a saved shift, a Lulz milestone or an unlock, and puffs when it changes
   // pose or look; now and then a saved shift brings out its bazooka for a
   // minute, and a level that unlocks a look says so. Tired near the end of a shift, it sighs a line now and then (and
-  // when petted); it steps out while it does the Friday fly-by. It sits in
+  // when petted); awake, it now and then greets you when petted, and petting
+  // it fast enough tickles it. It steps out while it does the Friday fly-by. It sits in
   // whichever free spot of the card is bigger, under the controls or beside
   // the ring, and hides when neither fits, so it never covers the ring, the
   // dial or the buttons.
@@ -18,7 +19,16 @@
   import { toast } from '../../lib/stores/toasts';
   import { tooltip } from '../../lib/ui/actions';
   import { burst } from '../timer/timerActions';
-  import { POSE_LABEL, level, pickLine, tiredLines } from './petLogic';
+  import {
+    CHAT_CHANCE,
+    POSE_LABEL,
+    TICKLE_LINE,
+    happyLines,
+    level,
+    pickLine,
+    tickle,
+    tiredLines,
+  } from './petLogic';
   import {
     SPRITE_SIZE,
     newlyUnlockedSkins,
@@ -168,7 +178,9 @@
   let bubbleSeq = 0;
   let lastLine: string | null = null;
   function sigh() {
-    const text = pickLine(tiredLines(new Date()), lastLine);
+    say(pickLine(tiredLines(new Date()), lastLine));
+  }
+  function say(text: string) {
     lastLine = text;
     const id = ++bubbleSeq;
     bubble = { id, text };
@@ -213,8 +225,19 @@
     wasAway = a;
   });
 
+  let spin = $state(false);
+  let petTimes: number[] = [];
   function pet() {
-    if (tired && !bubble) sigh();
+    const t = tickle(petTimes, Date.now());
+    petTimes = t.times;
+    if (t.tickled) {
+      // reduced motion: the protest without the spin
+      say(TICKLE_LINE);
+      if (fxOn()) replay((on) => (spin = on), 700);
+    } else if (tired && !bubble) sigh();
+    else if (v.pose === 'idle' && !bubble && Math.random() < CHAT_CHANCE) {
+      say(pickLine(happyLines(new Date()), lastLine));
+    }
     if (fxOn()) replay((on) => (hop = on), 650);
     const id = ++heartSeq;
     hearts = [...hearts.slice(-3), { id, x: 30 + ((id * 37) % 40) }];
@@ -305,12 +328,14 @@
   >
     <span class="hop" class:on={hop}>
       <span class="squash" class:on={squash}>
-        <PetSprite
-          kind={v.kind}
-          pose={v.pose}
-          skin={v.skin}
-          bazooka={v.bazooka}
-          animate={full} smooth={!!spot && spot.w < SPRITE_SIZE[v.kind].w} />
+        <span class="spin" class:on={spin}>
+          <PetSprite
+            kind={v.kind}
+            pose={v.pose}
+            skin={v.skin}
+            bazooka={v.bazooka}
+            animate={full} smooth={!!spot && spot.w < SPRITE_SIZE[v.kind].w} />
+        </span>
       </span>
     </span>
     {#if v.energy}
@@ -378,9 +403,21 @@
     visibility: hidden;
   }
   .hop,
-  .squash {
+  .squash,
+  .spin {
     display: block;
     transform-origin: 50% 100%;
+  }
+  .spin {
+    transform-origin: 50% 55%;
+  }
+  .spin.on {
+    animation: spin 0.65s var(--ease-out);
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .hop.on {
     animation: hop 0.6s var(--ease-out);

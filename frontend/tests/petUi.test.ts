@@ -572,3 +572,75 @@ describe('PetHint', () => {
     expect(get(toasts).map((t) => t.tone)).toEqual(['error']);
   });
 });
+
+describe('pet sheet mood and streak', () => {
+  const mood = () => document.querySelector('.mood')?.textContent?.replace(/\s+/g, ' ').trim();
+  afterEach(() => {
+    vi.useRealTimers();
+    setTimer(IDLE_TIMER);
+  });
+
+  it('says the target is almost done at 80%, and past it only in overtime', async () => {
+    // 6.4 of 8 h: drowsy (past TIRED_AT) but not past the target
+    setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 6.4 * 3600_000 });
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() => expect(mood()).toBe("Tähti is getting sleepy: today's target is almost done."));
+    setTimer({ ...IDLE_TIMER, running: true, start_epoch_ms: Date.now() - 8.5 * 3600_000 });
+    await vi.waitFor(() => expect(mood()).toBe("Tähti is getting sleepy: you're past today's target."));
+  });
+
+  it('shows the workday streak from two days, today not breaking it', async () => {
+    // Wednesday, nothing logged yet today
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 14, 0), toFake: ['Date'] });
+    const days = { '2026-10-23': 480, '2026-10-26': 480, '2026-10-27': 480 };
+    fakeApi.get_pet_stats.mockResolvedValue({ ok: true, lifetime_minutes: 1440, days });
+    petStats.set({ lifetime_minutes: 1440, days });
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() =>
+      expect(document.querySelector('.streak')?.textContent).toBe('🔥 3 workdays at target in a row'),
+    );
+  });
+
+  it('has no streak chip below two', async () => {
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 14, 0), toFake: ['Date'] });
+    const days = { '2026-10-27': 480 };
+    fakeApi.get_pet_stats.mockResolvedValue({ ok: true, lifetime_minutes: 480, days });
+    petStats.set({ lifetime_minutes: 480, days });
+    render(PetSheet, { onclose: vi.fn() });
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Energy'));
+    expect(document.querySelector('.streak')).toBeNull();
+  });
+});
+
+describe('pet chatter', () => {
+  const body = () => screen.getByRole('button', { hidden: true });
+  const bubble = () => document.querySelector('.bubble');
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it('an awake pet greets you now and then when petted', async () => {
+    // a Wednesday morning with a shift logged today: awake
+    vi.useFakeTimers({ now: new Date(2026, 9, 28, 8, 0), toFake: ['Date'] });
+    petStats.set({ lifetime_minutes: 600, days: { '2026-10-28': 60 } });
+    render(PetCompanion, {});
+    await tick();
+    const roll = vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    await fireEvent.click(body(), { detail: 1 });
+    expect(bubble()).toBeNull();
+    roll.mockReturnValue(0);
+    await fireEvent.click(body(), { detail: 1 });
+    expect(['Huomenta!', 'Moro!']).toContain(bubble()?.textContent);
+  });
+
+  it('protests when tickled', async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9); // no greetings in between
+    render(PetCompanion, {});
+    await tick();
+    for (let i = 0; i < 7; i++) await fireEvent.click(body(), { detail: 1 });
+    expect(bubble()).toBeNull();
+    await fireEvent.click(body(), { detail: 1 });
+    expect(bubble()?.textContent).toBe('Älä kutita!');
+  });
+});

@@ -151,3 +151,43 @@ export function pickLine(lines: string[], last: string | null, rand: () => numbe
   const pool = lines.length > 1 ? lines.filter((l) => l !== last) : lines;
   return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
 }
+
+/** Workdays at target in a row, ending today, by achievements.py's streak
+ *  rules: Mon–Fri only (weekends neither count nor break it), a weekday below
+ *  the target breaks it, and today doesn't break it before it is done. Only
+ *  the 56 days in `days` are looked at, so a longer run reads as that cap. */
+export function currentStreak(days: PetStats['days'], targetHours: number, today: Date): number {
+  const targetMin = Math.max(1, Number.isFinite(targetHours) && targetHours > 0 ? targetHours : 8) * 60;
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  let run = 0;
+  for (let k = 0; k < 56; k++) {
+    const d = addDays(start, -k);
+    if (weekday(d) >= 5) continue;
+    if ((days[toIsoDate(d)] ?? 0) >= targetMin) run++;
+    else if (k > 0) break;
+  }
+  return run;
+}
+
+/** What an awake pet says now and then when petted, by time of day. */
+export function happyLines(now: Date): string[] {
+  const h = now.getHours();
+  if (h < 10) return ['Huomenta!', 'Moro!'];
+  if (h < 15) return ['Kahvitauko?', 'Moro!'];
+  if (h >= 18) return ['Iltavuoro?', 'Moro!'];
+  return ['Moro!', 'Jaksaa jaksaa!'];
+}
+/** One pet in this many gets a line from an awake pet. */
+export const CHAT_CHANCE = 1 / 3;
+
+/** Petted this often within TICKLE_MS: the pet spins and protests. */
+export const TICKLE_PETS = 8;
+export const TICKLE_MS = 3000;
+export const TICKLE_LINE = 'Älä kutita!';
+
+/** The pets (ms timestamps) still inside the tickle window at `now`, this one
+ *  included, and whether they make a tickle (which starts the count again). */
+export function tickle(times: number[], now: number): { times: number[]; tickled: boolean } {
+  const kept = [...times.filter((t) => now - t < TICKLE_MS), now];
+  return kept.length >= TICKLE_PETS ? { times: [], tickled: true } : { times: kept, tickled: false };
+}

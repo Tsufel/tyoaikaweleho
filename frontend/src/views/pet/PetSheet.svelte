@@ -28,9 +28,11 @@
   const MOOD: Record<PetPose, string> = {
     idle: 'is awake and ready for the next shift.',
     fly: 'is flying along with your shift.',
-    drowsy: "is getting sleepy: you're past today's target.",
+    drowsy: "is getting sleepy: today's target is almost done.",
     sleep: 'is asleep. Starting a shift wakes it up.',
   };
+  // Drowsy starts at TIRED_AT (75%) of the target, so only overtime is "past" it.
+  const mood = $derived(v.pose === 'drowsy' && v.overtime ? "is getting sleepy: you're past today's target." : MOOD[v.pose]);
 
   /** What a look's card says under its name. */
   function lookNote(s: SkinInfo, level: number): string {
@@ -63,7 +65,7 @@
     <div class="stage">
       <PetSprite kind={v.kind} pose={v.pose} skin={v.skin} bazooka={v.bazooka} animate={$motion === 'full'} scale={2} />
     </div>
-    <p class="mood"><strong>{v.name}</strong> {MOOD[v.pose]}</p>
+    <p class="mood"><strong>{v.name}</strong> {mood}</p>
   </div>
 
   {#if v.level && v.energy}
@@ -97,6 +99,9 @@
           aria-valuenow={v.energy.pct}
         ><span style="width: {v.energy.pct}%"></span></span>
         <span class="note">{fmtHours(v.energy.hours)} h of {fmtHours(v.energy.goal)} h in the last 7 days. Days off never drain it.</span>
+        {#if v.streak >= 2}
+          <span class="streak">🔥 {v.streak} workdays at target in a row</span>
+        {/if}
       </div>
     </div>
 
@@ -207,6 +212,16 @@
     inset: 0 auto 0 0;
     border-radius: inherit;
     transition: width var(--dur-slow) var(--ease-out);
+  }
+  .streak {
+    align-self: flex-start;
+    margin-top: 2px;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--amber) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent);
   }
   .xp > span {
     background: linear-gradient(90deg, var(--violet), var(--magenta));
