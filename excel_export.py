@@ -3,7 +3,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 from storage import WorkEntry
-from utils import is_overnight
+from utils import is_overnight, week_key
 
 
 # ── shared helpers ─────────────────────────────────────────────────────────────
@@ -63,6 +63,7 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
 
     # Column widths
     ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 14
     ws.column_dimensions["C"].width = 10
     ws.column_dimensions["D"].width = 10
     ws.column_dimensions["E"].width = 12
@@ -75,16 +76,26 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
     # Row 1 — headers
     ws["A1"] = "PVM"
     ws["A1"].font = bold
+    # the shift keeps a re-import of this file from turning every shift
+    # into the default one
+    ws["B1"] = "Shift"
+    ws["B1"].font = bold
     ws["C1"] = "Start"
     ws["C1"].font = bold
     ws["D1"] = "End"
     ws["D1"].font = bold
     ws["E1"] = "Total (h)"
     ws["E1"].font = bold
+    ws["G1"] = "Week (h)"
+    ws["G1"].font = bold
+    ws.freeze_panes = "A2"
+    wb.properties.creator = "Työaikaweleho"
+    wb.properties.title = f"Hours {date(year, month, 1):%B %Y}"
 
     # Data rows — sorted by (date, time_in), starting at row 2
     sorted_entries = sorted(entries, key=lambda e: (e.date, e.time_in))
     total = 0.0
+    week_total = 0.0
 
     for i, entry in enumerate(sorted_entries):
         r = i + 2
@@ -93,6 +104,8 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
         d = date.fromisoformat(entry.date)
         ws[f"A{r}"] = d
         ws[f"A{r}"].number_format = "DD.MM.YYYY"
+
+        ws[f"B{r}"] = entry.job_shift
 
         if entry.time_in:
             ws[f"C{r}"] = _time_fraction(entry.time_in)
@@ -110,12 +123,24 @@ def _export_simple(entries: list[WorkEntry], year: int, month: int,
             hours = _shift_fraction(entry)
             if hours is not None:
                 total += hours
+                week_total += hours
                 ws[f"E{r}"] = hours
                 ws[f"E{r}"].number_format = "[H]:MM"
                 ws[f"E{r}"].alignment = center
         else:
             ws[f"D{r}"] = "In progress"
             ws[f"D{r}"].alignment = center
+
+        # Week subtotal (a value, see _shift_fraction) on each week's last row
+        nxt = sorted_entries[i + 1] if i + 1 < len(sorted_entries) else None
+        if nxt is None or week_key(date.fromisoformat(nxt.date)) != week_key(d):
+            ws[f"G{r}"] = week_total
+            ws[f"G{r}"].number_format = "[H]:MM"
+            ws[f"G{r}"].alignment = center
+            week_total = 0.0
+
+    if sorted_entries:
+        ws.auto_filter.ref = f"A1:E{len(sorted_entries) + 1}"
 
     # Summary — Total label + total hours in column G
     last_data_row = len(sorted_entries) + 1  # row number of last data row
@@ -216,18 +241,19 @@ def _export_full(entries: list[WorkEntry], year: int, month: int,
         cell.fill  = gray_fill; cell.alignment = center
         cell.border = _thin_border()
 
-    # Group entries by ISO week
-    by_week: dict[int, list[WorkEntry]] = {}
+    # Group entries by ISO (year, week): late December can be week 1 of the
+    # next year and early January week 53 of the last, so the week number
+    # alone sorts them to the wrong end of the month
+    by_week: dict[tuple[int, int], list[WorkEntry]] = {}
     for e in sorted(entries, key=lambda x: (x.date, x.time_in)):
         d  = date.fromisoformat(e.date)
-        wk = d.isocalendar()[1]
-        by_week.setdefault(wk, []).append(e)
+        by_week.setdefault(week_key(d), []).append(e)
 
     current_row = 13
     total = 0.0
 
-    for week_num in sorted(by_week.keys()):
-        for entry in by_week[week_num]:
+    for week in sorted(by_week.keys()):
+        for entry in by_week[week]:
             r = current_row
             ws.row_dimensions[r].height = 16
 
