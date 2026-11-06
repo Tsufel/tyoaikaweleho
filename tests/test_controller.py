@@ -373,6 +373,44 @@ def test_stop_session_clear_failure_is_logged(env, monkeypatch):
     assert "session.json" in open(storage.ERROR_LOG, encoding="utf-8").read()
 
 
+def test_stop_session_left_behind_does_not_block_start(env, monkeypatch):
+    """session.json survives a saved STOP: no phantom 'unfinished shift'
+    and the next START works first time."""
+    ctrl, clock = env
+    _started(ctrl, clock)
+    clock.now = T0 + timedelta(hours=8)
+    with monkeypatch.context() as m:
+        m.setattr(tm, "clear_saved_session", _fail)
+        r = ctrl.timer_stop()
+    assert r["status"] == "saved" and r["timer"]["recovery_pending"] is False
+    assert os.path.exists(tm._SESSION_FILE)
+    clock.now = T0 + timedelta(hours=9)
+    r = ctrl.timer_start("now")
+    assert r["status"] == "ok" and r["timer"]["running"]
+    assert "saved_entry_id" not in tm.load_saved_session()
+    assert len(storage.load_all_entries()) == 1
+
+
+def test_stop_near_24h_by_the_clock_is_capped_not_zero(env):
+    """09:00:30 → 09:00:10 the next day is 1439 elapsed minutes but would
+    be saved as 09:00–09:00 (0 min): it counts as a full day."""
+    ctrl, clock = env
+    start = datetime(2026, 9, 23, 9, 0, 30)
+    token = _started(ctrl, clock, start=start)
+    clock.now = datetime(2026, 9, 24, 9, 0, 10)
+    r = ctrl.timer_stop("button")
+    assert r["confirm"]["kind"] == "over_24h"
+    r = ctrl.timer_stop("button", _answer("over_24h", "save", token))
+    assert r["entry"]["time_out"] == "17:00" and r["entry"]["minutes"] == 480
+
+
+def test_stop_long_check_goes_by_the_clock(env):
+    ctrl, clock = env
+    _started(ctrl, clock, start=datetime(2026, 9, 23, 9, 0, 50))
+    clock.now = datetime(2026, 9, 23, 23, 1, 10)      # 840 elapsed, 841 on the sheet
+    assert ctrl.timer_stop("button")["confirm"]["kind"] == "long_shift"
+
+
 # ── discard ──────────────────────────────────────────────────────────────────
 
 def test_discard_not_running(env):
@@ -566,6 +604,33 @@ def test_recovery_save_invalid_end(env):
     r = ctrl.recovery_resolve("save", end="xx")
     assert r["status"] == "invalid" and r["field"] == "end"
     assert r["recovery"]["start_iso"] == "2026-09-23T07:00:00"
+
+
+def test_recovery_save_zero_length_is_invalid(env, tmp_timer):
+    ctrl, _ = env
+    _crash(T0 - timedelta(hours=3))
+    r = ctrl.recovery_resolve("save", end="07:00")
+    assert r["status"] == "invalid" and r["field"] == "end"
+    assert "after the start" in r["message"] and r["recovery"]
+    assert storage.load_all_entries() == [] and os.path.exists(tm._SESSION_FILE)
+
+
+def test_recovery_save_long_asks_first(env, tmp_timer):
+    ctrl, _ = env
+    _crash(T0 - timedelta(hours=3))
+    token = ctrl.recovery()["start_iso"]
+    r = ctrl.recovery_resolve("save", end="06:30")       # 23h 30m overnight
+    c = r["confirm"]
+    assert c["kind"] == "long_entry" and c["token"] == token
+    assert c["details"]["elapsed_minutes"] == 1410 and c["details"]["overnight"]
+    assert r["recovery"]["start_iso"] == token
+    r = ctrl.recovery_resolve("save", "06:30", _answer("long_entry", "cancel", token))
+    assert r["status"] == "cancelled" and r["recovery"]
+    assert storage.load_all_entries() == []
+    r = ctrl.recovery_resolve("save", "06:30", _answer("long_entry", "save", "other"))
+    assert r["error"]["code"] == "stale"
+    r = ctrl.recovery_resolve("save", "06:30", _answer("long_entry", "save", token))
+    assert r["status"] == "saved" and r["entry"]["minutes"] == 1410
 
 
 def test_recovery_save_fails(env, monkeypatch, tmp_timer):

@@ -45,6 +45,14 @@ def _epoch_ms(dt: datetime) -> int:
     return int(dt.timestamp() * 1000)
 
 
+def _wall_minutes(start: datetime, end: datetime) -> int:
+    """Whole clock minutes from start to end, the way the HH:MM entry
+    counts them (seconds dropped on both ends)."""
+    a = start.replace(second=0, microsecond=0)
+    b = end.replace(second=0, microsecond=0)
+    return max(0, int((b - a).total_seconds() // 60))
+
+
 def _fingerprint(e) -> str:
     return f"{e.id}|{e.date}|{e.job_shift}|{e.time_in}|{e.time_out}"
 
@@ -75,7 +83,13 @@ class ShiftController:
         return self._clock()
 
     def _session_pending(self) -> bool:
-        return not self._timer.is_running and timer_module.load_saved_session() is not None
+        """An unfinished shift waits in session.json. One that names an
+        entry already saved (STOP saved it, then session.json couldn't be
+        removed) doesn't count: recovery() just tidies it away."""
+        if self._timer.is_running:
+            return False
+        session = timer_module.load_saved_session()
+        return session is not None and not self._already_saved(session)
 
     @staticmethod
     def _setting(getter, fallback):
@@ -187,16 +201,17 @@ class ShiftController:
         return R.error("not_found", "That entry no longer exists.")
 
     @staticmethod
-    def _long_entry_confirm(t_in: str, t_out: str, minutes: int) -> dict:
+    def _long_entry_confirm(t_in: str, t_out: str, minutes: int,
+                            token: str | None = None, **payload) -> dict:
         overnight = is_overnight(t_in, t_out)
         return R.needs_confirm(
             "long_entry", "Long shift",
             f"{t_in}–{t_out} is {format_duration(minutes)}"
             f"{' (ending the next day)' if overnight else ''}.\n\nSave it anyway?",
             [opt("save", "Save anyway", "primary"), opt("cancel", "Cancel", "neutral")],
-            default="save", cancel="cancel", icon="warning",
+            default="save", cancel="cancel", icon="warning", token=token,
             details={"time_in": t_in, "time_out": t_out, "overnight": overnight,
-                     "elapsed_minutes": minutes})
+                     "elapsed_minutes": minutes}, **payload)
 
     def _backdate_confirm(self, t: str, earlier: datetime, now: datetime) -> dict:
         minutes = int((now - earlier).total_seconds() // 60)
@@ -414,10 +429,14 @@ class ShiftController:
         t = self._timer
         start, job_shift = t.start_dt, t.job_shift
         token = _iso(start)
-        elapsed = (self._now() - start).total_seconds()
+        now = self._now()
+        elapsed = (now - start).total_seconds()
         minutes = max(0, int(elapsed // 60))
         details = {"start_iso": token, "elapsed_minutes": minutes}
-        long = is_long_shift(minutes)
+        # the entry keeps HH:MM only, so the limits go by whole clock minutes:
+        # 09:00:30 → 09:00:10 next day is 1439 elapsed but 1440 on the sheet
+        wall = _wall_minutes(start, now)
+        long = is_long_shift(wall)
 
         if source == "shortcut":
             choice = answer(confirm, "stop_shift", token)
@@ -438,7 +457,7 @@ class ShiftController:
             return R.discarded("Shift under a minute — not saved", timer=self.timer_state())
 
         time_out = None
-        if minutes >= MAX_ENTRY_MINUTES:
+        if wall >= MAX_ENTRY_MINUTES:
             capped = start + timedelta(hours=8)
             choice = answer(confirm, "over_24h", token)
             if choice is None:
@@ -479,10 +498,15 @@ class ShiftController:
             if choice != "stop":
                 return R.cancelled(timer=self.timer_state())
 
+        return self._save_stopped(start, job_shift, time_out or now.strftime("%H:%M"))
+
+    def _save_stopped(self, start: datetime, job_shift: str, time_out: str) -> dict:
+        """Stop the running shift and save it as start–time_out."""
+        t = self._timer
         entry = storage.WorkEntry(
             id=storage.new_entry_id(), date=start.strftime("%Y-%m-%d"),
             job_shift=job_shift, time_in=start.strftime("%H:%M"),
-            time_out=time_out or self._now().strftime("%H:%M"))
+            time_out=time_out)
         t.stop()
         self._mark_saved(entry.id)
         try:
@@ -581,10 +605,24 @@ class ShiftController:
                 if t_out is None:
                     return R.invalid("end", "End time must be a valid time (e.g. 17:00).",
                                      timer=self.timer_state(), recovery=rec)
+                t_in = start.strftime("%H:%M")
+                minutes = entry_minutes(t_in, t_out)
+                if minutes == 0:
+                    return R.invalid("end", f"End time must be after the start ({t_in}).",
+                                     timer=self.timer_state(), recovery=rec)
+                if is_long_shift(minutes):
+                    try:
+                        choice = answer(confirm, "long_entry", token)
+                    except Stale:
+                        return R.stale(timer=self.timer_state(), recovery=rec)
+                    if choice is None:
+                        return self._long_entry_confirm(t_in, t_out, minutes, token,
+                                                        timer=self.timer_state(), recovery=rec)
+                    if choice != "save":
+                        return R.cancelled(timer=self.timer_state(), recovery=rec)
                 entry = storage.WorkEntry(
                     id=storage.new_entry_id(), date=start.strftime("%Y-%m-%d"),
-                    job_shift=rec["job_shift"], time_in=start.strftime("%H:%M"),
-                    time_out=t_out)
+                    job_shift=rec["job_shift"], time_in=t_in, time_out=t_out)
                 self._mark_saved(entry.id)
                 try:
                     storage.save_entry(entry)
