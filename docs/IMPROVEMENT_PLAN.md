@@ -45,7 +45,24 @@ palette), 94 (work anniversary).
 
 ## Progress log
 
-- Round 1: _in progress_
+- Round 1: done and merged (A, B, C, D, E, F, H; G still running at the time of
+  writing). 80 ideas shipped:
+  - A data safety: 1, 68, 34, 66, 35, 48, 67, 77, 39, 71, 73
+  - B timer: 5, 7, 8, 6, 2, 3, 11, 12, 13, 113 (119 skipped: it needs this
+    week's minutes on the timer side, so it moved to round 2)
+  - C entries: 112, 21, 23, 29, 19, 122, 22, 30, 25, 26, 20, 28, 24
+  - D Excel: 36, 37, 38, 45, 47, 44, 115
+  - E shell / a11y: 50, 52, 51, 53, 63, 54, 123, 55, 57, 59, 61, 65, 64, 58
+  - F gamification: 81, 82, 84, 85, 120, 87, 88, 89, 90, 91, 92, 93, 86
+  - H devex: 108, 100, 101, 102, 103, 104, 105, 106, 107, 97, 98, 109
+
+  After the merge: 867 pytest, 766 vitest, ruff clean, svelte-check 0 errors,
+  and the Vite build passes. ui-overhaul (the owner's chart work) is merged in.
+- Round 2: _in progress_. Five build streams (timer: 10, 14, 4, 15, 119;
+  entries: 18, 114; holidays and fun: 117, 118, 94, 124, 125, 126; devex and
+  perf: 99, 31/72; shell: 62, 56, plus the data-recovery notice), and two
+  reviewers hunting bugs in the round-1 diff (backend, frontend). #69 waits
+  until G lands, since both touch backups.
 
 ## Idea catalogue
 
