@@ -1,4 +1,5 @@
 import type { Action } from 'svelte/action';
+import { layoutRect, uiScale } from '../zoom';
 
 /** Move the node to <body> (escapes backdrop-filter containing blocks). */
 export const portal: Action<HTMLElement, HTMLElement | undefined> = (node, target) => {
@@ -93,10 +94,11 @@ export const tooltip: Action<HTMLElement, string | TooltipParams | null | undefi
       if (!tipOwner) watchMoves(true);
       tipOwner = node;
       node.setAttribute('aria-describedby', el.id);
-      const r = node.getBoundingClientRect();
-      const t = el.getBoundingClientRect();
+      // layout px: the UI zoom scales what we place (lib/zoom.ts)
+      const r = layoutRect(node.getBoundingClientRect());
+      const t = layoutRect(el.getBoundingClientRect());
       const below = p.placement === 'bottom' || (p.placement !== 'top' && r.top < t.height + 12);
-      const left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 8);
+      const left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), window.innerWidth / uiScale() - t.width - 8);
       el.style.left = `${left}px`;
       el.style.top = `${below ? r.bottom + 8 : r.top - t.height - 8}px`;
     }, delay);

@@ -69,11 +69,12 @@ def test_ui_prefs_defaults_and_lenient_read(tmp_storage):
                                                      "reduce_effects": True, "lulz_sound": "yes",
                                                      "liquid_glass": "x", "pet": "dragon",
                                                      "pet_name": 5, "pet_hint_seen": 1,
-                                                     "pet_skin": "plaid"}})
+                                                     "pet_skin": "plaid", "zoom": "big"}})
     assert storage.get_ui_prefs() == {"lulz": False, "reduce_effects": True,
                                       "lulz_sound": False, "liquid_glass": False,
                                       "target_hours": 8.0, "pet": "off", "pet_name": "",
-                                      "pet_hint_seen": False, "pet_skin": "classic"}
+                                      "pet_hint_seen": False, "pet_skin": "classic",
+                                      "zoom": 100}
 
 
 def test_set_ui_prefs_partial(tmp_storage):
@@ -82,7 +83,7 @@ def test_set_ui_prefs_partial(tmp_storage):
                                                          "lulz_sound": False, "liquid_glass": False,
                                                          "target_hours": 6.0, "pet": "off",
                                                          "pet_name": "", "pet_hint_seen": False,
-                                                         "pet_skin": "classic"}
+                                                         "pet_skin": "classic", "zoom": 100}
 
 
 def test_set_ui_prefs_lulz_sound_round_trips(tmp_storage):

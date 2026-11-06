@@ -178,7 +178,7 @@ The current shift must never be lost:
 | `get_settings()` | — | `R<{settings: Settings, shifts: string[]}>` |
 | `save_settings(draft)` | `SettingsDraft` | `R<{settings: Settings, shifts: string[]}>` §6.9 |
 | `add_job_shift(name)` | `string` | `R<{added: boolean, shifts: string[]}>`; `added:false` + message `"'X' is already in the shift list."` when present (case-insensitive); `invalid` when blank |
-| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects/Liquid glass) that do not go through the Settings Save button |
+| `save_ui_prefs(prefs)` | `Partial<UiPrefs>` | `R<{settings: Settings}>` — instant toggles (Lulz/Lulz sound/Reduce effects/Liquid glass/UI zoom) that do not go through the Settings Save button |
 
 ### Stats
 | method | params | returns |
@@ -431,7 +431,7 @@ Bootstrap = {
   employee_name:'', manager_name:'',
   ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
   liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false,
-  pet_skin:'classic'}}`. `pet_skin` is `'classic'|'cosmic'|'neon'|'gilded'|'legend'`
+  pet_skin:'classic', zoom:100}}`. `pet_skin` is `'classic'|'cosmic'|'neon'|'gilded'|'legend'`
   (a look not yet unlocked by the pet's level is drawn as classic).
   `employee_name` / `manager_name` are printed after EMPLOYEE: / MANAGER: (B3 /
   B5) on the Full sheet; `''` leaves the line blank, as before. They are saved
@@ -446,7 +446,10 @@ Bootstrap = {
   `pet` is `'off'` and this is false.
   `lulz_sound` (default off) enables the synthesized fire sound; it only plays
   while Lulz is effective. `liquid_glass` (default off) turns on the iOS-style
-  Liquid glass appearance (see `stores/glass.ts`). Frontend and backend ship
+  Liquid glass appearance (see `stores/glass.ts`). `zoom` (default 100) is the
+  in-app UI zoom in percent, 80 to 150 in steps of 10 (Ctrl+= / Ctrl+- / Ctrl+0,
+  `lib/zoom.ts`); anything else is `invalid(field:'ui_prefs')`, and a bad stored
+  value reads as 100. Frontend and backend ship
   together: `merge_ui_prefs` rejects unknown keys. Bool prefs are read leniently (a non-bool stored
   value falls back to false) but saved strictly (non-bool → `invalid`).
 - `DlcStatus {state:'missing'|'ok'|'incompatible', version, update_version,
@@ -675,7 +678,17 @@ foundation-owned stores/registries below; ask the foundation owner for changes.
   `view.shifts` / `view.stats` (Ctrl+1/2/3, main and stats), `stats.back`
   (Esc on Stats), `help.shortcuts` (? or F1 on every route; ? not while
   typing) opens the cheat sheet, and `wizard.secret` runs on the Konami code
-  (↑↑↓↓←→←→BA, not while typing; a toast and some fx, nothing saved). The
+  (↑↑↓↓←→←→BA, not while typing; a toast and some fx, nothing saved).
+  `zoom.in` / `zoom.out` / `zoom.reset` (Ctrl+= or Ctrl++, Ctrl+-, Ctrl+0;
+  every route, while typing and also inside a modal) step `ui_prefs.zoom`
+  through `lib/zoom.ts` (CSS `zoom` on `<html>`; Popover and tooltips place
+  themselves in layout px via `layoutRect`/`uiScale`); `harden.ts` leaves
+  those keys to shortcuts.ts, which always stops the browser zoom.
+  `palette.open` (Ctrl+K, every route, not over a modal) opens the command
+  palette (`views/modals/CommandPalette.svelte`, items and fuzzy filter in
+  `lib/commandPalette.ts`): it lists only items whose route matches and
+  that have a registered handler (`hasCommand`), Undo only while a toast
+  can undo; ↑/↓ choose, Enter runs, Esc closes. The
   key list lives once in `lib/shortcutList.ts` (`SHORTCUT_GROUPS`, with
   `SHORTCUT_LABELS` derived for tooltips); Settings and the cheat sheet both
   render it. Gating as v1.3: nothing while a modal is

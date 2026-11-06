@@ -14,6 +14,7 @@ export const DEFAULT_UI_PREFS: UiPrefs = {
   pet_name: '',
   pet_hint_seen: false,
   pet_skin: 'classic',
+  zoom: 100,
 };
 
 export const DEFAULT_SETTINGS: Settings = {

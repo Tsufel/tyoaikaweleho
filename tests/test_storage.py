@@ -675,6 +675,25 @@ def test_ui_prefs_pet_skin(tmp_storage):
     assert storage.get_ui_prefs()["pet_skin"] == "classic"
 
 
+def test_ui_prefs_zoom(tmp_storage):
+    assert storage.get_ui_prefs()["zoom"] == 100
+    assert storage.set_ui_prefs({"zoom": 130})["zoom"] == 130
+    assert storage.set_ui_prefs({"zoom": 80.0})["zoom"] == 80
+    assert isinstance(storage.get_ui_prefs()["zoom"], int)
+    for bad in (70, 160, 105, float("nan"), "100", False, None):
+        with pytest.raises(ValueError):
+            storage.set_ui_prefs({"zoom": bad})
+    assert storage.get_ui_prefs()["zoom"] == 80
+    # a damaged or hand-edited value falls back to 100 %; old files have no key
+    data = storage._load_raw()
+    data["ui_prefs"]["zoom"] = 999
+    storage._save_raw(data)
+    assert storage.get_ui_prefs()["zoom"] == 100
+    del data["ui_prefs"]["zoom"]
+    storage._save_raw(data)
+    assert storage.get_ui_prefs()["zoom"] == 100
+
+
 # ── tolerant reader (2.1.4): unknown entry keys ──────────────────────────────
 
 def _raw_append(*rows):

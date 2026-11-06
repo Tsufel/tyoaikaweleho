@@ -153,6 +153,27 @@ describe('mock API', () => {
     if (r.status === 'error') expect(r.error.code).toBe('network');
   });
 
+  it('save_ui_prefs takes a zoom level and rejects anything else', async () => {
+    const api: Api = createMockApi();
+    const ok = await settle(api.save_ui_prefs({ zoom: 120 }));
+    expect(ok.ok && ok.settings.ui_prefs.zoom).toBe(120);
+    for (const bad of [75, 115, 160]) {
+      const r = await settle(api.save_ui_prefs({ zoom: bad }));
+      expect(r.status).toBe('invalid');
+    }
+    const s = await settle(api.get_settings());
+    expect(s.ok && s.settings.ui_prefs.zoom).toBe(120);
+  });
+
+  it('&zoom=130 seeds the UI zoom; a bad one is 100', async () => {
+    setFlags('?mock&zoom=130');
+    let r = await settle(createMockApi().get_settings());
+    expect(r.ok && r.settings.ui_prefs.zoom).toBe(130);
+    setFlags('?mock&zoom=125');
+    r = await settle(createMockApi().get_settings());
+    expect(r.ok && r.settings.ui_prefs.zoom).toBe(100);
+  });
+
   it('&lulz&glass&skin=neon seed the UI prefs', async () => {
     setFlags('?mock&lulz&glass&skin=neon&pet=wizard');
     const api: Api = createMockApi();

@@ -12,7 +12,7 @@ export interface ShortcutRow {
 }
 
 export interface ShortcutGroup {
-  title: 'Timer' | 'Shifts' | 'Navigation' | 'Settings';
+  title: 'Timer' | 'Shifts' | 'Navigation' | 'View' | 'Settings';
   rows: ShortcutRow[];
 }
 
@@ -46,7 +46,16 @@ export const SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ['Ctrl+2'], what: 'Shifts', cmd: 'view.shifts' },
       { keys: ['Ctrl+3'], what: 'Stats', cmd: 'view.stats' },
       { keys: ['Esc'], what: 'Leave Stats', cmd: 'stats.back' },
+      { keys: ['Ctrl+K'], what: 'Find a command', cmd: 'palette.open' },
       { keys: ['?', 'F1'], what: 'This list of shortcuts', cmd: 'help.shortcuts' },
+    ],
+  },
+  {
+    title: 'View',
+    rows: [
+      { keys: ['Ctrl+=', 'Ctrl++'], what: 'Zoom in', cmd: 'zoom.in' },
+      { keys: ['Ctrl+-'], what: 'Zoom out', cmd: 'zoom.out' },
+      { keys: ['Ctrl+0'], what: 'Reset zoom to 100 %', cmd: 'zoom.reset' },
     ],
   },
   {

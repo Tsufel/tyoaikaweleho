@@ -1082,7 +1082,8 @@ def test_get_settings_defaults(env):
     assert s["export_format"] in ("Simple", "Full")
     assert s["ui_prefs"] == {"lulz": False, "reduce_effects": False, "lulz_sound": False,
                              "liquid_glass": False, "target_hours": 8.0, "pet": "off",
-                             "pet_name": "", "pet_hint_seen": False, "pet_skin": "classic"}
+                             "pet_name": "", "pet_hint_seen": False, "pet_skin": "classic",
+                             "zoom": 100}
 
 
 def test_save_settings(env):
@@ -2042,3 +2043,14 @@ def test_export_remembers_last_path(env, monkeypatch):
     assert ctrl.last_export() is None
     ctrl.export_month(2026, 9, "C:/x/out.xlsx")
     assert ctrl.last_export() == "C:/x/out.xlsx"
+
+
+def test_save_ui_prefs_zoom(env):
+    ctrl, _ = env
+    r = ctrl.save_ui_prefs({"zoom": 120})
+    assert r["ok"] and r["settings"]["ui_prefs"]["zoom"] == 120
+    assert storage.get_ui_prefs()["zoom"] == 120
+    for bad in (75, 155, 115, "110", True, None):
+        r = ctrl.save_ui_prefs({"zoom": bad})
+        assert not r["ok"] and r["status"] == "invalid" and r["field"] == "ui_prefs"
+    assert storage.get_ui_prefs()["zoom"] == 120

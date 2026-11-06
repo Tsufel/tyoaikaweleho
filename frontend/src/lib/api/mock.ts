@@ -60,6 +60,7 @@ import {
 } from '../time';
 import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
 import { computeRecords } from './mockRecords';
+import { ZOOM_LEVELS } from '../zoom';
 
 /** storage.PET_SKINS */
 const PET_SKIN_IDS: readonly PetSkinId[] = ['classic', 'cosmic', 'neon', 'gilded', 'legend'];
@@ -248,6 +249,8 @@ export function createMockApi(): Api {
       pet_hint_seen: q.has('nopethint'),
       // &skin=neon: start in that look (still drawn classic below its level)
       pet_skin: (PET_SKIN_IDS as readonly string[]).includes(q.get('skin') ?? '') ? (q.get('skin') as PetSkinId) : 'classic',
+      // &zoom=120: start at that UI zoom
+      zoom: ZOOM_LEVELS.includes(Number(q.get('zoom'))) ? Number(q.get('zoom')) : 100,
     },
   };
   let dlc: DlcStatus = q.has('dlc')
@@ -1039,6 +1042,9 @@ ${saveFailMsg()}`, { timer: timerState() });
       }
       if (prefs.pet_skin !== undefined && !(PET_SKIN_IDS as readonly unknown[]).includes(prefs.pet_skin)) {
         return invalid('ui_prefs', `pet_skin must be one of ${PET_SKIN_IDS.join(', ')}`);
+      }
+      if (prefs.zoom !== undefined && !ZOOM_LEVELS.includes(prefs.zoom)) {
+        return invalid('ui_prefs', 'zoom must be 80 to 150 in steps of 10');
       }
       settings = { ...settings, ui_prefs: { ...settings.ui_prefs, ...prefs } };
       return okR('saved', { settings: structuredClone(settings) });

@@ -10,15 +10,16 @@
   import { registerCommand, runCommand, SHORTCUT_LABELS } from './lib/shortcuts';
   import { animationsActive, bootstrap, lulz, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
   import { goToCurrentMonth, refreshMonth, setViewMonth, shiftMonth, viewMonth } from './lib/stores/entries';
-  import { applyRecoveryResult, pendingRecovery } from './lib/stores/recovery';
+  import { applyRecoveryResult, notifyDataRecovery, pendingRecovery } from './lib/stores/recovery';
   import { glassMode, startGlass } from './lib/stores/glass';
   import LiquidFilters from './lib/glass/LiquidFilters.svelte';
   import { liquidGlass } from './lib/glass/liquidGlass';
-  import { applySettings, dlc, settings } from './lib/stores/settings';
+  import { applySettings, dlc, saveUiPrefs, settings } from './lib/stores/settings';
   import { setTimer, timer } from './lib/stores/timer';
   import { runUndo, toast } from './lib/stores/toasts';
   import { startTheme } from './lib/theme/theme';
   import { MONTHS, monthLabel } from './lib/time';
+  import { applyZoom, cleanZoom, stepZoom, ZOOM_DEFAULT } from './lib/zoom';
   import { tooltip } from './lib/ui/actions';
   import Button from './lib/ui/Button.svelte';
   import ConfirmHost from './lib/ui/ConfirmHost.svelte';
@@ -37,6 +38,7 @@
   import { handleCloseRequest } from './views/modals/closeFlow';
   import RecoverShiftModal from './views/modals/RecoverShiftModal.svelte';
   import ShortcutsModal from './views/modals/ShortcutsModal.svelte';
+  import CommandPalette from './views/modals/CommandPalette.svelte';
   import { emitFx } from './fx/fire/fxBus';
   import { rollBazooka } from './views/pet/petState';
   import EntriesView from './views/entries/EntriesView.svelte';
@@ -54,8 +56,12 @@
   let changelog = $state<ChangelogBlock[] | null>(null);
   let monthBtn = $state<HTMLButtonElement>();
   let monthOpen = $state(false);
-  let wide = $state(true);
+  let winWidth = $state(window.innerWidth);
   let shortcutsOpen = $state(false);
+  let paletteOpen = $state(false);
+  /** "Zoom 110 %" shown briefly after a zoom key. */
+  let zoomMsg = $state('');
+  let zoomMsgTimer: ReturnType<typeof setTimeout> | undefined;
   // Bumped by Retry when a lazy chunk failed to load.
   let statsTry = $state(0);
   let contentEl = $state<HTMLElement>();
@@ -85,6 +91,15 @@
     if ($settings.ui_prefs.pet !== 'off') rollBazooka(0);
   }
 
+  const zoom = $derived(cleanZoom($settings.ui_prefs.zoom));
+
+  function setZoom(z: number) {
+    zoomMsg = `Zoom ${z} %`;
+    clearTimeout(zoomMsgTimer);
+    zoomMsgTimer = setTimeout(() => (zoomMsg = ''), 1500);
+    if (z !== zoom) void saveUiPrefs({ zoom: z });
+  }
+
   // App-level fallbacks, registered before child views so theirs win.
   const offs = [
     registerCommand('settings.open', () => void navigate('settings')),
@@ -101,8 +116,17 @@
       shortcutsOpen = true;
     }),
     registerCommand('wizard.secret', wizardSecret),
+    registerCommand('zoom.in', () => setZoom(stepZoom(zoom, 1))),
+    registerCommand('zoom.out', () => setZoom(stepZoom(zoom, -1))),
+    registerCommand('zoom.reset', () => setZoom(ZOOM_DEFAULT)),
+    registerCommand('palette.open', () => {
+      paletteOpen = true;
+    }),
   ];
-  onDestroy(() => offs.forEach((f) => f()));
+  onDestroy(() => {
+    offs.forEach((f) => f());
+    clearTimeout(zoomMsgTimer);
+  });
 
   const sections: { value: Section; label: string; icon: 'timer' | 'list' | 'chart' }[] = [
     { value: 'timer', label: 'Timer', icon: 'timer' },
@@ -145,13 +169,7 @@
     changelog = b.changelog?.length ? b.changelog : null;
     // §6.3: offered after the changelog; START stays blocked until resolved.
     pendingRecovery.set(b.recovery);
-    if (b.data_recovery) {
-      toast(
-        `Your hours file was damaged and has been restored from a backup (${b.data_recovery.source.split(/[\\/]/).pop()}). ` +
-          'Check your latest shifts.',
-        { tone: 'warning', ms: 0 },
-      );
-    }
+    notifyDataRecovery(b.data_recovery);
     phase = 'ready';
   }
 
@@ -176,6 +194,9 @@
     });
   });
 
+  // the UI zoom (ui_prefs.zoom) on <html>
+  $effect(() => applyZoom(zoom));
+
   // html[data-motion], html[data-paused]
   $effect(() => {
     document.documentElement.dataset.motion = $motion;
@@ -196,10 +217,8 @@
     const offActivate = onEvent('app:activate', () => window.focus());
     // load() failed and Python's watchdog showed the window anyway
     const introFallback = setTimeout(() => (introPlay = true), 7000);
-    const mq = window.matchMedia('(min-width: 1080px)');
-    const onMq = () => (wide = mq.matches);
-    onMq();
-    mq.addEventListener('change', onMq);
+    const onResize = () => (winWidth = window.innerWidth);
+    window.addEventListener('resize', onResize);
 
     void (async () => {
       await load();
@@ -223,10 +242,12 @@
       offClose();
       offActivate();
       clearTimeout(introFallback);
-      mq.removeEventListener('change', onMq);
+      window.removeEventListener('resize', onResize);
     };
   });
 
+  // two panes side by side from 1080 layout px (the zoom makes fewer fit)
+  const wide = $derived(winWidth * (100 / zoom) >= 1080);
   const showTimer = $derived($route === 'main' && (wide || $section === 'timer'));
   const showShifts = $derived($route === 'main' && (wide || $section === 'shifts'));
   const segValue = $derived<Section>($route === 'stats' ? 'stats' : $section);
@@ -383,6 +404,12 @@
 
 {#if shortcutsOpen}
   <ShortcutsModal onclose={() => (shortcutsOpen = false)} />
+{/if}
+{#if paletteOpen}
+  <CommandPalette onclose={() => (paletteOpen = false)} />
+{/if}
+{#if zoomMsg}
+  <div class="zoom-badge glass" role="status" transition:fade={{ duration: 120 }}>{zoomMsg}</div>
 {/if}
 
 <style>
@@ -541,6 +568,18 @@
     max-width: 420px;
     text-align: center;
     color: var(--text-muted);
+  }
+  .zoom-badge {
+    position: fixed;
+    top: 76px;
+    left: 50%;
+    translate: -50% 0;
+    z-index: 200;
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
   }
   @media (max-width: 900px) {
     .name {
