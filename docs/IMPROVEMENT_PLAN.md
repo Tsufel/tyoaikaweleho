@@ -102,6 +102,13 @@ palette), 94 (work anniversary).
     (124).
   - Gates after the merge: 1128 pytest, 832 vitest, svelte-check, ruff and
     build all green.
+- Round 3 review: three read-only reviewers looked at the round-3 diff.
+  They found one real bug: when overlapping ui_prefs saves failed or
+  replied out of order, the screen could keep a value that was never
+  saved. The store now settles on the newest state Python confirmed.
+- Round 4 (inline, in the last minutes):
+  - The palette's `aria-expanded` follows whether anything matches.
+  - "Filter the month" is offered only when there is a filter box.
 
 ## Idea catalogue
 
