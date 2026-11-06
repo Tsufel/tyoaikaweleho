@@ -17,6 +17,7 @@ import {
   formFromSettings,
   isDirty,
   payPreview,
+  payRateWarning,
   SHORTCUTS,
   upToDateMessage,
 } from '../src/views/settings/settingsLogic';
@@ -113,6 +114,16 @@ describe('settings form', () => {
   it('previews pay in euros', () => {
     expect(payPreview(20, 8)).toBe('€160.00 for a 8 h day');
     expect(payPreview(null, 8)).toBeNull();
+  });
+
+  it('warns about a pay rate above 200 €/h, without blocking', () => {
+    const msg = "That's a high hourly rate. Check the decimal point.";
+    expect(payRateWarning(2050)).toBe(msg);
+    expect(payRateWarning(200.01)).toBe(msg);
+    expect(payRateWarning(200)).toBeNull();
+    expect(payRateWarning(20.5)).toBeNull();
+    expect(payRateWarning(null)).toBeNull();
+    expect(payRateWarning(Number.NaN)).toBeNull();
   });
 });
 
