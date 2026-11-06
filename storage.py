@@ -1,3 +1,4 @@
+import contextlib
 import json
 import math
 import os
@@ -80,6 +81,9 @@ class DataFileCorrupt(ValueError):
 # Read once by the controller's bootstrap to tell the user.
 last_recovery: dict | None = None
 
+# How many times data.json has been read and parsed (for tests and profiling)
+load_count = 0
+
 
 def _parse_data(raw: bytes) -> dict | None:
     """data.json's content as a dict, or None if it isn't a JSON object."""
@@ -156,13 +160,68 @@ def _recover(raw: bytes) -> dict:
 
 
 def _load_raw() -> dict:
+    """data.json freshly read and parsed: the caller may change and save it."""
+    global load_count
     _migrate_from_appdata()
     if not os.path.exists(DATA_FILE):
         return {"entries": [], "pay_rate": 20.0}
+    load_count += 1
     with open(DATA_FILE, "rb") as f:   # a locked file raises OSError: not damage
         raw = f.read()
     data = _parse_data(raw)
     return data if data is not None else _recover(raw)
+
+
+# ── per-call read cache ──────────────────────────────────────────────────────
+# One API call can ask for the entries, the pay rate, the prefs... and each
+# used to read and parse data.json again. Inside read_cache() the getters
+# share one parsed copy instead. It is only trusted while data.json's
+# (mtime, size, file id) are unchanged and no save has happened since (every
+# _save_raw bumps _write_gen), so a change from this process or another one
+# is picked up on the next read. Scopes are per thread: pywebview runs each
+# API call on its own thread. Outside a scope nothing is cached.
+
+_cache_local = threading.local()
+_write_gen = 0
+
+
+@contextlib.contextmanager
+def read_cache():
+    """Share one parsed data.json between the reads in this block (one API
+    call). Nests; the cache is dropped when the outermost block ends."""
+    depth = getattr(_cache_local, "depth", 0)
+    _cache_local.depth = depth + 1
+    try:
+        yield
+    finally:
+        _cache_local.depth = depth
+        if depth == 0:
+            _cache_local.entry = None
+
+
+def _file_key() -> tuple | None:
+    try:
+        st = os.stat(DATA_FILE)
+    except OSError:
+        return None
+    return (DATA_FILE, st.st_mtime_ns, st.st_size, st.st_ino)
+
+
+def _read_raw() -> dict:
+    """data.json for reading only: never change or save the result (use
+    _load_raw for that). Inside read_cache() it is parsed once per version
+    of the file."""
+    if not getattr(_cache_local, "depth", 0):
+        return _load_raw()
+    # key and generation are taken before reading: a change that lands
+    # while we read leaves the cached copy already stale, never wrongly fresh
+    key, gen = _file_key(), _write_gen
+    cached = getattr(_cache_local, "entry", None)
+    if key is not None and cached is not None and cached[0] == key and cached[1] == gen:
+        return cached[2]
+    data = _load_raw()
+    _cache_local.entry = (key, gen, data) if key is not None else None
+    return data
 
 
 def _encode(data: dict) -> bytes:
@@ -191,6 +250,8 @@ def _replace(src: str, dst: str):
 
 
 def _save_raw(data: dict):
+    global _write_gen
+    _write_gen += 1   # whatever happens below, cached reads are stale now
     # Atomic write: serialize to a temp file, back up the previous good
     # file, then swap the temp file into place. A crash at any point
     # leaves either the old file or the new file intact — never a
@@ -339,11 +400,11 @@ def _entries(data: dict) -> list[WorkEntry]:
 
 def load_month(year: int, month: int) -> list[WorkEntry]:
     prefix = f"{year:04d}-{month:02d}"
-    return [e for e in _entries(_load_raw()) if e.date.startswith(prefix)]
+    return [e for e in _entries(_read_raw()) if e.date.startswith(prefix)]
 
 
 def load_all_entries() -> list[WorkEntry]:
-    return _entries(_load_raw())
+    return _entries(_read_raw())
 
 
 def _sort_key(e) -> tuple:
@@ -389,7 +450,7 @@ _DEFAULT_PAY_RATE = 20.0
 
 
 def get_pay_rate() -> float:
-    rate = _load_raw().get("pay_rate", _DEFAULT_PAY_RATE)
+    rate = _read_raw().get("pay_rate", _DEFAULT_PAY_RATE)
     # bool is an int subclass; nan/inf got in through older Settings versions
     if (isinstance(rate, bool) or not isinstance(rate, (int, float))
             or not math.isfinite(rate) or rate <= 0):
@@ -404,7 +465,7 @@ def set_pay_rate(rate: float):
 
 
 def get_default_start_time() -> str:
-    return _load_raw().get("default_start_time", "09:30")
+    return _read_raw().get("default_start_time", "09:30")
 
 
 def set_default_start_time(t: str):
@@ -454,7 +515,7 @@ def get_job_shift_list() -> list[str]:
     lines: list[str] = []
     seen: set[str] = set()
     used = (e.job_shift.strip() if isinstance(e.job_shift, str) else ""
-            for e in _entries(_load_raw()))
+            for e in _entries(_read_raw()))
     for js in (*_shift_lines(_read_shifts_text()), *used):
         if js and js.casefold() not in seen:
             seen.add(js.casefold())
@@ -502,13 +563,13 @@ def get_default_job_shift() -> str:
     the first shift in the list. Older versions fell back to a hard-coded
     "GPSR" even when it wasn't a shift; that stays only for people who have
     it in their list (in shifts.txt or used in an entry)."""
-    stored = _load_raw().get("default_job_shift")
+    stored = _read_raw().get("default_job_shift")
     if isinstance(stored, str):
         return stored
     try:
         shifts = get_job_shift_list()
     except (OSError, ValueError):  # shifts.txt unreadable: the defaults plus shifts in use
-        shifts = list(_DEFAULT_SHIFTS) + [e.job_shift for e in _entries(_load_raw())]
+        shifts = list(_DEFAULT_SHIFTS) + [e.job_shift for e in _entries(_read_raw())]
     if _LEGACY_DEFAULT_SHIFT in shifts:
         return _LEGACY_DEFAULT_SHIFT
     return shifts[0] if shifts else ""
@@ -525,7 +586,7 @@ def set_default_job_shift(js: str):
 
 def get_export_format() -> str:
     """Return saved export format: 'Simple' or 'Full'. Default: 'Simple'."""
-    return _load_raw().get("export_format", "Simple")
+    return _read_raw().get("export_format", "Simple")
 
 
 def set_export_format(fmt: str):
@@ -535,7 +596,7 @@ def set_export_format(fmt: str):
 
 
 def get_export_include_pay() -> bool:
-    return bool(_load_raw().get("export_include_pay", False))
+    return bool(_read_raw().get("export_include_pay", False))
 
 
 def set_export_include_pay(val: bool):
@@ -546,7 +607,7 @@ def set_export_include_pay(val: bool):
 
 def get_last_seen_version() -> str | None:
     """Return the version string from the last time the app ran, or None on first install."""
-    return _load_raw().get("last_seen_version")
+    return _read_raw().get("last_seen_version")
 
 
 def set_last_seen_version(v: str):
@@ -560,7 +621,7 @@ APPEARANCE_MODES = ("System", "Light", "Dark")
 
 def get_appearance_mode() -> str:
     """'System', 'Light' or 'Dark'. Default: 'System' (follow Windows)."""
-    mode = _load_raw().get("appearance_mode", "System")
+    mode = _read_raw().get("appearance_mode", "System")
     return mode if mode in APPEARANCE_MODES else "System"
 
 
@@ -589,7 +650,7 @@ def _legacy_geometry(saved) -> tuple[str, bool] | None:
 def get_window_geometry() -> tuple[str, bool] | None:
     """(Tk geometry string of the restored window, was it maximised) from
     the last close, or None if never saved or unreadable."""
-    return _legacy_geometry(_load_raw().get("window_geometry"))
+    return _legacy_geometry(_read_raw().get("window_geometry"))
 
 
 def set_window_geometry(geom: str, zoomed: bool):
@@ -622,7 +683,7 @@ def get_window_placement() -> dict | None:
     """Restored-window rectangle and maximised flag from the last close:
     {v: 2, left, top, right, bottom, maximized}. Falls back to the v1 Tk
     geometry ("WxH+X+Y"); None if neither is usable."""
-    data = _load_raw()
+    data = _read_raw()
     placement = _clean_placement(data.get("window_placement"))
     if placement is not None:
         return placement
@@ -770,7 +831,7 @@ def merge_ui_prefs(base, changes: dict) -> dict:
 def get_ui_prefs() -> dict:
     """{lulz, reduce_effects, lulz_sound, liquid_glass, target_hours, pet, pet_name,
     pet_hint_seen, pet_skin}, defaults for anything unset."""
-    return _clean_ui_prefs(_load_raw().get("ui_prefs"))
+    return _clean_ui_prefs(_read_raw().get("ui_prefs"))
 
 
 def set_ui_prefs(changes: dict) -> dict:
@@ -794,7 +855,7 @@ def _clean_achievements_seen(raw) -> dict:
 def get_achievements_seen() -> dict | None:
     """{achievement id: "YYYY-MM-DD" it was met}, or None if achievements have
     never been acknowledged (first run: everything already met is backfilled)."""
-    raw = _load_raw().get("achievements_seen")
+    raw = _read_raw().get("achievements_seen")
     return None if raw is None else _clean_achievements_seen(raw)
 
 
@@ -830,7 +891,7 @@ def _sheet_name_error(key: str, v) -> str | None:
 
 def get_sheet_names() -> dict:
     """{employee_name, manager_name}: trimmed, "" when unset or unusable."""
-    data = _load_raw()
+    data = _read_raw()
     out = {}
     for key in SHEET_NAME_KEYS:
         v = data.get(key, "")

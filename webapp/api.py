@@ -31,7 +31,9 @@ def _guarded(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         try:
-            return func(self, *args, **kwargs)
+            # one API call parses data.json once (storage.read_cache)
+            with storage.read_cache():
+                return func(self, *args, **kwargs)
         except Exception as exc:
             storage.append_error_log(f"[api] {func.__name__}\n{traceback.format_exc()}")
             return R.error("internal", f"Unexpected error: {exc}")
