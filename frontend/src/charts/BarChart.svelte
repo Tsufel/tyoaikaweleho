@@ -6,6 +6,7 @@
   import type { Granularity, StatsBucket } from '../lib/api/types';
   import { reduced } from '../lib/motion';
   import { formatDuration, formatMoney } from '../lib/time';
+  import { layoutPoint } from '../lib/zoom';
   import ChartTooltip from './ChartTooltip.svelte';
   import { axisHours, axisLabels, barPath, hourScale, resize, shownLabels, stepIndex } from './chartUtils';
 
@@ -87,8 +88,8 @@
   );
 
   function pick(e: PointerEvent) {
-    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const px = e.clientX - r.left - M.left;
+    // layout px, like plotW (the UI zoom scales clientX: lib/zoom.ts)
+    const px = layoutPoint(e.clientX, 0, (e.currentTarget as HTMLElement).getBoundingClientRect()).x - M.left;
     if (px < 0 || px > plotW || !buckets.length) {
       active = null;
       return;

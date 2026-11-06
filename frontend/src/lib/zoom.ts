@@ -33,6 +33,14 @@ export function layoutRect(r: DOMRectReadOnly): { left: number; top: number; rig
   return { left: r.left / s, top: r.top / s, right: r.right / s, bottom: r.bottom / s, width: r.width / s, height: r.height / s };
 }
 
+/** A pointer position (clientX/Y, visual px) in layout px. Pass an
+ *  element's getBoundingClientRect() as `from` to get the point relative to
+ *  that element, in the same px its own width/offsets use. */
+export function layoutPoint(x: number, y: number, from?: DOMRectReadOnly): { x: number; y: number } {
+  const s = scale;
+  return { x: (x - (from?.left ?? 0)) / s, y: (y - (from?.top ?? 0)) / s };
+}
+
 /** Apply a zoom level to the page. */
 export function applyZoom(z: number, root: HTMLElement = document.documentElement): void {
   const pct = cleanZoom(z);

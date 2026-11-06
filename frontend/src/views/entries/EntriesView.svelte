@@ -11,6 +11,7 @@
   import type { EntryDraft, EntryRow, OverlapRef, SaveUndo, WorkEntry } from '../../lib/api/types';
   import { fade, flip, fly, stagger } from '../../lib/motion';
   import { registerCommand, SHORTCUT_LABELS } from '../../lib/shortcuts';
+  import { layoutPoint } from '../../lib/zoom';
   import { alert, askYesNo, choose, openSheet, reportError } from '../../lib/stores/confirm';
   import { registerEditGuard } from '../../lib/stores/editGuard';
   import {
@@ -474,7 +475,8 @@
   function onRowContext(e: MouseEvent, id: string) {
     if ((e.target as HTMLElement).closest('input')) return; // keep the text field's own menu
     e.preventDefault();
-    void openRowMenu(id, e.currentTarget as HTMLElement, { x: e.clientX, y: e.clientY });
+    // the point is a fixed element, so layout px under the UI zoom
+    void openRowMenu(id, e.currentTarget as HTMLElement, layoutPoint(e.clientX, e.clientY));
   }
 
   function onRowMenuPick(action: string) {

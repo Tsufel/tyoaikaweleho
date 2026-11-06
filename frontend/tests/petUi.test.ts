@@ -87,6 +87,33 @@ describe('petSpot', () => {
 });
 
 describe('PetCompanion', () => {
+  it('places itself in layout px under the UI zoom', async () => {
+    const { applyZoom } = await import('../src/lib/zoom');
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+    // visual px at 150 %: the 1x layout of the first petSpot case, scaled up
+    const el = (l: number, t: number, w: number, h: number) => {
+      const e = document.createElement('div');
+      e.getBoundingClientRect = () => new DOMRect(l * 1.5, t * 1.5, w * 1.5, h * 1.5);
+      return e;
+    };
+    const card = el(0, 0, 500, 700);
+    applyZoom(150, document.createElement('div'));
+    try {
+      render(PetCompanion, { card, ring: el(90, 60, 320, 320), controls: el(20, 430, 460, 100) });
+      await tick();
+      const pet = document.querySelector<HTMLElement>('.pet')!;
+      expect(pet.style.left).toBe(`${500 - 16 - 142}px`);
+      expect(pet.style.top).toBe(`${700 - 16 - 122}px`);
+      expect(pet.style.width).toBe('142px');
+    } finally {
+      applyZoom(100, document.createElement('div'));
+    }
+  });
+
   const body = () => screen.getByRole('button', { hidden: true });
   const sheets = () => get(dialogs).filter((d) => d.type === 'sheet');
 

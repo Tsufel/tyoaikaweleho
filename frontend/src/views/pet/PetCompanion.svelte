@@ -18,6 +18,7 @@
   import { saveUiPrefs } from '../../lib/stores/settings';
   import { toast } from '../../lib/stores/toasts';
   import { tooltip } from '../../lib/ui/actions';
+  import { layoutRect } from '../../lib/zoom';
   import { burst } from '../timer/timerActions';
   import {
     CHAT_CHANCE,
@@ -66,7 +67,8 @@
   let root: HTMLDivElement | undefined;
   function place() {
     if (!card || !ring || !controls) return;
-    const rect = (el: HTMLElement) => el.getBoundingClientRect();
+    // layout px, like the sprite size and the left/top it is placed with
+    const rect = (el: HTMLElement) => layoutRect(el.getBoundingClientRect());
     spot = petSpot(rect(card), rect(ring), rect(controls), SPRITE_SIZE[kind]);
   }
 
