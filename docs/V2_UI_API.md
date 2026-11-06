@@ -408,7 +408,7 @@ Bootstrap = {
   version, frozen, dev, today, now_epoch_ms,
   settings: Settings, shifts: string[], timer: TimerState,
   dlc: DlcStatus, changelog: ChangelogBlock[] | null, recovery: Recovery | null,
-  data_recovery: {source, damaged_copy} | null,  // once, after a backup replaced data.json
+  data_recovery: {source, damaged_copy, reason: 'damaged'|'missing'} | null,  // once, after a backup replaced data.json
   month: {year, month},          // initial view (today)
   error_log, data_dir, shifts_file
 }

@@ -75,8 +75,9 @@ class DataFileCorrupt(ValueError):
     """data.json can't be read and no backup could stand in for it."""
 
 
-# Set when _load_raw had to stand in a backup for a damaged data.json:
-# {"source": <file used>, "damaged_copy": <where the damaged file was kept>}.
+# Set when _load_raw had to stand in a backup for a damaged or missing
+# data.json: {"source": <file used>, "damaged_copy": <where the damaged file
+# was kept, "" if none>, "reason": "damaged" | "missing"}.
 # Read once by the controller's bootstrap to tell the user.
 last_recovery: dict | None = None
 
@@ -128,23 +129,33 @@ def _keep_damaged(raw: bytes) -> str:
         return ""
 
 
-def _recover(raw: bytes) -> dict:
-    """data.json is damaged (a crash mid-write, a disk error): keep a copy,
-    stand in the newest backup that reads, and write it back so the next
-    save doesn't back up the damaged file over a good one."""
+def _restore_from_backup(reason: str, damaged: str = "") -> dict | None:
+    """Stand in the newest backup that reads for data.json and write it
+    back, so the next save doesn't back up a bad (or empty) file over a
+    good one. None when no backup reads."""
     global last_recovery
-    damaged = _keep_damaged(raw)
     for path in _backup_candidates():
         data = _read_data_file(path)
         if data is None:
             continue
-        append_error_log(f"data.json was damaged; restored from {path}"
-                         f" (damaged copy: {damaged or 'could not be kept'})")
+        note = (f" (damaged copy: {damaged or 'could not be kept'})"
+                if reason == "damaged" else "")
+        append_error_log(f"data.json was {reason}; restored from {path}{note}")
         try:
             _save_raw(data)
         except OSError as exc:
             append_error_log(f"could not write the restored data.json: {exc}")
-        last_recovery = {"source": path, "damaged_copy": damaged}
+        last_recovery = {"source": path, "damaged_copy": damaged, "reason": reason}
+        return data
+    return None
+
+
+def _recover(raw: bytes) -> dict:
+    """data.json is damaged (a crash mid-write, a disk error): keep a copy
+    and stand in the newest backup that reads."""
+    damaged = _keep_damaged(raw)
+    data = _restore_from_backup("damaged", damaged)
+    if data is not None:
         return data
     append_error_log(f"data.json is damaged and no backup could be read"
                      f" (damaged copy: {damaged or 'could not be kept'})")
@@ -158,7 +169,11 @@ def _recover(raw: bytes) -> dict:
 def _load_raw() -> dict:
     _migrate_from_appdata()
     if not os.path.exists(DATA_FILE):
-        return {"entries": [], "pay_rate": 20.0}
+        # Gone while backups remain (deleted by hand, a sync client, a bad
+        # copy of the folder): starting empty would make the first save's
+        # snapshot an empty file and push the good ones out of rotation.
+        data = _restore_from_backup("missing")
+        return data if data is not None else {"entries": [], "pay_rate": 20.0}
     with open(DATA_FILE, "rb") as f:   # a locked file raises OSError: not damage
         raw = f.read()
     data = _parse_data(raw)

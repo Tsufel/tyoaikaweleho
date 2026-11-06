@@ -488,8 +488,10 @@ export type OcrSaveResult = Result<{
 export interface DataRecovery {
   /** The backup file that now stands in for data.json. */
   source: string;
-  /** Where the damaged data.json was kept ('' if it couldn't be). */
+  /** Where the damaged data.json was kept ('' if it couldn't be, or it was missing). */
   damaged_copy: string;
+  /** Why a backup stood in: data.json didn't read, or wasn't there at all. */
+  reason?: 'damaged' | 'missing';
 }
 
 export interface Bootstrap {

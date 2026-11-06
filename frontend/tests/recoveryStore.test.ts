@@ -54,6 +54,21 @@ describe('offerRecovery', () => {
     const [t] = get(toasts);
     expect(t.message).toContain('restored from a backup (data.json.bak)');
     expect(t.tone).toBe('warning');
+    expect(t.message).toContain('was damaged');
+  });
+
+  it('says so when data.json was missing rather than damaged', async () => {
+    fakeApi.get_recovery.mockResolvedValue({
+      ok: true,
+      status: 'ok',
+      recovery: null,
+      timer: IDLE_TIMER,
+      data_recovery: { source: 'C:\\data\\backups\\data-2026-11-05.json', damaged_copy: '', reason: 'missing' },
+    });
+    await offerRecovery();
+    const [t] = get(toasts);
+    expect(t.message).toContain('was missing');
+    expect(t.message).toContain('(data-2026-11-05.json)');
   });
 
   it('uses a recovery it is given without asking the backend', async () => {

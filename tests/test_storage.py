@@ -370,7 +370,7 @@ def test_corrupt_data_file_keeps_damaged_copy_and_rewrites(tmp_storage):
     import json
     assert json.loads((tmp_storage / "data.json").read_text(encoding="utf-8"))["entries"][0]["id"] == e1.id
     assert storage.last_recovery == {"source": str(tmp_storage / "data.json.bak"),
-                                     "damaged_copy": str(damaged)}
+                                     "damaged_copy": str(damaged), "reason": "damaged"}
     assert "restored from" in (tmp_storage / "error.log").read_text(encoding="utf-8")
 
 
@@ -408,6 +408,37 @@ def test_corrupt_data_and_bak_falls_back_to_snapshot(tmp_storage):
     (tmp_storage / "data.json.bak").write_text("{ broken too", encoding="utf-8")
     assert storage.get_pay_rate() == 12.0
     assert storage.last_recovery["source"] == str(snap_dir / "data-2026-05-02.json")
+
+
+def test_missing_data_file_restored_from_backup(tmp_storage):
+    import json
+    e1 = _entry(date="2026-05-10")
+    storage.save_entry(e1)
+    storage.save_entry(_entry(date="2026-05-11"))   # .bak holds e1
+    (tmp_storage / "data.json").unlink()
+    assert [e.id for e in storage.load_all_entries()] == [e1.id]
+    assert storage.last_recovery == {"source": str(tmp_storage / "data.json.bak"),
+                                     "damaged_copy": "", "reason": "missing"}
+    # written back, so the next save backs up the restored data, not nothing
+    assert json.loads((tmp_storage / "data.json").read_text(encoding="utf-8"))["entries"][0]["id"] == e1.id
+    assert "was missing; restored from" in (tmp_storage / "error.log").read_text(encoding="utf-8")
+    assert not list(tmp_storage.glob("data.damaged-*.json"))
+
+
+def test_missing_data_file_falls_back_to_snapshot(tmp_storage):
+    import json
+    snap_dir = tmp_storage / "backups"
+    snap_dir.mkdir()
+    (snap_dir / "data-2026-05-02.json").write_text(
+        json.dumps({"entries": [], "pay_rate": 13.0}), encoding="utf-8")
+    assert storage.get_pay_rate() == 13.0
+    assert storage.last_recovery["reason"] == "missing"
+
+
+def test_first_run_without_backups_starts_empty(tmp_storage):
+    assert storage.load_all_entries() == []
+    assert storage.last_recovery is None
+    assert not (tmp_storage / "data.json").exists()
 
 
 def test_locked_data_file_is_not_treated_as_damaged(tmp_storage, monkeypatch):

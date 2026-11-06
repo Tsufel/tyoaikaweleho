@@ -24,14 +24,19 @@ export async function offerRecovery(rec?: Recovery | null): Promise<void> {
   }
 }
 
-/** Tell the user a damaged data.json was replaced by a backup (sticky toast). */
+/** The sticky note shown after a backup stood in for data.json. */
+export function dataRecoveryText(dr: DataRecovery): string {
+  const what = dr.reason === 'missing' ? 'was missing' : 'was damaged';
+  return (
+    `Your hours file ${what} and has been restored from a backup (${dr.source.split(/[\\/]/).pop()}). ` +
+    'Check your latest shifts.'
+  );
+}
+
+/** Tell the user a damaged or missing data.json was replaced by a backup (sticky toast). */
 export function notifyDataRecovery(dr: DataRecovery | null | undefined): void {
   if (!dr) return;
-  toast(
-    `Your hours file was damaged and has been restored from a backup (${dr.source.split(/[\\/]/).pop()}). ` +
-      'Check your latest shifts.',
-    { tone: 'warning', ms: 0 },
-  );
+  toast(dataRecoveryText(dr), { tone: 'warning', ms: 0 });
 }
 
 /** Apply a recovery_resolve result: keeps the modal up on failure. */

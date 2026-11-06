@@ -10,7 +10,7 @@
   import { registerCommand, runCommand, SHORTCUT_LABELS } from './lib/shortcuts';
   import { animationsActive, bootstrap, lulz, modalOpen, motion, navigate, route, section, type Section } from './lib/stores/app';
   import { goToCurrentMonth, refreshMonth, setViewMonth, shiftMonth, viewMonth } from './lib/stores/entries';
-  import { applyRecoveryResult, pendingRecovery } from './lib/stores/recovery';
+  import { applyRecoveryResult, notifyDataRecovery, pendingRecovery } from './lib/stores/recovery';
   import { glassMode, startGlass } from './lib/stores/glass';
   import LiquidFilters from './lib/glass/LiquidFilters.svelte';
   import { liquidGlass } from './lib/glass/liquidGlass';
@@ -145,13 +145,7 @@
     changelog = b.changelog?.length ? b.changelog : null;
     // §6.3: offered after the changelog; START stays blocked until resolved.
     pendingRecovery.set(b.recovery);
-    if (b.data_recovery) {
-      toast(
-        `Your hours file was damaged and has been restored from a backup (${b.data_recovery.source.split(/[\\/]/).pop()}). ` +
-          'Check your latest shifts.',
-        { tone: 'warning', ms: 0 },
-      );
-    }
+    notifyDataRecovery(b.data_recovery);
     phase = 'ready';
   }
 
