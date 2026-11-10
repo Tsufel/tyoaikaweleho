@@ -2,6 +2,15 @@
 next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.8": [
+        "Fixed: hidden medals in Achievements and Stats no longer show up "
+        "as broken images",
+        "Settings ▸ Your data has an Error log section: save a copy of it "
+        "to send along when something goes wrong",
+        "Timer: STOP is one bar again, centred under the clock. Right-click "
+        "it (or press Shift+F10) to stop at an earlier time, or to change "
+        "the start time or the job",
+    ],
     "2.1.7": [
         "Fixed: Stats, the pet's details and Achievements open again after "
         "an update. Weleho no longer keeps an old copy of its screens",
