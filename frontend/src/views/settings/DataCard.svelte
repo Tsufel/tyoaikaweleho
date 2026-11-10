@@ -12,11 +12,16 @@
     backupStatus,
     backupNow,
     dataBusy,
+    errorLog,
+    errorLogStatus,
     formatSavedAt,
     KIND_LABELS,
     loadBackups,
     openDataFolder,
     restoreBackup,
+    revealErrorLog,
+    saveErrorLog,
+    watchErrorLog,
   } from './dataFlow';
 
   interface Props {
@@ -31,6 +36,7 @@
   const dataDir = $derived($bootstrap?.data_dir ?? '');
   const status = $derived(backupStatus($backups));
   const busy = $derived($dataBusy !== null && $dataBusy !== 'list');
+  const logStatus = $derived(errorLogStatus($errorLog));
 
   async function restore(name: string) {
     if (busy) return;
@@ -42,7 +48,10 @@
     }
   }
 
-  onMount(() => void loadBackups());
+  onMount(() => {
+    void loadBackups();
+    return watchErrorLog();
+  });
 </script>
 
 <GlassCard tag="section" class="card" aria-labelledby="s-data" padding="20px" radius="lg">
@@ -92,6 +101,17 @@
         <p class="muted small">Restoring asks first and copies your current data to the backups folder before anything is replaced.</p>
       {/if}
     {/if}
+    <div class="log" role="group" aria-labelledby="s-errlog">
+      <h4 id="s-errlog">Error log</h4>
+      <p class="muted small">Something not working? Save a copy of the error log and send it along with a few words on what happened.</p>
+      {#if logStatus}<p class="status small" aria-live="polite">{logStatus}</p>{/if}
+      <div class="actions">
+        <Button variant="secondary" icon="file" loading={$dataBusy === 'log'} disabled={busy} onclick={() => void saveErrorLog()}>
+          Save a copy…
+        </Button>
+        <Button variant="ghost" icon="external" onclick={() => void revealErrorLog()}>Show in folder</Button>
+      </div>
+    </div>
   </div>
 </GlassCard>
 
@@ -171,5 +191,17 @@
   }
   .bad-row .b-main {
     opacity: 0.7;
+  }
+  .log {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--divider);
+  }
+  h4 {
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    color: var(--text);
   }
 </style>

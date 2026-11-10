@@ -1,11 +1,12 @@
-// Settings → Your data: the data folder, backups, Back up now and restore.
+// Settings → Your data: the data folder, backups, Back up now and restore,
+// and the error log.
 // Python decides what is a backup and checks the copy before anything is
 // replaced; this module only shows the list and drives the confirm flow.
 import { writable } from 'svelte/store';
 import { api, runFlow } from '../../lib/api';
-import type { BackupInfo, BackupKind } from '../../lib/api/types';
+import type { BackupInfo, BackupKind, ErrorLogInfo } from '../../lib/api/types';
 import { navigate } from '../../lib/stores/app';
-import { alert, reportError } from '../../lib/stores/confirm';
+import { alert, internalErrors, reportError } from '../../lib/stores/confirm';
 import { applySettings } from '../../lib/stores/settings';
 import { setTimer } from '../../lib/stores/timer';
 import { toast } from '../../lib/stores/toasts';
@@ -16,7 +17,7 @@ export const backups = writable<BackupInfo[]>([]);
 export const backupsDir = writable<string | null>(null);
 export const backupsError = writable<string | null>(null);
 /** What the card is doing; its buttons are disabled meanwhile. */
-export const dataBusy = writable<null | 'list' | 'backup' | 'restore' | 'open'>(null);
+export const dataBusy = writable<null | 'list' | 'backup' | 'restore' | 'open' | 'log'>(null);
 
 export const KIND_LABELS: Record<BackupKind, string> = {
   bak: 'Last save',
@@ -72,6 +73,76 @@ export async function loadBackups(): Promise<void> {
 export async function openDataFolder(): Promise<void> {
   const r = await api.open_data_folder();
   if (!r.ok) await reportError(r, 'Could not open the data folder');
+}
+
+// ── error log: save a copy to send to whoever helps with the app ──
+
+/** null until the first look (or when it failed). */
+export const errorLog = writable<ErrorLogInfo | null>(null);
+
+function sizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} bytes`;
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+/** '2 errors logged · last Sun 08 Nov 2026, 14:32 · 3 KB' */
+export function errorLogStatus(info: ErrorLogInfo | null): string {
+  if (!info) return '';
+  if (!info.exists || info.entries === 0) return 'No errors logged.';
+  const parts = [plural(info.entries, 'error', 'errors') + ' logged'];
+  if (info.last_at) parts.push(`last ${formatSavedAt(info.last_at)}`);
+  parts.push(sizeLabel(info.size));
+  return parts.join(' · ');
+}
+
+export async function loadErrorLog(): Promise<void> {
+  try {
+    const r = await api.get_error_log_info();
+    errorLog.set(r.ok ? { exists: r.exists, size: r.size, entries: r.entries, last_at: r.last_at } : null);
+  } catch {
+    errorLog.set(null);
+  }
+}
+
+/** Load the log info now and again after every internal error, so the line
+ *  stays right while Settings is open. Returns the unsubscribe. */
+export function watchErrorLog(): () => void {
+  return internalErrors.subscribe(() => void loadErrorLog());
+}
+
+async function revealErrorLogCopy(): Promise<void> {
+  const r = await api.reveal_error_log(true);
+  if (!r.ok) await reportError(r, 'Could not open the folder');
+}
+
+export async function revealErrorLog(): Promise<void> {
+  const r = await api.reveal_error_log(false);
+  if (!r.ok) await reportError(r, 'Could not open the folder');
+}
+
+/** Save dialog, then a toast with the path and Show in folder (the copy, so
+ *  it can be dragged into an e-mail). Returns the saved path. */
+export async function saveErrorLog(): Promise<string | null> {
+  dataBusy.set('log');
+  try {
+    const r = await api.save_error_log();
+    if (r.status === 'cancelled') return null;
+    if (!r.ok) {
+      await reportError(r, 'Could not save the error log');
+      return null;
+    }
+    errorLog.set({ exists: r.exists, size: r.size, entries: r.entries, last_at: r.last_at });
+    toast(`Error log saved to:\n${r.path}`, {
+      tone: 'success',
+      ms: 10000,
+      action: revealErrorLogCopy,
+      label: 'Show in folder',
+      undo: false,
+    });
+    return r.path;
+  } finally {
+    dataBusy.set(null);
+  }
 }
 
 export async function backupNow(): Promise<string | null> {

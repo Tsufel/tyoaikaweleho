@@ -410,6 +410,19 @@ export type RestoreBackupResult = Result<{
   backups: BackupInfo[];
 }>;
 
+/** error.log next to data.json (Settings → Your data → Error log). */
+export interface ErrorLogInfo {
+  exists: boolean;
+  /** Bytes on disk (the log trims itself past 256 KB). */
+  size: number;
+  /** How many errors it holds. */
+  entries: number;
+  /** When the newest one was logged, or null. */
+  last_at: IsoDateTime | null;
+}
+export type ErrorLogInfoResult = Result<ErrorLogInfo & { path: string }>;
+export type SaveErrorLogResult = Result<ErrorLogInfo & { path: string }>;
+
 // ── Stats ────────────────────────────────────────────────────────
 
 export interface StatsBucket {
@@ -648,6 +661,13 @@ export interface Api {
   backup_now(): Promise<BackupNowResult>;
   /** Asks restore_backup first; on success emits data:changed {reason:'restore_backup'}. */
   restore_backup(name: string, confirm?: ConfirmList): Promise<RestoreBackupResult>;
+  get_error_log_info(): Promise<ErrorLogInfoResult>;
+  /** Save dialog named "Weleho error log <date>.txt": a short header (version,
+   *  Windows, WebView2) and the log. `saved{path, ...info}` / `cancelled`. */
+  save_error_log(): Promise<SaveErrorLogResult>;
+  /** Explorer at error.log (the data folder when there is none), or at the
+   *  copy save_error_log last made when `copy`. */
+  reveal_error_log(copy?: boolean): Promise<Result>;
 
   // stats
   get_stats(

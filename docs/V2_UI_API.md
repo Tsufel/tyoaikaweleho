@@ -27,7 +27,8 @@ the new flow must behave the same.
   exception is written to `error.log` (`storage.append_error_log`) and
   returned as `{ok:false, status:'error', error:{code:'internal', …}}`.
   The frontend shows "Something went wrong … Your saved shifts are not
-  affected. The details were written to: {error_log}" (one box at a time).
+  affected. The details were written to: {error_log}" plus a pointer to
+  Settings → Your data → Error log → Save a copy (one box at a time).
 - **Dates/times.** Dates are ISO `YYYY-MM-DD`; clock times are `HH:MM` (24 h);
   datetimes are local-naive ISO `YYYY-MM-DDTHH:MM:SS`; `*_epoch_ms` are Unix
   ms. Durations are integer **minutes** unless the name says otherwise.
@@ -191,6 +192,9 @@ The current shift must never be lost:
 | `list_backups()` | — | `R<{backups: BackupInfo[], data_dir, backups_dir}>`, newest first. Read-only |
 | `backup_now()` | — | `saved{backup, backups}` (copy at `backups/manual-<YYYYMMDD-HHMMSS>.json`, never pruned) / `ok{backup: null}` + message when nothing is saved yet / `error(save_failed)` |
 | `restore_backup(name, confirm?)` | a `name` from `list_backups`, answers | needs `restore_backup`; then `saved{restored, safety_copy, settings, shifts, timer, backups}` and emits `data:changed {reason:'restore_backup'}` + `timer:changed`. `invalid(field:'name')` for a name not in the list or a copy that doesn't read as app data; `error(stale)` when the copy changed while asking; `error(save_failed)` (nothing changed) when a write fails |
+| `get_error_log_info()` | — | `R<{path, exists, size, entries, last_at}>` for `error.log` in the data folder: bytes on disk, how many errors it holds (one per `--- <ISO time>` header) and when the newest was written (or `null`). Read-only |
+| `save_error_log()` | — | Native save dialog (initial `Weleho error log <YYYY-MM-DD>.txt`, `.txt` added when missing). Writes a header (app version and build, Windows, WebView2 version, entry count) then the log, or `No errors have been logged.`, UTF-8 with CRLF so Notepad shows it right. `saved{path, exists, size, entries, last_at}` / `cancelled` / `error(save_failed)`. `error.log` itself is left alone |
+| `reveal_error_log(copy?)` | `boolean` | Explorer with `error.log` selected (the data folder when there is none yet). With `copy: true`, the file `save_error_log` last saved this session instead: `error(not_found)` when none was saved. `error(internal)` when Explorer can't open |
 
 `BackupInfo = {name, kind, saved_at, size, ok, entries, last_entry_date}`.
 `kind`: `bak` (`data.json.bak`, the previous save), `daily`

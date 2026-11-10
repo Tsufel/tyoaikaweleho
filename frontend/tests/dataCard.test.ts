@@ -8,6 +8,9 @@ const fakeApi = vi.hoisted(() => ({
   restore_backup: vi.fn(),
   open_data_folder: vi.fn(),
   get_timer: vi.fn(),
+  get_error_log_info: vi.fn(),
+  save_error_log: vi.fn(),
+  reveal_error_log: vi.fn(),
 }));
 
 vi.mock('../src/lib/api/bridge', () => ({ api: fakeApi, ready: Promise.resolve(), isMock: true }));
@@ -172,10 +175,84 @@ describe('Your data: actions', () => {
   });
 });
 
+describe('Your data: error log', () => {
+  const LOG = { exists: true, size: 3412, entries: 2, last_at: '2026-09-22T17:05:00' };
+
+  it('summarises the log', () => {
+    expect(flow.errorLogStatus(null)).toBe('');
+    expect(flow.errorLogStatus({ exists: false, size: 0, entries: 0, last_at: null })).toBe('No errors logged.');
+    expect(flow.errorLogStatus(LOG)).toBe('2 errors logged · last Tue 22 Sep 2026, 17:05 · 3 KB');
+    expect(flow.errorLogStatus({ ...LOG, entries: 1, size: 200 })).toBe('1 error logged · last Tue 22 Sep 2026, 17:05 · 200 bytes');
+  });
+
+  it('loads the info, and forgets it when that fails', async () => {
+    fakeApi.get_error_log_info.mockResolvedValue({ ok: true, status: 'ok', path: 'D\\error.log', ...LOG });
+    await flow.loadErrorLog();
+    expect(get(flow.errorLog)).toEqual(LOG);
+    fakeApi.get_error_log_info.mockRejectedValue(new Error('bridge gone'));
+    await flow.loadErrorLog();
+    expect(get(flow.errorLog)).toBeNull();
+  });
+
+  it('re-reads the log after an internal error while the card is open', async () => {
+    const { reportError } = await import('../src/lib/stores/confirm');
+    fakeApi.get_error_log_info.mockResolvedValue({ ok: true, status: 'ok', path: 'D\\error.log', ...LOG, entries: 0, exists: false });
+    const stop = flow.watchErrorLog();
+    await vi.waitFor(() => expect(get(flow.errorLog)?.entries).toBe(0));
+    fakeApi.get_error_log_info.mockResolvedValue({ ok: true, status: 'ok', path: 'D\\error.log', ...LOG, entries: 1 });
+    await reportError({ ok: false, status: 'error', message: 'boom', error: { code: 'internal', message: 'boom' } } as never);
+    await vi.waitFor(() => expect(get(flow.errorLog)?.entries).toBe(1));
+    stop();
+    const calls = fakeApi.get_error_log_info.mock.calls.length;
+    await reportError({ ok: false, status: 'error', message: 'boom', error: { code: 'internal', message: 'boom' } } as never);
+    expect(fakeApi.get_error_log_info).toHaveBeenCalledTimes(calls);
+  });
+
+  it('saves a copy and offers Show in folder for that copy', async () => {
+    const path = 'C:\\Docs\\Weleho error log.txt';
+    fakeApi.save_error_log.mockResolvedValue({ ok: true, status: 'saved', path, ...LOG });
+    fakeApi.reveal_error_log.mockResolvedValue({ ok: true, status: 'ok' });
+    expect(await flow.saveErrorLog()).toBe(path);
+    expect(get(flow.dataBusy)).toBeNull();
+    expect(get(flow.errorLog)).toEqual(LOG);
+    const t = get(toasts)[0];
+    expect(t.message).toBe(`Error log saved to:\n${path}`);
+    expect(t.label).toBe('Show in folder');
+    await t.action!();
+    expect(fakeApi.reveal_error_log).toHaveBeenCalledWith(true);
+  });
+
+  it('cancel saves nothing and says nothing', async () => {
+    fakeApi.save_error_log.mockResolvedValue({ ok: true, status: 'cancelled' });
+    expect(await flow.saveErrorLog()).toBeNull();
+    expect(get(toasts)).toHaveLength(0);
+    expect(shown).toEqual([]);
+  });
+
+  it('a failed save is reported', async () => {
+    fakeApi.save_error_log.mockResolvedValue({
+      ok: false,
+      status: 'error',
+      message: 'Could not save the error log',
+      error: { code: 'save_failed', message: 'Could not save the error log' },
+    });
+    expect(await flow.saveErrorLog()).toBeNull();
+    expect(shown[0].title).toBe('Could not save the error log');
+    expect(get(toasts)).toHaveLength(0);
+    expect(get(flow.dataBusy)).toBeNull();
+  });
+
+  it('Show in folder points at the log itself', async () => {
+    fakeApi.reveal_error_log.mockResolvedValue({ ok: true, status: 'ok' });
+    await flow.revealErrorLog();
+    expect(fakeApi.reveal_error_log).toHaveBeenCalledWith(false);
+  });
+});
+
 describe('mock api: your data', () => {
   it('tolerates being called with no args', async () => {
     const m = createMockApi() as unknown as Record<string, () => Promise<{ status: string }>>;
-    for (const name of ['open_data_folder', 'list_backups', 'backup_now', 'restore_backup']) {
+    for (const name of ['open_data_folder', 'list_backups', 'backup_now', 'restore_backup', 'get_error_log_info', 'save_error_log', 'reveal_error_log']) {
       await expect(m[name]()).resolves.toHaveProperty('status');
     }
   });

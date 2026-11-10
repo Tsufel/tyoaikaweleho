@@ -131,6 +131,10 @@ export async function askYesNoCancel(title: string, message: string, icon: Dialo
 
 let internalShowing = false;
 
+/** Counts `internal` errors shown (each one added an entry to error.log), so
+ *  Settings' Error log line can re-read the log while it is on screen. */
+export const internalErrors = writable(0);
+
 /** Show a failed result: `internal` gets the generic box (one at a time),
  *  others their message under `title`. No-op for ok/needs_confirm. */
 export async function reportError(r: Result<any>, title = 'Something went wrong'): Promise<void> {
@@ -140,12 +144,13 @@ export async function reportError(r: Result<any>, title = 'Something went wrong'
   }
   if (r.status !== 'error') return;
   if (r.error.code === 'internal') {
+    internalErrors.update((n) => n + 1);
     if (internalShowing) return;
     internalShowing = true;
     try {
       await alert(
         'Something went wrong',
-        `Something went wrong: ${r.error.message}\n\nYour saved shifts are not affected. The details were written to:\n${get(errorLogPath)}`,
+        `Something went wrong: ${r.error.message}\n\nYour saved shifts are not affected. The details were written to:\n${get(errorLogPath)}\n\nTo send them, use Settings → Your data → Error log → Save a copy.`,
         'error',
       );
     } finally {

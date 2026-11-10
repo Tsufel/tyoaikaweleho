@@ -239,6 +239,12 @@ export function createMockApi(): Api {
   const today = new Date();
   let entries: WorkEntry[] = q.has('empty') ? [] : seedEntries(today);
   let lastExport: string | null = null;
+  let errorLogCopy: string | null = null;
+  // ?empty: a fresh install with no error.log yet
+  const mockErrorLog = () =>
+    q.has('empty')
+      ? { exists: false, size: 0, entries: 0, last_at: null }
+      : { exists: true, size: 3412, entries: 2, last_at: `${toIsoDate(new Date(today.getTime() - 86400000))}T14:32:05` };
   let nextId = entries.length + 1;
   let shifts = [...DEFAULT_SHIFTS];
   let settings: Settings = {
@@ -1146,6 +1152,20 @@ ${saveFailMsg()}`, { timer: timerState() });
     // ── your data: folder, backups, restore ──
     async open_data_folder() {
       console.info('[mock] would open the data folder');
+      return okR('ok');
+    },
+    async get_error_log_info() {
+      await latency();
+      return okR('ok', { ...mockErrorLog(), path: 'C:\\Users\\you\\AppData\\Roaming\\Tyoaikaweleho (mock)\\error.log' });
+    },
+    async save_error_log() {
+      await wait(300);
+      errorLogCopy = `C:\\Users\\you\\Documents\\Weleho error log ${toIsoDate(new Date())}.txt`;
+      return okR('saved', { ...mockErrorLog(), path: errorLogCopy });
+    },
+    async reveal_error_log(copy?: boolean) {
+      if (copy && !errorLogCopy) return err('not_found', 'No copy of the error log has been saved yet.');
+      console.info('[mock] would show in folder:', copy ? errorLogCopy : 'error.log');
       return okR('ok');
     },
     async list_backups() {

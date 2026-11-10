@@ -1203,3 +1203,30 @@ def append_error_log(text: str):
                 f.write(f"--- {datetime.now().isoformat(timespec='seconds')}\n{text.rstrip()}\n")
     except OSError:
         pass
+
+
+_ERROR_LOG_STAMP = re.compile(r"^--- (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)$", re.M)
+
+
+def read_error_log() -> str:
+    """error.log's text, or "" when there is none (Settings → Save a copy)."""
+    with _ERROR_LOG_LOCK:
+        try:
+            with open(ERROR_LOG, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        except FileNotFoundError:
+            return ""
+
+
+def error_log_info(text: str | None = None) -> dict:
+    """How big error.log is, how many entries it holds and when the newest
+    one was written (a local-naive ISO datetime, or None)."""
+    if text is None:
+        text = read_error_log()
+    stamps = _ERROR_LOG_STAMP.findall(text)
+    try:
+        size = os.path.getsize(ERROR_LOG)
+    except OSError:
+        size = 0
+    return {"exists": os.path.exists(ERROR_LOG), "size": size,
+            "entries": len(stamps), "last_at": stamps[-1] if stamps else None}

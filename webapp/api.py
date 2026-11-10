@@ -6,10 +6,12 @@ non-callable ones, so everything that is not an API method is _-prefixed."""
 
 import functools
 import os
+import platform
 import subprocess
 import sys
 import threading
 import traceback
+from datetime import datetime
 
 import storage
 from version import __version__
@@ -20,6 +22,7 @@ from webapp.controller import ShiftController
 _EXCEL_TYPES = ("Excel workbooks (*.xlsx;*.xlsm)", "All files (*.*)")
 _EXPORT_TYPES = ("Excel workbook (*.xlsx)",)
 _CSV_TYPES = ("CSV for Excel (*.csv)",)
+_TEXT_TYPES = ("Text file (*.txt)",)
 _IMAGE_TYPES = ("Image files (*.png;*.jpg;*.jpeg;*.bmp;*.tiff;*.tif;*.webp)",
                 "All files (*.*)")
 _DIALOG_OPEN = 10
@@ -72,6 +75,7 @@ class Api:
         self._dev = bool(dev)
         self._dialog_lock = threading.Lock()
         self._last_dir: str | None = None
+        self._error_log_copy: str | None = None
 
     def _emit(self, name: str, payload=None):
         if self._bus is not None:
@@ -255,6 +259,76 @@ class Api:
             os.startfile(path)
         except OSError as exc:
             return R.error("internal", f"Could not open:\n{path}\n\n{exc}")
+        return R.ok()
+
+    # error log (Settings → Your data): save a copy to send, or show it
+
+    @_guarded
+    def get_error_log_info(self):
+        return R.ok(path=storage.ERROR_LOG, **storage.error_log_info())
+
+    def _error_log_report(self) -> str:
+        """The copy the user sends: app version, Windows and WebView2, then the log."""
+        try:
+            from webapp.win32 import webview2_version
+            webview2 = webview2_version() or "not found"
+        except Exception:  # never let the header stop the copy
+            webview2 = "unknown"
+        text = storage.read_error_log()
+        info = storage.error_log_info(text)
+        build = "dev" if self._dev else ("installed" if self._frozen else "from source")
+        header = [
+            "Weleho error log",
+            f"Saved:    {datetime.now().isoformat(sep=' ', timespec='seconds')}",
+            f"Version:  {self._version} ({build})",
+            f"Windows:  {platform.platform()}",
+            f"WebView2: {webview2}",
+            f"Entries:  {info['entries']}",
+            "=" * 60,
+            "",
+        ]
+        body = text.rstrip() if text.strip() else "No errors have been logged."
+        return "\n".join(header) + body + "\n"
+
+    @_guarded
+    def save_error_log(self):
+        name = f"Weleho error log {datetime.now():%Y-%m-%d}.txt"
+        picked = self._dialog(_DIALOG_SAVE, _TEXT_TYPES, save_filename=name)
+        if not picked:
+            return R.cancelled()
+        path = picked[0]
+        if not path.lower().endswith(".txt"):
+            path += ".txt"
+        report = self._error_log_report()
+        try:
+            with open(path, "w", encoding="utf-8", newline="\r\n") as f:
+                f.write(report)
+        except OSError as exc:
+            return R.error("save_failed", f"Could not save the error log:\n{path}\n\n{exc}")
+        self._error_log_copy = path
+        return R.saved(path=path, **storage.error_log_info())
+
+    @_guarded
+    def reveal_error_log(self, copy=False):
+        """Explorer with error.log selected (the data folder when there is no
+        log yet), or with the copy save_error_log last made when *copy*."""
+        if copy:
+            path = self._error_log_copy
+            if not path:
+                return R.error("not_found", "No copy of the error log has been saved yet.")
+        else:
+            path = storage.ERROR_LOG
+        path = os.path.normpath(path)
+        folder = os.path.dirname(path)
+        try:
+            if os.path.isfile(path):
+                subprocess.Popen(f'explorer /select,"{path}"')
+            elif os.path.isdir(folder):
+                os.startfile(folder)
+            else:
+                return R.error("not_found", f"The folder is gone:\n{folder}")
+        except OSError as exc:
+            return R.error("internal", f"Could not open the folder:\n\n{exc}")
         return R.ok()
 
     @_guarded

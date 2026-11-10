@@ -164,6 +164,8 @@ def test_every_method_returns_json(rig):
         ("add_job_shift", ("Night",)),
         ("open_data_folder", ()), ("list_backups", ()), ("backup_now", ()),
         ("restore_backup", ("nope", None)),
+        # error log; reveal_error_log(True) before any copy is not_found (no Explorer)
+        ("get_error_log_info", ()), ("save_error_log", ()), ("reveal_error_log", (True,)),
         ("get_stats", ("2026-09-01", "2026-09-30", "day")), ("get_stats_span", ()),
         ("get_achievements", ()), ("ack_achievements", (["first_shift"],)),
         ("ack_achievements", (["nope"],)), ("get_pet_stats", ()), ("get_records", ()),
@@ -456,6 +458,93 @@ def test_open_data_folder_opens_the_data_dir(rig, monkeypatch):
     monkeypatch.setattr(os, "startfile", opened.append, raising=False)
     assert _check(rig[0].open_data_folder())["ok"]
     assert opened == [storage.DATA_DIR]
+
+
+# ── error log (Settings → Your data → Error log) ─────────────────
+
+def test_error_log_info_without_a_log(rig):
+    res = _check(rig[0].get_error_log_info())
+    assert res["ok"] and res["path"] == storage.ERROR_LOG
+    assert (res["exists"], res["size"], res["entries"], res["last_at"]) == (False, 0, 0, None)
+
+
+def test_error_log_info_counts_entries(rig):
+    storage.append_error_log("[api] first\nTraceback ...")
+    storage.append_error_log("[frontend] second")
+    res = _check(rig[0].get_error_log_info())
+    assert res["exists"] and res["entries"] == 2 and res["size"] > 0
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d", res["last_at"])
+
+
+def test_save_error_log_cancelled(rig):
+    assert _check(rig[0].save_error_log())["status"] == "cancelled"
+
+
+def test_save_error_log_writes_a_header_and_the_log(rig):
+    api, window, _s, _b, tmp = rig
+    storage.append_error_log("[api] export_month\nTraceback: boom")
+    window.dialogs.append((str(tmp / "sent"),))
+    res = _check(api.save_error_log())
+    assert res["status"] == "saved" and res["entries"] == 1
+    assert res["path"] == str(tmp / "sent") + ".txt"  # .txt added
+    _kind, _dir, _multi, name, types = window.dialog_calls[-1]
+    assert re.fullmatch(r"Weleho error log \d{4}-\d\d-\d\d\.txt", name)
+    assert types == ("Text file (*.txt)",)
+    with open(res["path"], "rb") as f:
+        raw = f.read()
+    assert b"\r\n" in raw and b"\r\r" not in raw  # Notepad-friendly line ends
+    text = raw.decode("utf-8")
+    assert text.startswith("Weleho error log\r\n")
+    assert "Version:  2.0.0 (dev)" in text
+    assert "Windows:  " in text and "WebView2: " in text and "Entries:  1" in text
+    assert "[api] export_month\r\nTraceback: boom" in text
+    # the log itself is left alone
+    with open(storage.ERROR_LOG, encoding="utf-8") as f:
+        assert "Weleho error log" not in f.read()
+
+
+def test_save_error_log_with_no_log_says_so(rig):
+    api, window, _s, _b, tmp = rig
+    window.dialogs.append((str(tmp / "none.txt"),))
+    res = _check(api.save_error_log())
+    assert res["status"] == "saved" and res["entries"] == 0
+    with open(res["path"], encoding="utf-8") as f:
+        assert f.read().rstrip().endswith("No errors have been logged.")
+
+
+def test_save_error_log_unwritable(rig):
+    api, window, _s, _b, tmp = rig
+    window.dialogs.append((str(tmp / "missing-folder" / "log.txt"),))
+    res = _check(api.save_error_log())
+    assert res["status"] == "error" and res["error"]["code"] == "save_failed"
+
+
+def test_reveal_error_log_selects_the_log(rig, monkeypatch):
+    import subprocess
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: launched.append(cmd))
+    storage.append_error_log("x")
+    assert _check(rig[0].reveal_error_log())["ok"]
+    assert launched == [f'explorer /select,"{os.path.normpath(storage.ERROR_LOG)}"']
+
+
+def test_reveal_error_log_without_a_log_opens_the_folder(rig, monkeypatch):
+    opened = []
+    monkeypatch.setattr(os, "startfile", opened.append, raising=False)
+    assert _check(rig[0].reveal_error_log())["ok"]
+    assert opened == [os.path.dirname(os.path.normpath(storage.ERROR_LOG))]
+
+
+def test_reveal_error_log_copy(rig, monkeypatch):
+    import subprocess
+    api, window, _s, _b, tmp = rig
+    assert _check(api.reveal_error_log(True))["error"]["code"] == "not_found"
+    launched = []
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **k: launched.append(cmd))
+    window.dialogs.append((str(tmp / "copy.txt"),))
+    path = _check(api.save_error_log())["path"]
+    assert _check(api.reveal_error_log(True))["ok"]
+    assert launched == [f'explorer /select,"{os.path.normpath(path)}"']
 
 
 def test_restore_backup_emits_data_changed_only_when_saved(rig):

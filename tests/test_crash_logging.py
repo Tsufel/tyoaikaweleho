@@ -61,3 +61,22 @@ def test_error_log_survives_many_threads(tmp_storage, monkeypatch):
     # every surviving record is whole: a header followed by its own line
     blocks = [b for b in text.split("--- ") if b.strip()][1:]
     assert blocks and all(b.rstrip().split("\n")[-1].startswith("line ") for b in blocks)
+
+
+def test_error_log_info_reads_what_is_there(tmp_storage):
+    assert storage.read_error_log() == ""
+    assert storage.error_log_info() == {"exists": False, "size": 0, "entries": 0, "last_at": None}
+    storage.append_error_log("[api] one")
+    storage.append_error_log("[api] two\n--- not a stamp")
+    info = storage.error_log_info()
+    assert info["exists"] and info["entries"] == 2 and info["size"] > 0
+    assert info["last_at"] and "T" in info["last_at"]
+    assert "[api] two" in storage.read_error_log()
+
+
+def test_error_log_info_after_a_trim_counts_whole_entries(tmp_storage):
+    # the trim can cut the oldest header in half: that stub is not counted
+    with open(storage.ERROR_LOG, "w", encoding="utf-8") as f:
+        f.write("09-23T10:00:00\nhalf\n--- 2026-09-23T11:00:00\nwhole\n")
+    info = storage.error_log_info()
+    assert (info["entries"], info["last_at"]) == (1, "2026-09-23T11:00:00")
