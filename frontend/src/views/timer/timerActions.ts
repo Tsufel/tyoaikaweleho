@@ -84,7 +84,7 @@ export function stopShift(source: Exclude<StopSource, 'close'>): Promise<StopRes
   return guarded(async () => afterStop(await runFlow((c) => api.timer_stop(source, c))));
 }
 
-/** STOP ▾: save the running shift as ending at a past HH:MM (§6.3a). */
+/** STOP's right-click menu: save the running shift as ending at a past HH:MM (§6.3a). */
 export function stopShiftAt(end: HHMM): Promise<StopResult | undefined> {
   return guarded(async () => {
     const r = await runFlow((c) => api.timer_stop_at(end, c));

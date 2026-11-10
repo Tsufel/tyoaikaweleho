@@ -3,7 +3,7 @@ import { tick } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TimerState } from '../src/lib/api/types';
 
-// TimerView's running-shift editors (§6.3a): STOP ▾, the start time and the job.
+// TimerView's running-shift editors (§6.3a): STOP's right-click menu, the start time and the job.
 const spies = vi.hoisted(() => {
   // jsdom has neither; svelte/motion reads matchMedia at import time
   const mq = { matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} };
@@ -19,7 +19,7 @@ const spies = vi.hoisted(() => {
     queueMicrotask(() => a.onfinish?.());
     return a as unknown as Animation;
   };
-  return { stopShiftAt: vi.fn(), adjustShift: vi.fn() };
+  return { stopShiftAt: vi.fn(), adjustShift: vi.fn(), stopShift: vi.fn() };
 });
 
 vi.mock('../src/lib/api/bridge', () => ({ api: {}, ready: Promise.resolve(), isMock: true }));
@@ -27,6 +27,7 @@ vi.mock('../src/views/timer/timerActions', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/views/timer/timerActions')>()),
   stopShiftAt: spies.stopShiftAt,
   adjustShift: spies.adjustShift,
+  stopShift: spies.stopShift,
 }));
 
 const { setTimer, IDLE_TIMER } = await import('../src/lib/stores/timer');
@@ -56,6 +57,18 @@ async function submit(value: string) {
   await fireEvent.input(input, { target: { value } });
   await fireEvent.submit(input.closest('form')!);
   await tick();
+}
+
+const stopBar = () => screen.getByRole('button', { name: /^STOP/ });
+
+/** Right-click on STOP, then pick from its menu. */
+async function stopMenu(item?: string) {
+  await fireEvent.contextMenu(stopBar(), { clientX: 120, clientY: 300 });
+  await tick();
+  if (item) {
+    await fireEvent.click(screen.getByRole('menuitem', { name: new RegExp(`^${item}`) }));
+    await tick();
+  }
 }
 
 /** The start / job line is folded behind ⋯ until opened. */
@@ -95,17 +108,95 @@ describe('details fold (⋯)', () => {
     expect(spies.adjustShift).not.toHaveBeenCalled();
   });
 
-  it('STOP ▾ works with the details folded', async () => {
+  it('the STOP menu works with the details folded', async () => {
     render(TimerView);
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop at an earlier time' }));
-    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await stopMenu('Stop at an earlier time');
+    expect(await screen.findByRole('dialog', { name: 'Stop at an earlier time' })).toBeTruthy();
+  });
+});
+
+describe('STOP bar', () => {
+  it('is the only control: no chevron beside it', () => {
+    render(TimerView);
+    expect(stopBar().parentElement!.querySelectorAll('button')).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Stop at an earlier time' })).toBeNull();
+  });
+
+  it('right-click opens the stop menu instead of stopping', async () => {
+    render(TimerView);
+    await stopMenu();
+    const items = screen.getAllByRole('menuitem').map((b) => b.textContent?.trim());
+    expect(items).toEqual(['Stop now F5', 'Stop at an earlier time…', 'Change the start time…', 'Change the job…']);
+    expect(spies.stopShift).not.toHaveBeenCalled();
+  });
+
+  it('Shift+F10 and the menu key open it too', async () => {
+    render(TimerView);
+    await fireEvent.keyDown(stopBar(), { key: 'F10', shiftKey: true });
+    await tick();
+    expect(screen.getByRole('menu', { name: 'Stop options' })).toBeTruthy();
+    await fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' });
+    await tick();
+    expect(screen.queryByRole('menu')).toBeNull();
+    await fireEvent.keyDown(stopBar(), { key: 'ContextMenu' });
+    await tick();
+    expect(screen.getByRole('menu')).toBeTruthy();
+  });
+
+  it('Stop now stops, as a click on the bar does', async () => {
+    render(TimerView);
+    await stopMenu('Stop now');
+    expect(spies.stopShift).toHaveBeenCalledWith('button');
+    expect(screen.queryByRole('menu')).toBeNull();
+    await fireEvent.click(stopBar());
+    expect(spies.stopShift).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes when a flow starts (F5 asking "Stop shift?"), focus back on STOP', async () => {
+    const { busy } = await import('../src/views/timer/timerActions');
+    render(TimerView);
+    await fireEvent.keyDown(stopBar(), { key: 'F10', shiftKey: true });
+    await tick();
+    await vi.waitFor(() => expect(screen.getByRole('menu').contains(document.activeElement)).toBe(true));
+    busy.set(true);
+    try {
+      await vi.waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+      expect(document.querySelector('.menu-point')).toBeNull();
+    } finally {
+      busy.set(false);
+    }
+    // STOP is disabled while busy; focus lands on it when the flow ends
+    await vi.waitFor(() => expect(document.activeElement).toBe(stopBar()));
+  });
+
+  it('a second right-click opens a fresh menu at the new point, focused', async () => {
+    render(TimerView);
+    await stopMenu();
+    expect(document.querySelector<HTMLElement>('.menu-point')!.style.left).toBe('120px');
+    // the pointerdown of the next right-click closes the first menu; its contextmenu reopens at once
+    await fireEvent.pointerDown(stopBar());
+    await fireEvent.contextMenu(stopBar(), { clientX: 400, clientY: 310 });
+    await tick();
+    expect(document.querySelector<HTMLElement>('.menu-point')!.style.left).toBe('400px');
+    await vi.waitFor(() => expect(screen.getByRole('menu').contains(document.activeElement)).toBe(true));
+    expect(screen.getAllByRole('menu')).toHaveLength(1);
+  });
+
+  it('the start and job editors open from the menu with the details folded', async () => {
+    render(TimerView);
+    await stopMenu('Change the start time');
+    await submit('08:45');
+    expect(spies.adjustShift).toHaveBeenCalledWith('08:45', null);
+    await stopMenu('Change the job');
+    await submit('Kitchen');
+    expect(spies.adjustShift).toHaveBeenCalledWith(null, 'Kitchen');
   });
 });
 
 describe('running shift editors', () => {
-  it('STOP ▾ saves the shift at the typed end time', async () => {
+  it('Stop at an earlier time saves the shift at the typed end time', async () => {
     render(TimerView);
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop at an earlier time' }));
+    await stopMenu('Stop at an earlier time');
     await submit('1630');
     expect(spies.stopShiftAt).toHaveBeenCalledWith('16:30');
     expect(screen.queryByRole('dialog')).toBeNull();
@@ -113,7 +204,7 @@ describe('running shift editors', () => {
 
   it('keeps the editor open on a time it cannot read', async () => {
     render(TimerView);
-    await fireEvent.click(screen.getByRole('button', { name: 'Stop at an earlier time' }));
+    await stopMenu('Stop at an earlier time');
     await submit('half four');
     expect(spies.stopShiftAt).not.toHaveBeenCalled();
     expect(screen.getByText(/Use HH:MM/)).toBeTruthy();

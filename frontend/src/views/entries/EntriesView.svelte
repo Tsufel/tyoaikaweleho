@@ -993,14 +993,17 @@
 {/if}
 
 {#if rowMenu}
-  <Menu
-    anchor={rowMenu.anchor}
-    items={rowMenuItems}
-    label="Shift actions"
-    placement="bottom-start"
-    onselect={onRowMenuPick}
-    onclose={closeRowMenu}
-  />
+  <!-- a new menu per open: a right-click while the last one fades out must not revive it at the old spot -->
+  {#key rowMenu}
+    <Menu
+      anchor={rowMenu.anchor}
+      items={rowMenuItems}
+      label="Shift actions"
+      placement="bottom-start"
+      onselect={onRowMenuPick}
+      onclose={closeRowMenu}
+    />
+  {/key}
 {/if}
 
 {#if pickerOpen}

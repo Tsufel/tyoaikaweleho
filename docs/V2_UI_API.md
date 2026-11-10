@@ -338,8 +338,10 @@ saved with its real end). Unparseable → `invalid(field:'end')`; end = start
 minute → `invalid` ("End time must be after the start (HH:MM)."); an end
 still ahead of now → `invalid` ("T hasn't come yet (it's HH:MM now)."); >14 h
 → `needs_confirm(long_entry)` (token = `start_iso`); then as `timer_stop`'s
-save (§6.1 step 6, `save_failed` keeps it running). The STOP button's "▾"
-opens a small HH:MM field for it, prefilled with now.
+save (§6.1 step 6, `save_failed` keeps it running). Right-click on STOP
+(or Shift+F10 / the menu key) opens a menu: Stop now, Stop at an earlier
+time… (a small HH:MM field for it, prefilled with now), Change the start
+time… and Change the job… (`timer_adjust`).
 
 `timer_adjust(start_iso, time?, job_shift?)` changes the running shift and
 rewrites `session.json` (atomic; a write failure → `error(save_failed)`, old

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { onFx } from '../../fx/fire/fxBus';
   import { fade, fly } from '../../lib/motion';
   import { lulz } from '../../lib/stores/motion';
@@ -10,10 +10,12 @@
   import { elapsedSeconds, liveEarnings, timer } from '../../lib/stores/timer';
   import { formatClock, formatMoney, hhmm, parseTimeInput } from '../../lib/time';
   import { tooltip } from '../../lib/ui/actions';
+  import { layoutPoint } from '../../lib/zoom';
   import Button from '../../lib/ui/Button.svelte';
   import Combobox from '../../lib/ui/Combobox.svelte';
   import Icon from '../../lib/ui/Icon.svelte';
   import Kbd from '../../lib/ui/Kbd.svelte';
+  import Menu, { type MenuItem } from '../../lib/ui/Menu.svelte';
   import Popover from '../../lib/ui/Popover.svelte';
   import TextInput from '../../lib/ui/TextInput.svelte';
   import TimePicker from '../../lib/ui/TimePicker.svelte';
@@ -197,8 +199,8 @@
     if (!$busy) pickerOpen = true;
   }
 
-  // running shift: STOP ▾ ends it at a past time; the start and job in the
-  // status line can be corrected (§6.3a)
+  // running shift: right-click on STOP ends it at a past time; the start and
+  // job (status line or the same menu) can be corrected (§6.3a)
   type EditKind = 'stop' | 'start' | 'job';
   const EDITS: Record<EditKind, { title: string; field: string; action: string }> = {
     stop: { title: 'Stop at an earlier time', field: 'Ended at', action: 'Save shift' },
@@ -209,13 +211,80 @@
   let editDraft = $state('');
   let editInvalid = $state(false);
   let editInput = $state<HTMLInputElement>();
-  let stopAtBtn = $state<HTMLButtonElement>();
   let startBtn = $state<HTMLButtonElement>();
   let jobBtn = $state<HTMLButtonElement>();
-  const editAnchor = $derived(edit === 'stop' ? stopAtBtn : edit === 'start' ? startBtn : jobBtn);
+  // the start / job buttons are folded away unless ⋯ is open; then the editor hangs off STOP
+  const editAnchor = $derived(edit === 'start' ? startBtn ?? stopBtn : edit === 'job' ? jobBtn ?? stopBtn : stopBtn);
   $effect(() => {
     if (!running) edit = null;
+    // a flow starting (F5 while the menu is open asks "Stop shift?") closes the
+    // menu, or it would float over that box with items that do nothing
+    if ((!running || $busy) && untrack(() => stopMenu || menuAt)) {
+      // STOP is disabled while busy, so focus waits for the flow to end
+      if (running && untrack(() => document.activeElement?.closest('[role="menu"]'))) refocusStop = true;
+      untrack(closeStopMenu);
+    }
   });
+  let refocusStop = false;
+  $effect(() => {
+    if ($busy || !refocusStop) return;
+    refocusStop = false;
+    void tick().then(() => {
+      const a = document.activeElement;
+      if (!a || a === document.body) stopBtn?.focus();
+    });
+  });
+
+  /** STOP's menu: right-click (at the pointer), Shift+F10 or the menu key (under the bar). */
+  let stopMenu = $state(false);
+  let menuAt = $state<{ x: number; y: number } | null>(null);
+  let menuPoint = $state<HTMLElement>();
+  // bumped on each open, so a right-click while the last menu is still fading
+  // out mounts a fresh one (placed at the new point, focused) instead of reviving it
+  let menuSeq = $state(0);
+  const stopMenuItems: MenuItem[] = [
+    { id: 'stop', label: 'Stop now', icon: 'stop', kbd: 'F5', danger: true },
+    { id: 'stop-at', label: 'Stop at an earlier time…', icon: 'clock' },
+    { id: 'start', label: 'Change the start time…', icon: 'edit', separator: true },
+    { id: 'job', label: 'Change the job…', icon: 'list' },
+  ];
+
+  async function openStopMenu(at: { x: number; y: number } | null) {
+    if ($busy || !running) return;
+    edit = null;
+    menuAt = at;
+    menuSeq++;
+    await tick();
+    stopMenu = true;
+  }
+
+  function onStopContext(e: MouseEvent) {
+    e.preventDefault();
+    // the point is a fixed element, so layout px under the UI zoom
+    void openStopMenu(layoutPoint(e.clientX, e.clientY));
+  }
+
+  function onStopKey(e: KeyboardEvent) {
+    if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+      e.preventDefault();
+      void openStopMenu(null);
+    }
+  }
+
+  function closeStopMenu() {
+    // Esc or a pick hands focus back to STOP (the pointer spot can't take it);
+    // a click elsewhere keeps focus where it went
+    const a = document.activeElement;
+    if (!a || a === document.body || a.closest('[role="menu"]')) stopBtn?.focus();
+    stopMenu = false;
+    menuAt = null;
+  }
+
+  function onStopMenuPick(id: string) {
+    if (id === 'stop') void stopShift('button');
+    else if (id === 'stop-at') openEdit('stop');
+    else if (id === 'start' || id === 'job') openEdit(id);
+  }
 
   function openEdit(kind: EditKind) {
     if ($busy || !running) return;
@@ -369,27 +438,22 @@
   <div class="controls" bind:this={controlsEl}>
     {#if running}
       <div class="stop-row" in:fly={{ y: 8, duration: 260 }}>
-        <button bind:this={stopBtn} class="cta stop" type="button" disabled={$busy} onclick={() => void stopShift('button')}>
+        <button
+          bind:this={stopBtn}
+          class="cta stop"
+          type="button"
+          disabled={$busy}
+          aria-keyshortcuts="F5 Shift+F10"
+          onclick={() => void stopShift('button')}
+          oncontextmenu={onStopContext}
+          onkeydown={onStopKey}
+          use:tooltip={'Right-click to stop at an earlier time'}
+        >
           <span class="cta-bg" aria-hidden="true"></span>
           <Icon name="stop" size={20} />
           <span>STOP</span>
           <Kbd keys="F5" />
         </button>
-        <div class="split" role="group" aria-label="Stop at a set time">
-          <button
-            type="button"
-            class="more"
-            bind:this={stopAtBtn}
-            disabled={$busy}
-            aria-label="Stop at an earlier time"
-            aria-haspopup="dialog"
-            aria-expanded={edit === 'stop'}
-            onclick={() => openEdit('stop')}
-            use:tooltip={'Stop at an earlier time'}
-          >
-            <Icon name="chevron-down" size={16} />
-          </button>
-        </div>
       </div>
       <span class="sr-only">{formatClock($elapsedSeconds)}</span>
     {:else}
@@ -439,7 +503,7 @@
             </button>
             <button
               type="button"
-              class="more"
+              class="drop"
               bind:this={pickerBtn}
               disabled={$busy}
               aria-label="Pick a start time"
@@ -467,9 +531,25 @@
   </Popover>
 {/if}
 
+{#if menuAt}
+  <span class="menu-point" bind:this={menuPoint} style="left: {menuAt.x}px; top: {menuAt.y}px" aria-hidden="true"></span>
+{/if}
+{#key menuSeq}
+  {#if stopMenu}
+    <Menu
+      anchor={menuAt && menuPoint ? menuPoint : stopBtn}
+      items={stopMenuItems}
+      label="Stop options"
+      placement="bottom-start"
+      onselect={onStopMenuPick}
+      onclose={closeStopMenu}
+    />
+  {/if}
+{/key}
+
 {#if edit}
   {@const e = EDITS[edit]}
-  <Popover anchor={editAnchor} onclose={() => (edit = null)} placement={edit === 'stop' ? 'bottom-end' : 'bottom-start'} label={e.title}>
+  <Popover anchor={editAnchor} onclose={() => (edit = null)} placement="bottom-start" label={e.title}>
     <form class="edit-form" onsubmit={submitEdit}>
       <label for="timer-edit">{e.field}</label>
       <div class="edit-row">
@@ -949,7 +1029,12 @@
   .stop-row {
     width: min(100%, 380px);
     display: flex;
-    gap: 10px;
+  }
+  .menu-point {
+    position: fixed;
+    width: 0;
+    height: 0;
+    pointer-events: none;
   }
   .stop {
     min-height: 56px;
@@ -1051,8 +1136,8 @@
   .at {
     padding: 0 12px 0 14px;
   }
-  .more {
-    padding: 0 10px;
+  .drop {
+    padding: 0 12px;
     border-left: 1px solid var(--glass-border) !important;
     color: var(--text-muted) !important;
   }
