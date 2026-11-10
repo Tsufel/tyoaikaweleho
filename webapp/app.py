@@ -107,7 +107,7 @@ def register_web_mime_types() -> None:
 
 
 def serve_revalidated() -> None:
-    """Make the built-in web server's files revalidate on every load.
+    """Keep the built-in web server's files out of WebView2's disk cache.
 
     pywebview sets no-cache headers on bottle.response, but bottle.static_file
     returns its own response whose headers replace them (HTTPResponse.apply),
@@ -115,7 +115,11 @@ def serve_revalidated() -> None:
     by heuristic, on an origin that is the same every launch
     (127.0.0.1:42001): after an update it kept running the old UI, whose lazy
     chunks (Stats, the pet sheet, achievements) the installer had deleted.
-    With no-cache each load asks again; the ETag keeps that a cheap 304."""
+
+    no-store, not no-cache (2.1.8): WebView2 revalidates with If-Modified-Since
+    only, and bottle answers 304 on the date alone, so a damaged cached copy
+    was approved again on every load. A colleague's hidden Silver medals stayed
+    broken images that way. Reading from disk on localhost costs nothing."""
     import bottle
     if getattr(bottle.static_file, "weleho_revalidate", False):
         return
@@ -123,11 +127,24 @@ def serve_revalidated() -> None:
 
     def static_file(*args, **kwargs):
         resp = original(*args, **kwargs)
-        resp.set_header("Cache-Control", "no-cache")
+        resp.set_header("Cache-Control", "no-store")
         return resp
 
     static_file.weleho_revalidate = True
     bottle.static_file = static_file
+
+
+# Connections the built-in web server lets wait. socketserver's default is 5,
+# and every request is its own connection (HTTP/1.0): opening Achievements asks
+# for ~20 medals at once, and Windows refuses what doesn't fit (a broken image).
+LISTEN_BACKLOG = 64
+
+
+def widen_listen_backlog() -> None:
+    """Let more connections wait on the built-in web server (pywebview's
+    server class derives from wsgiref's WSGIServer)."""
+    from wsgiref.simple_server import WSGIServer
+    WSGIServer.request_queue_size = max(WSGIServer.request_queue_size, LISTEN_BACKLOG)
 
 
 # Which version's UI the WebView2 HTTP cache was filled by (in storage_path).
@@ -420,6 +437,7 @@ def run(dev_url: str | None = None, smoke: bool = False) -> int:
     try:
         register_web_mime_types()
         serve_revalidated()
+        widen_listen_backlog()
         if not dev_url and not smoke:
             clear_web_cache_on_update(__version__, webview_storage_path())
     except Exception:

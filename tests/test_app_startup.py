@@ -147,23 +147,60 @@ def _get(url, headers=None):
 
 def test_real_web_server_serves_ui_revalidated(monkeypatch, tmp_path):
     import bottle
+    from wsgiref.simple_server import WSGIServer
     from webview.http import BottleServer
     monkeypatch.setattr(bottle, "static_file", bottle.static_file)  # put back after
     monkeypatch.setattr(BottleServer, "common_path", None, raising=False)
+    monkeypatch.setattr(WSGIServer, "request_queue_size", WSGIServer.request_queue_size)
     # (the daemon server thread itself lives on until the test run ends)
     app.serve_revalidated()
     wrapped = bottle.static_file
     app.serve_revalidated()
     assert bottle.static_file is wrapped  # wraps once only
+    app.widen_listen_backlog()
 
     (tmp_path / "index.html").write_text("<p>ui</p>", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "hidden_silver-x.webp").write_bytes(b"RIFF" + bytes(4) + b"WEBPmedal")
     addr, _, _ = BottleServer.start_server([str(tmp_path / "index.html")], None)
     r = _get(addr + "index.html")
     assert r.status == 200
-    assert r.headers["Cache-Control"] == "no-cache"
-    # revalidating stays cheap: the ETag still gets a 304
-    assert _get(addr + "index.html", {"If-None-Match": r.headers["ETag"]}).status == 304
+    # 2.1.7: hidden Silver medals stayed broken images. With no-cache, WebView2
+    # revalidated a damaged cached copy (bottle says 304 on the date alone) and
+    # kept using it. no-store keeps every UI file out of the disk cache.
+    assert r.headers["Cache-Control"] == "no-store"
     assert _get(addr + "assets/StatsView-gone.js").status == 404
+
+
+def test_real_web_server_answers_a_burst_of_medals(monkeypatch, tmp_path):
+    """Opening Achievements asks for ~20 medals at once, each on its own
+    connection; socketserver's backlog of 5 lets Windows refuse some under load
+    (a broken image). A medal's retry URL (?r=...) serves the same file."""
+    from concurrent.futures import ThreadPoolExecutor
+    from wsgiref.simple_server import WSGIServer
+    from webview.http import BottleServer
+    monkeypatch.setattr(BottleServer, "common_path", None, raising=False)
+    monkeypatch.setattr(WSGIServer, "request_queue_size", 5)
+    app.register_web_mime_types()
+    app.widen_listen_backlog()
+    assert WSGIServer.request_queue_size == app.LISTEN_BACKLOG >= 64
+    app.widen_listen_backlog()
+    assert WSGIServer.request_queue_size == app.LISTEN_BACKLOG  # never shrinks or grows
+
+    medal = b"RIFF" + bytes(4) + b"WEBP" + bytes(range(256)) * 160  # ~40 KB, like a medal
+    (tmp_path / "index.html").write_text("<p>ui</p>", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "hidden_silver-x.webp").write_bytes(medal)
+    addr, _, _ = BottleServer.start_server([str(tmp_path / "index.html")], None)
+    assert _get(addr + "index.html").status == 200  # listening
+
+    def fetch(i):
+        r = _get(addr + f"assets/hidden_silver-x.webp?r={i}")
+        return r.status, r.headers["Content-Type"], r.read()
+
+    with ThreadPoolExecutor(max_workers=40) as pool:
+        got = list(pool.map(fetch, range(80)))
+    assert got == [(200, "image/webp", medal)] * 80
 
 
 def _webview_dirs(root):
@@ -247,12 +284,17 @@ def test_run_sets_up_the_web_server_before_start(tmp_storage, monkeypatch, tmp_p
     monkeypatch.setattr(app, "clear_web_cache_on_update", lambda *a: cleared.append(a))
     seen = {}
 
+    from wsgiref.simple_server import WSGIServer
+    monkeypatch.setattr(WSGIServer, "request_queue_size", 5)
+
     def start(*a, **k):  # the window would open here
         seen["revalidated"] = getattr(bottle.static_file, "weleho_revalidate", False)
+        seen["backlog"] = WSGIServer.request_queue_size
         seen["cleared"] = list(cleared)
         seen["storage_path"] = k["storage_path"]
 
     monkeypatch.setattr(webview, "start", start)
     app.run(dev_url=dev_url, smoke=smoke)
     assert seen["revalidated"] is True
+    assert seen["backlog"] == app.LISTEN_BACKLOG
     assert seen["cleared"] == ([(app.__version__, seen["storage_path"])] if clears else [])

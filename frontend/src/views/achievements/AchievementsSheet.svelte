@@ -3,6 +3,7 @@
   // card and the backfill toast (openAchievements).
   import { onMount } from 'svelte';
   import type { Achievement } from '../../lib/api/types';
+  import { medalImg } from '../../lib/medalImage';
   import { fly, stagger } from '../../lib/motion';
   import {
     achievements,
@@ -84,7 +85,7 @@
     </div>
     {#if next}
       <div class="next tier-{next.tier}">
-        <img class="medal" src={medalUrl(next)} alt="" draggable="false" />
+        <img class="medal" use:medalImg={medalUrl(next)} alt="" draggable="false" />
         <div class="info">
           <span class="label">Next up</span>
           <span><strong>{next.title}</strong>: {progressText(next.progress.cur, next.progress.goal, next.progress.unit)}</span>
@@ -108,7 +109,7 @@
                 class:secret={secret(a)}
                 in:fly|global={{ y: 10, delay: stagger(gi * 3 + i, 30, 16) }}
               >
-                <img class="medal" src={medalUrl(a)} alt="" draggable="false" />
+                <img class="medal" use:medalImg={medalUrl(a)} alt="" draggable="false" />
                 <div class="info">
                   <span class="sr-only">{a.met_on ? 'Unlocked:' : 'Locked:'}</span>
                   <span class="title">{secret(a) ? '???' : a.title}</span>

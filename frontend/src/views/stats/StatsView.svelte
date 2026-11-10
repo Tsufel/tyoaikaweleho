@@ -27,6 +27,7 @@
   import { setViewMonth, showEntry } from '../../lib/stores/entries';
   import { achievements, medalUrl, openAchievements, unlockedCount } from '../../lib/stores/achievements';
   import { timer } from '../../lib/stores/timer';
+  import { medalImg } from '../../lib/medalImage';
   import { fade, fly, stagger } from '../../lib/motion';
   import { formatDuration, formatMoney, fromIsoDate, toIsoDate } from '../../lib/time';
   import { Button, CalendarPopover, GlassCard, Icon, Segmented, Spinner, tooltip } from '../../lib/ui';
@@ -490,7 +491,7 @@
         >
           {#snippet sub()}
             <span class="ach">
-              {#each latestAch as a (a.id)}<img src={medalUrl(a)} alt={a.title} title={a.title} />{/each}
+              {#each latestAch as a (a.id)}<img use:medalImg={medalUrl(a)} alt={a.title} title={a.title} />{/each}
               <button type="button" class="link" onclick={() => void openAchievements()}>
                 {latestAch.length ? 'View all' : 'See what to unlock'}
               </button>

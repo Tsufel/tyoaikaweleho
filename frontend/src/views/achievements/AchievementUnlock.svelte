@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { emitFx } from '../../fx/fire/fxBus';
+  import { medalImg } from '../../lib/medalImage';
   import { fade, fly, reduced } from '../../lib/motion';
   import { animationsActive, lulz, motion } from '../../lib/stores/app';
   import { markShown, medalUrl, nextUnlock, openAchievements, unlockQueue } from '../../lib/stores/achievements';
@@ -123,7 +124,7 @@
           {#if !reduced()}
             <span class="sparks">{#each Array(10) as _, i (i)}<i style="--i:{i}"></i>{/each}</span>
           {/if}
-          <img src={medalUrl({ ...current, hidden: false })} alt="" draggable="false" />
+          <img use:medalImg={medalUrl({ ...current, hidden: false })} alt="" draggable="false" />
           <span class="shine" style="--mask: url({medalUrl({ ...current, hidden: false })})"></span>
         </span>
         <span class="text">
