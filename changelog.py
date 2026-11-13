@@ -2,6 +2,13 @@
 next entry; tests/test_release_hygiene.py checks it matches version.py."""
 
 CHANGELOG: dict[str, list[str]] = {
+    "2.1.9": [
+        "Settings: new Round shift times (off by default). Shifts saved "
+        "from the timer are rounded up, down or to the nearest 15, 30 or "
+        "60 minutes. Shifts you type in yourself keep their exact times",
+        "When a shift was rounded, the saved message says from what, and "
+        "its Keep exact button (or Ctrl+Z) puts the exact times back",
+    ],
     "2.1.8": [
         "Fixed: hidden medals in Achievements and Stats no longer show up "
         "as broken images",
