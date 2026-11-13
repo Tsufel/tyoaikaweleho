@@ -8,6 +8,7 @@
 // &achnew skips the achievements first-run summary so each unlock animates.
 // &pet=familiar|wizard turns the Timer card pet on; &nopethint hides the
 // one-time pet offer shown while it is off.
+// &round turns Settings → Round shift times on (nearest 30 min).
 // &certfail makes update checks and installs fail as on a PC missing GitHub's root.
 // window.__welehoMock exposes the same switches at runtime.
 
@@ -30,6 +31,7 @@ import type {
   MonthData,
   OcrRow,
   Recovery,
+  RoundedSave,
   Settings,
   SettingsDraft,
   StatsBucket,
@@ -64,6 +66,7 @@ import { holidaysInMonth } from '../holidays';
 import { ACHIEVEMENT_IDS, evaluateAchievements, petStats, withSeen } from './mockAchievements';
 import { computeRecords } from './mockRecords';
 import { ZOOM_LEVELS } from '../zoom';
+import { roundShift, ROUND_MODES, ROUND_STEPS } from '../rounding';
 
 /** storage.PET_SKINS */
 const PET_SKIN_IDS: readonly PetSkinId[] = ['classic', 'cosmic', 'neon', 'gilded', 'legend'];
@@ -258,6 +261,7 @@ export function createMockApi(): Api {
     export_include_names: false,
     employee_name: '',
     manager_name: '',
+    rounding: { enabled: q.has('round'), mode: 'nearest', step: 30 },
     ui_prefs: {
       lulz: q.has('lulz'),
       reduce_effects: false,
@@ -518,13 +522,13 @@ export function createMockApi(): Api {
 
     // stop → save; on failure the same shift keeps running (§4.3)
     session = null;
-    const entry: WorkEntry = {
+    const { entry, rounded } = timerEntry({
       id: `m${++nextId}`,
       date: toIsoDate(s.start),
       job_shift: s.job,
       time_in: hhmm(s.start),
       time_out: timeOut,
-    };
+    });
     const row = persist(entry);
     if (!row) {
       session = s;
@@ -535,7 +539,17 @@ export function createMockApi(): Api {
         { timer: timerState() },
       );
     }
-    return okR('saved', { timer: timerState(), entry: row, ...overlapWarning(entry) });
+    return okR('saved', { timer: timerState(), entry: row, ...(rounded && { rounded }), ...overlapWarning(entry) });
+  }
+
+  /** controller._timer_entry: a timer shift with Settings → Round shift times
+   *  applied, and what Keep exact needs when that changed it. */
+  function timerEntry(entry: WorkEntry): { entry: WorkEntry; rounded?: RoundedSave } {
+    const r = settings.rounding;
+    const out = r.enabled ? roundShift(entry.time_in, entry.time_out, r.mode, r.step) : null;
+    if (!out) return { entry };
+    const next = { ...entry, time_in: out[0], time_out: out[1] };
+    return { entry: next, rounded: { before: { ...entry }, token: fingerprint(next) } };
   }
 
   /** New overlaps only: ones the stored version already had aren't asked again. */
@@ -860,7 +874,7 @@ export function createMockApi(): Api {
         if (a.choice !== 'save') return okR('cancelled', { timer: timerState() });
       }
       session = null;
-      const entry: WorkEntry = { id: `m${++nextId}`, date: toIsoDate(s.start), job_shift: s.job, time_in: tIn, time_out: t };
+      const { entry, rounded } = timerEntry({ id: `m${++nextId}`, date: toIsoDate(s.start), job_shift: s.job, time_in: tIn, time_out: t });
       const row = persist(entry);
       if (!row) {
         session = s;
@@ -868,7 +882,7 @@ export function createMockApi(): Api {
 
 ${saveFailMsg()}`, { timer: timerState() });
       }
-      return okR('saved', { timer: timerState(), entry: row, ...overlapWarning(entry) });
+      return okR('saved', { timer: timerState(), entry: row, ...(rounded && { rounded }), ...overlapWarning(entry) });
     },
     async timer_adjust(start_iso, time, job_shift, confirm) {
       await latency();
@@ -942,7 +956,8 @@ ${saveFailMsg()}`, { timer: timerState() });
         if (!a) return needs({ ...longEntryConfirm(tIn, t), token: rec.start_iso });
         if (a.choice !== 'save') return okR('cancelled', { timer: timerState(), recovery: rec });
       }
-      const row = persist({ id: `m${++nextId}`, date: toIsoDate(rs.start), job_shift: rs.job, time_in: hhmm(rs.start), time_out: t });
+      const { entry, rounded } = timerEntry({ id: `m${++nextId}`, date: toIsoDate(rs.start), job_shift: rs.job, time_in: hhmm(rs.start), time_out: t });
+      const row = persist(entry);
       if (!row) {
         // recovery stays pending (§4.5)
         return err('save_failed', `The shift could not be saved.\n\n${saveFailMsg()}`, {
@@ -951,7 +966,7 @@ ${saveFailMsg()}`, { timer: timerState() });
         });
       }
       recoverySession = null;
-      return okR('saved', { timer: timerState(), entry: row, recovery: null, ...overlapWarning(row) });
+      return okR('saved', { timer: timerState(), entry: row, recovery: null, ...(rounded && { rounded }), ...overlapWarning(row) });
     },
 
     // ── entries ──
@@ -1097,6 +1112,21 @@ ${saveFailMsg()}`, { timer: timerState() });
         if (name === null || [...name].length > 60) return invalid(key, 'Keep names to at most 60 characters.');
         names[key] = name;
       }
+      // like storage._rounding_error; left out = unchanged
+      const rd = draft.rounding;
+      if (
+        rd !== undefined &&
+        !(
+          rd &&
+          typeof rd === 'object' &&
+          Object.keys(rd).sort().join() === 'enabled,mode,step' &&
+          typeof rd.enabled === 'boolean' &&
+          ROUND_MODES.includes(rd.mode) &&
+          ROUND_STEPS.includes(rd.step)
+        )
+      ) {
+        return invalid('rounding', 'Rounding must be up, down or to the nearest 15, 30 or 60 minutes.');
+      }
       if (controls.failSave) return err('save_failed', `Settings could not be written: ${saveFailMsg()}`);
       const job = draft.default_job_shift.trim();
       if (job && !shifts.some((s) => s.toLowerCase() === job.toLowerCase())) shifts = [...shifts, job];
@@ -1111,6 +1141,7 @@ ${saveFailMsg()}`, { timer: timerState() });
         // left out = unchanged, like Python
         export_include_names: draft.export_include_names ?? settings.export_include_names,
         ...names,
+        rounding: rd ? { ...rd } : settings.rounding,
         ui_prefs: { ...draft.ui_prefs },
       };
       emitEvent('timer:changed', timerState());

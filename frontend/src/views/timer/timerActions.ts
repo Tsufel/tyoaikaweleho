@@ -5,6 +5,7 @@ import type { ConfirmList, EntryRow, HHMM, StartMode, StopResult, StopSource, Ti
 import { alert, reportError } from '../../lib/stores/confirm';
 import { showEntry } from '../../lib/stores/entries';
 import { lulz } from '../../lib/stores/motion';
+import { savedShiftToast } from '../../lib/stores/keepExact';
 import { offerRecovery } from '../../lib/stores/recovery';
 import { refreshTimer, setTimer, timer } from '../../lib/stores/timer';
 import { toast } from '../../lib/stores/toasts';
@@ -107,8 +108,8 @@ async function afterStop(r: StopResult): Promise<StopResult> {
     emitFx({ kind: 'blast', minutes: r.entry?.minutes ?? null });
     if (r.entry) {
       const mins = r.entry.minutes;
-      if (r.overlap_warning) toast(`${savedToastText(mins, 0)}. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
-      else toast(savedToastText(mins, r.timer?.pay_rate ?? 0, get(lulz)), { tone: 'success', ms: 4000 });
+      if (r.overlap_warning) savedShiftToast(savedToastText(mins, 0), r.rounded, 'warning', 12000, r.overlap_warning);
+      else savedShiftToast(savedToastText(mins, r.timer?.pay_rate ?? 0, get(lulz)), r.rounded, 'success', 4000);
       await showEntry(r.entry);
     }
   } else if (r.status === 'discarded') {

@@ -36,6 +36,7 @@ const S: Settings = {
   export_include_names: false,
   employee_name: 'Aino Virtanen',
   manager_name: '',
+  rounding: { enabled: false, mode: 'nearest', step: 30 },
   ui_prefs: { lulz: true, reduce_effects: false, lulz_sound: false, liquid_glass: false, target_hours: 8, pet: 'off', pet_name: '', pet_hint_seen: false, pet_skin: 'classic', zoom: 100 },
 };
 
@@ -95,6 +96,25 @@ describe('settings form', () => {
     expect(d.manager_name).toBe('Pekka');
     expect(fieldOf('employee_name')).toBe('employee_name');
     expect(fieldOf('manager_name')).toBe('manager_name');
+  });
+
+  it('carries Round shift times, always sent whole', () => {
+    const f = formFromSettings(S);
+    expect([f.round_enabled, f.round_mode, f.round_step]).toEqual([false, 'nearest', '30']);
+    expect(isDirty(f, { ...f, round_enabled: true })).toBe(true);
+    expect(isDirty(f, { ...f, round_mode: 'up' })).toBe(true);
+    expect(isDirty(f, { ...f, round_step: '15' })).toBe(true);
+    expect(draftFromForm(f, S).rounding).toEqual({ enabled: false, mode: 'nearest', step: 30 });
+    const on = formFromSettings({ ...S, rounding: { enabled: true, mode: 'down', step: 60 } });
+    expect([on.round_enabled, on.round_mode, on.round_step]).toEqual([true, 'down', '60']);
+    expect(draftFromForm({ ...on, round_step: '15' }, S).rounding).toEqual({ enabled: true, mode: 'down', step: 15 });
+    expect(fieldOf('rounding')).toBe('rounding');
+  });
+
+  it('reads settings from an older backend without rounding as off', () => {
+    const { rounding: _, ...old } = S;
+    const f = formFromSettings(old as Settings);
+    expect([f.round_enabled, f.round_mode, f.round_step]).toEqual([false, 'nearest', '30']);
   });
 
   it('clamps and formats the daily target', () => {

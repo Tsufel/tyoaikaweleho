@@ -108,6 +108,43 @@ def entry_minutes(time_in: str, time_out: str) -> int:
         return 0
 
 
+# Settings → Round shift times: how a timer shift's length is rounded, and to what
+ROUND_MODES = ("nearest", "up", "down")
+ROUND_STEPS = (15, 30, 60)
+
+
+def round_shift(time_in: str, time_out: str, mode: str, step: int) -> tuple[str, str] | None:
+    """The shift time_in–time_out rounded for Settings → Round shift times:
+    its length goes to a whole *step* of minutes (*mode* up, down, or
+    nearest with a half step going up) and its start to the nearest step,
+    or the step before when that would pass midnight, so the shift keeps
+    its date. The end is the rounded start plus the rounded length.
+
+    None when nothing changes, and when the rounded length would be zero
+    or a whole day: those shifts keep their exact times."""
+    if mode not in ROUND_MODES or type(step) is not int or step not in ROUND_STEPS:
+        return None
+    minutes = entry_minutes(time_in, time_out)
+    if minutes <= 0:
+        return None
+    if mode == "up":
+        length = -(-minutes // step) * step
+    elif mode == "down":
+        length = minutes // step * step
+    else:
+        length = (minutes + step // 2) // step * step
+    if not 0 < length < 24 * 60:
+        return None
+    h, m = map(int, time_in.split(":"))
+    start = h * 60 + m
+    snapped = (start + step // 2) // step * step
+    if snapped >= 24 * 60:
+        snapped = start // step * step
+    end = (snapped + length) % (24 * 60)
+    out = (f"{snapped // 60:02d}:{snapped % 60:02d}", f"{end // 60:02d}:{end % 60:02d}")
+    return None if out == (time_in, time_out) else out
+
+
 def is_overnight(time_in: str, time_out: str) -> bool:
     """True when time_out is on the next calendar day (time_out < time_in)."""
     try:

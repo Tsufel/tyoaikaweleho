@@ -159,12 +159,12 @@ The current shift must never be lost:
 |---|---|---|
 | `get_timer()` | — | `R<{timer: T}>` |
 | `timer_start(mode, time?, job_shift?, confirm?)` | `'now'\|'at'`, `HH:MM` (for `at`), `string`, answers | `R<{timer: T}>` status `ok` / `cancelled` / `needs_confirm(start_ahead\|start_backdate)` / `error(already_running\|recovery_pending)` / `invalid(field:'time')` |
-| `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E}>` §6.1 |
+| `timer_stop(source, confirm?)` | `'button'\|'shortcut'\|'close'`, answers | `R<{timer: T, entry?: E, overlap_warning?, rounded?}>` §6.1 |
 | `timer_discard(confirm?)` | answers | `R<{timer: T}>` needs `discard_shift`; → `discarded`; idle → `error(not_running)` |
 | `get_recovery()` | — | `R<{timer: T, recovery: Recovery\|null, data_recovery: DataRecovery\|null}>`. Read-only re-check for §6.3 (the Review link, `recovery_pending`); unlike `bootstrap` it writes nothing. `data_recovery` is a data.json repair since bootstrap, handed over once. |
-| `timer_stop_at(end, confirm?)` | `HH:MM`, answers | `R<{timer: T, entry?: E}>` §6.3a |
+| `timer_stop_at(end, confirm?)` | `HH:MM`, answers | `R<{timer: T, entry?: E, overlap_warning?, rounded?}>` §6.3a |
 | `timer_adjust(start_iso, time?, job_shift?, confirm?)` | running `start_iso`, `HH:MM`, `string`, answers | `R<{timer: T}>` §6.3a |
-| `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null}>` §6.3 |
+| `recovery_resolve(action, end?, confirm?)` | `'resume'\|'save'\|'discard'`, `HH:MM`, answers | `R<{timer: T, entry?: E, recovery: Recovery\|null, overlap_warning?, rounded?}>` §6.3 |
 
 ### Entries
 | method | params | returns |
@@ -276,6 +276,21 @@ Order of checks (port of `TimerPanel.stop` / `toggle`):
      switches to the entry's month and selects it. `overlap_warning` (set when
      the saved shift overlaps another entry; never asked, the shift is already
      over) turns the "Shift saved" toast into a 12 s warning that appends it.
+   - Round shift times (`Settings.rounding`, off by default): every timer
+     save — STOP, F5, close, `timer_stop_at` and `recovery_resolve('save')` —
+     goes through `utils.round_shift` after the confirms and before the save,
+     so the 14 h / 24 h limits are judged on the real elapsed time and the
+     overlap check uses the rounded times. The length is rounded to a whole
+     step (up / down / nearest, half a step going up); the start snaps to the
+     nearest step, or the step before when that would pass midnight, so the
+     date never changes. A rounded length of 0 or a whole day, an already
+     round shift, or an unreadable setting saves the exact times. When the
+     times changed the result adds `rounded: {before: WorkEntry, token}`
+     (`before` = the exact shift under the same id): the toast appends
+     "Rounded from 09:07–16:41", stays at least 10 s, and its **Keep exact**
+     (or Ctrl+Z) calls `revert_entry(before, token)` — `stale` / `not_found`
+     as for Undo (§6.6). Manual saves, edits, imports and undo are never
+     rounded.
 
 `token` for 1–5 (and `close_running`) = `start_iso@press_iso`: the running
 start plus the moment STOP (or close) was pressed. Answers echo it back, so
@@ -325,8 +340,9 @@ session (an invalid one is cleared silently). It carries `start_iso`,
   ("End time must be after the start (HH:MM)."); > 14 h →
   `needs_confirm(long_entry)` (token = `start_iso`, payload keeps `recovery`). OSError → `error(save_failed)` and
   `recovery` returned again with `suggested_end = end` (modal stays). OK →
-  clear session → `saved{entry, recovery:null, overlap_warning?}`; frontend
-  shows the entry (and the warning as a toast).
+  clear session → `saved{entry, recovery:null, overlap_warning?, rounded?}`;
+  frontend shows the entry (and the warning, or the rounding with Keep exact,
+  as a toast; §6.1).
 - `discard` → `needs_confirm(discard_shift)` → `discarded{recovery:null}`.
 
 ### 6.3a Running shift — `timer_stop_at`, `timer_adjust`
@@ -442,6 +458,8 @@ One locked transaction (single `_load_raw`/`_save_raw`).
 `invalid(default_start_time)` "Default start time must be a valid time (e.g.
 09:30)."; `invalid(pay_rate)` "Pay rate must be a positive number (e.g. 20 or
 20,50)." (`parse_pay_rate`); `invalid(target_hours)` (must be 1–24);
+`invalid(rounding)` "Rounding must be up, down or to the nearest 15, 30 or 60
+minutes." (exact keys `enabled` bool, `mode`, `step` int; nothing is written);
 OSError → `error(save_failed)` "Settings could not be written: …". OK →
 `saved{settings, shifts}`. Back/Esc with unsaved changes asks "Save changes?"
 (frontend, yes/no/cancel); leaving without saving reverts the appearance
@@ -501,7 +519,7 @@ Bootstrap = {
 - `Settings {appearance, default_start_time, pay_rate, pay_rate_text,
   default_job_shift, export_format:'Simple'|'Full', export_include_pay,
   export_include_names:false, employee_name:'', manager_name:'',
-  ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
+  rounding:{enabled:false, mode:'nearest', step:30}, ui_prefs: {lulz:false, reduce_effects:false, lulz_sound:false,
   liquid_glass:false, target_hours:8, pet:'off', pet_name:'', pet_hint_seen:false,
   pet_skin:'classic', zoom:100}}`. `pet_skin` is `'classic'|'cosmic'|'neon'|'gilded'|'legend'`
   (a look not yet unlocked by the pet's level is drawn as classic).
@@ -512,6 +530,12 @@ Bootstrap = {
   through `save_settings`, trimmed with inner whitespace collapsed, at most 60
   characters with no control characters (`invalid(field:'employee_name'|
   'manager_name')`); a draft that leaves a name out keeps the stored one.
+  `rounding` is Settings → Round shift times (§6.1): `mode`
+  `'nearest'|'up'|'down'`, `step` `15|30|60`. It is a top-level key in
+  data.json; a hand-edited bad value reads leniently (unknown parts fall back
+  to the default, a non-bool `enabled` reads as off) but `save_settings` is
+  strict. The Settings form always sends it whole; a draft that leaves it out
+  keeps the stored one.
   `pet` is `'off'|'familiar'|'wizard'`; `pet_name` is stored trimmed with inner
   whitespace collapsed, at most 24 printable characters (`''` = the default name
   "Tähti" / "Weleho"); a bad name is `invalid(field:'pet_name')`.

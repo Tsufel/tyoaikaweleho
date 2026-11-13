@@ -185,6 +185,23 @@ export interface SaveUndo {
   before: WorkEntry | null;
 }
 
+/** Settings → Round shift times: a timer shift's length goes up, down or to
+ *  the nearest step, its start to the nearest step (§8). */
+export type RoundMode = 'nearest' | 'up' | 'down';
+export type RoundStep = 15 | 30 | 60;
+export interface Rounding {
+  enabled: boolean;
+  mode: RoundMode;
+  step: RoundStep;
+}
+
+/** A timer save whose times the rounding changed: `before` is the shift with
+ *  its exact times; Keep exact = `revert_entry(before, token)`. */
+export interface RoundedSave {
+  before: WorkEntry;
+  token: string;
+}
+
 export interface EntryRow extends WorkEntry {
   /** "" when the entry has none. */
   note: string;
@@ -272,12 +289,14 @@ export interface Recovery {
 }
 
 export type TimerResult = Result<{ timer: TimerState }>;
-/** overlap_warning: the saved shift overlaps other entries (show as a warning). */
-export type StopResult = Result<{ timer: TimerState; entry?: EntryRow; overlap_warning?: string }>;
+/** overlap_warning: the saved shift overlaps other entries (show as a warning).
+ *  rounded: Settings → Round shift times changed the saved times. */
+export type StopResult = Result<{ timer: TimerState; entry?: EntryRow; overlap_warning?: string; rounded?: RoundedSave }>;
 export type RecoveryResult = Result<{
   timer: TimerState;
   entry?: EntryRow;
   overlap_warning?: string;
+  rounded?: RoundedSave;
   recovery: Recovery | null;
 }>;
 /** get_recovery: data_recovery is set once when a damaged data.json was
@@ -357,6 +376,8 @@ export interface Settings {
    *  export_include_names is on; '' = blank line. */
   employee_name: string;
   manager_name: string;
+  /** Round timer shifts when they're saved (default off, nearest 30). */
+  rounding: Rounding;
   ui_prefs: UiPrefs;
 }
 
@@ -374,6 +395,8 @@ export interface SettingsDraft {
   /** ≤ 60 characters, no control characters; left out = unchanged. */
   employee_name?: string;
   manager_name?: string;
+  /** Left out = unchanged. */
+  rounding?: Rounding;
   ui_prefs: UiPrefs;
 }
 

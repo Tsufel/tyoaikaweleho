@@ -17,7 +17,7 @@ from services import dlc, net
 from timer import WorkTimer
 from utils import (MIN_SHIFT_SECONDS, entry_minutes, format_duration, format_rate,
                    is_long_shift, is_overnight, overlapping, parse_date_input,
-                   parse_pay_rate, parse_time_input, resolve_start_time,
+                   parse_pay_rate, parse_time_input, resolve_start_time, round_shift,
                    start_far_behind, start_time_needs_confirm, week_key)
 from webapp import results as R
 from webapp.results import Stale, answer, describe, entry_row, money, opt, stored_entry_dict
@@ -548,13 +548,39 @@ class ShiftController:
 
         return self._save_stopped(start, job_shift, time_out or now.strftime("%H:%M"))
 
-    def _save_stopped(self, start: datetime, job_shift: str, time_out: str) -> dict:
-        """Stop the running shift and save it as start–time_out."""
-        t = self._timer
+    @staticmethod
+    def _timer_entry(start: datetime, job_shift: str, time_out: str) -> tuple:
+        """The entry a timer shift start–time_out is saved as, with its times
+        rounded while Settings → Round shift times is on, and the payload
+        that says so: {"rounded": {before, token}}, where *before* is the
+        entry with the exact times and *token* the saved one's fingerprint,
+        so "Keep exact" is a revert_entry(before, token). Rounding never
+        stops a shift from being saved: an unreadable setting saves it exact."""
+        t_in = start.strftime("%H:%M")
         entry = storage.WorkEntry(
             id=storage.new_entry_id(), date=start.strftime("%Y-%m-%d"),
-            job_shift=job_shift, time_in=start.strftime("%H:%M"),
-            time_out=time_out)
+            job_shift=job_shift, time_in=t_in, time_out=time_out)
+        try:
+            rule = storage.get_rounding()
+        except (OSError, ValueError):
+            rule = None
+        try:
+            times = (round_shift(t_in, time_out, rule["mode"], rule["step"])
+                     if rule and rule["enabled"] else None)
+        except Exception as exc:  # noqa: BLE001 - never lose the shift over rounding
+            storage.append_error_log(f"rounding failed, saved the exact times: {exc!r}")
+            times = None
+        if times is None:
+            return entry, {}
+        before = stored_entry_dict(entry)
+        entry.time_in, entry.time_out = times
+        return entry, {"rounded": {"before": before, "token": _fingerprint(entry)}}
+
+    def _save_stopped(self, start: datetime, job_shift: str, time_out: str) -> dict:
+        """Stop the running shift and save it as start–time_out (rounded
+        while that's on)."""
+        t = self._timer
+        entry, rounded = self._timer_entry(start, job_shift, time_out)
         t.stop()
         self._mark_saved(entry.id)
         try:
@@ -571,7 +597,7 @@ class ShiftController:
                            f"{exc}\n\n{_LOCKED_HINT} and press STOP again.",
                            timer=self.timer_state())
         self._clear_session()
-        return R.saved(entry=entry_row(entry), timer=self.timer_state(),
+        return R.saved(entry=entry_row(entry), timer=self.timer_state(), **rounded,
                        **self._overlap_warning(entry))
 
     @staticmethod
@@ -778,9 +804,7 @@ class ShiftController:
                                                         timer=self.timer_state(), recovery=rec)
                     if choice != "save":
                         return R.cancelled(timer=self.timer_state(), recovery=rec)
-                entry = storage.WorkEntry(
-                    id=storage.new_entry_id(), date=start.strftime("%Y-%m-%d"),
-                    job_shift=rec["job_shift"], time_in=t_in, time_out=t_out)
+                entry, rounded = self._timer_entry(start, rec["job_shift"], t_out)
                 self._mark_saved(entry.id)
                 try:
                     storage.save_entry(entry)
@@ -793,7 +817,7 @@ class ShiftController:
                                    recovery={**rec, "suggested_end": t_out})
                 self._clear_session()
                 return R.saved(entry=entry_row(entry), timer=self.timer_state(),
-                               recovery=None, **self._overlap_warning(entry))
+                               recovery=None, **rounded, **self._overlap_warning(entry))
 
             if action == "discard":
                 try:
@@ -1100,6 +1124,7 @@ class ShiftController:
             "export_include_pay": storage.get_export_include_pay(),
             "export_include_names": storage.get_export_include_names(),
             **storage.get_sheet_names(),
+            "rounding": storage.get_rounding(),
             "ui_prefs": storage.get_ui_prefs(),
         }
 
@@ -1139,6 +1164,11 @@ class ShiftController:
                                      if "control" in problem else
                                      f"Keep names to at most {storage.SHEET_NAME_MAX} characters.")
                 values[key] = draft[key]
+        if "rounding" in draft:  # optional: left out = unchanged
+            if storage._rounding_error(draft["rounding"]):
+                return R.invalid("rounding", "Rounding must be up, down or to the nearest "
+                                             "15, 30 or 60 minutes.")
+            values["rounding"] = draft["rounding"]
         prefs = draft.get("ui_prefs")
         if prefs is not None:
             invalid = self._check_prefs(prefs)

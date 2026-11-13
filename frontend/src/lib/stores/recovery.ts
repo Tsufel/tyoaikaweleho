@@ -3,6 +3,7 @@ import { api } from '../api/bridge';
 import type { DataRecovery, Recovery, RecoveryResult } from '../api/types';
 import { reportError } from './confirm';
 import { showEntry, refreshMonth, setViewMonth } from './entries';
+import { savedShiftToast } from './keepExact';
 import { setTimer } from './timer';
 import { toast } from './toasts';
 
@@ -50,7 +51,8 @@ export async function applyRecoveryResult(r: RecoveryResult): Promise<void> {
     return;
   }
   if (get(pendingRecovery)) return;
-  if (r.status === 'saved' && r.overlap_warning) toast(`Shift saved. ${r.overlap_warning}`, { tone: 'warning', ms: 12000 });
+  if (r.status === 'saved' && r.overlap_warning) savedShiftToast('Shift saved', r.rounded, 'warning', 12000, r.overlap_warning);
+  else if (r.status === 'saved' && r.rounded) savedShiftToast('Shift saved', r.rounded, 'success', 4000);
   if (r.status === 'saved' && r.entry) await showEntry(r.entry);
   else if (r.timer?.running && r.timer.start_iso) {
     const [y, m] = r.timer.start_iso.split('-').map(Number);

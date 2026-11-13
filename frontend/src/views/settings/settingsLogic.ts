@@ -1,4 +1,4 @@
-import type { Appearance, DlcStatus, ExportFormat, Settings, SettingsDraft, VersionCheck } from '../../lib/api/types';
+import type { Appearance, DlcStatus, ExportFormat, RoundMode, RoundStep, Settings, SettingsDraft, VersionCheck } from '../../lib/api/types';
 import { SHORTCUT_GROUPS } from '../../lib/shortcutList';
 
 /** Editable Settings form state (raw text where the user types). */
@@ -13,6 +13,10 @@ export interface SettingsForm {
   employee_name: string;
   manager_name: string;
   target_hours: number;
+  round_enabled: boolean;
+  round_mode: RoundMode;
+  /** Segmented wants strings: '15' | '30' | '60'. */
+  round_step: `${RoundStep}`;
 }
 
 export type FormField =
@@ -21,7 +25,8 @@ export type FormField =
   | 'default_job_shift'
   | 'target_hours'
   | 'employee_name'
-  | 'manager_name';
+  | 'manager_name'
+  | 'rounding';
 
 export const TARGET_MIN = 1;
 export const TARGET_MAX = 24;
@@ -39,6 +44,9 @@ export function formFromSettings(s: Settings): SettingsForm {
     employee_name: s.employee_name ?? '',
     manager_name: s.manager_name ?? '',
     target_hours: s.ui_prefs.target_hours,
+    round_enabled: !!s.rounding?.enabled,
+    round_mode: s.rounding?.mode ?? 'nearest',
+    round_step: `${s.rounding?.step ?? 30}`,
   };
 }
 
@@ -55,6 +63,9 @@ export function snapshot(f: SettingsForm): string {
     f.employee_name.trim(),
     f.manager_name.trim(),
     !!f.export_include_names,
+    !!f.round_enabled,
+    f.round_mode,
+    f.round_step,
   ]);
 }
 
@@ -72,6 +83,7 @@ export function draftFromForm(f: SettingsForm, live: Settings): SettingsDraft {
     export_include_names: !!f.export_include_names,
     employee_name: f.employee_name.trim(),
     manager_name: f.manager_name.trim(),
+    rounding: { enabled: !!f.round_enabled, mode: f.round_mode, step: Number(f.round_step) as RoundStep },
     ui_prefs: { ...live.ui_prefs, target_hours: f.target_hours },
   };
 }
@@ -97,6 +109,7 @@ export function fieldOf(name: string | undefined): FormField | null {
     case 'target_hours':
     case 'employee_name':
     case 'manager_name':
+    case 'rounding':
       return name;
     default:
       return null;

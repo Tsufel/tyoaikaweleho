@@ -4,8 +4,9 @@
   import wizard from '../../assets/wizard.webp';
   import { emitFx } from '../../fx/fire/fxBus';
   import { api } from '../../lib/api';
-  import type { Appearance, ExportFormat, PetKind } from '../../lib/api/types';
+  import type { Appearance, ExportFormat, PetKind, RoundMode, RoundStep } from '../../lib/api/types';
   import { fly, stagger } from '../../lib/motion';
+  import { roundingExample } from '../../lib/rounding';
   import { registerCommand, runCommand } from '../../lib/shortcuts';
   import { bootstrap, navigate } from '../../lib/stores/app';
   import { alert, askYesNoCancel, reportError } from '../../lib/stores/confirm';
@@ -68,6 +69,9 @@
   const payHint = $derived(payPreview(rate, form.target_hours));
   const payWarning = $derived(errors.pay_rate ? null : payRateWarning(rate));
   const dv = $derived(dlcView($dlc));
+  const roundExample = $derived(
+    roundingExample({ enabled: true, mode: form.round_mode, step: Number(form.round_step) as RoundStep }),
+  );
 
   const appearanceOptions: { value: Appearance; label: string; icon: IconName }[] = [
     { value: 'System', label: 'System', icon: 'monitor' },
@@ -77,6 +81,17 @@
   const exportOptions: { value: ExportFormat; label: string; hint: string }[] = [
     { value: 'Simple', label: 'Simple', hint: 'Clean sheet: date, times and hours.' },
     { value: 'Full', label: 'Full', hint: 'The original detailed EAS timesheet layout.' },
+  ];
+
+  const roundModeOptions: { value: RoundMode; label: string }[] = [
+    { value: 'nearest', label: 'Nearest' },
+    { value: 'up', label: 'Up' },
+    { value: 'down', label: 'Down' },
+  ];
+  const roundStepOptions: { value: `${RoundStep}`; label: string }[] = [
+    { value: '15', label: '15 min' },
+    { value: '30', label: '30 min' },
+    { value: '60', label: '1 h' },
   ];
 
   function setAppearance(a: Appearance) {
@@ -451,6 +466,29 @@
             {/if}
           </div>
         </div>
+
+        <div class="divider"></div>
+        <div class="switch-row">
+          <div>
+            <div class="row-title">Round shift times</div>
+            <div class="muted small">When the timer saves a shift. Shifts you add or edit by hand keep their times.</div>
+          </div>
+          <Switch label="Round shift times" bind:checked={form.round_enabled} onchange={() => clearError('rounding')} />
+        </div>
+        <!-- an error keeps the choices on screen so it can be fixed -->
+        {#if form.round_enabled || errors.rounding}
+          <div class="round-row" bind:this={els.rounding}>
+            <Segmented label="Round" size="sm" bind:value={form.round_mode} options={roundModeOptions} onchange={() => clearError('rounding')} />
+            <Segmented label="Round to" size="sm" bind:value={form.round_step} options={roundStepOptions} onchange={() => clearError('rounding')} />
+          </div>
+          {#if errors.rounding}
+            <p class="pay-warning" role="alert"><Icon name="warning" size={13} /> {errors.rounding}</p>
+          {:else}
+            <p class="muted small round-example">
+              <span class="num">{roundExample}</span>. The saved toast offers <b>Keep exact</b>.
+            </p>
+          {/if}
+        {/if}
       </div>
     </GlassCard>
 
@@ -837,6 +875,14 @@
     font-size: var(--fs-xs);
     line-height: 1.4;
     color: var(--warning-text);
+  }
+  .round-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .round-example {
+    margin: 0;
   }
   .euro {
     color: var(--text-muted);

@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from utils import parse_date_input, parse_time_input
+from utils import ROUND_MODES, ROUND_STEPS, parse_date_input, parse_time_input
 
 # Dev / test / smoke runs point this at a scratch folder so they never touch
 # the real data next to the exe (timer.py honours it for session.json too)
@@ -807,6 +807,38 @@ def get_export_include_names() -> bool:
     return _read_raw().get("export_include_names", False) is True
 
 
+# Settings → Round shift times (off by default). A top-level key, so an older
+# version keeps it when it saves; a hand-edited bad part reads as its default.
+ROUNDING_DEFAULT = {"enabled": False, "mode": "nearest", "step": 30}
+
+
+def _rounding_error(v) -> str | None:
+    """Why *v* can't be stored as rounding, or None when it can."""
+    if not isinstance(v, dict) or set(v) != set(ROUNDING_DEFAULT):
+        return "rounding must be {enabled, mode, step}"
+    if not isinstance(v["enabled"], bool):
+        return "rounding.enabled must be true or false"
+    if v["mode"] not in ROUND_MODES:
+        return f"rounding.mode must be one of {ROUND_MODES}"
+    if type(v["step"]) is not int or v["step"] not in ROUND_STEPS:
+        return f"rounding.step must be one of {ROUND_STEPS}"
+    return None
+
+
+def get_rounding() -> dict:
+    """{enabled, mode, step} for rounding timer shifts as they're saved."""
+    v = _read_raw().get("rounding")
+    v = v if isinstance(v, dict) else {}
+    step = v.get("step")
+    return {
+        "enabled": v.get("enabled") is True,
+        "mode": v.get("mode") if v.get("mode") in ROUND_MODES else ROUNDING_DEFAULT["mode"],
+        # type() rather than isinstance: neither True nor 30.0 is a step
+        "step": step if type(step) is int and step in ROUND_STEPS
+        else ROUNDING_DEFAULT["step"],
+    }
+
+
 def get_last_seen_version() -> str | None:
     """Return the version string from the last time the app ran, or None on first install."""
     return _read_raw().get("last_seen_version")
@@ -1157,6 +1189,10 @@ def _check_setting(key: str, value):
         problem = _sheet_name_error(key, value)
         if problem:
             raise ValueError(problem)
+    elif key == "rounding":
+        problem = _rounding_error(value)
+        if problem:
+            raise ValueError(problem)
     elif key != "ui_prefs":
         raise ValueError(f"unknown setting: {key}")
 
@@ -1166,7 +1202,7 @@ def save_settings(values: dict):
     them are stored. Keys are the data.json names (pay_rate,
     default_start_time, default_job_shift, export_format,
     export_include_pay, export_include_names, appearance_mode,
-    employee_name, manager_name, ui_prefs — which may be partial).
+    employee_name, manager_name, rounding, ui_prefs — which may be partial).
     Raises ValueError, writing nothing, for a bad key or value."""
     for key, value in values.items():
         _check_setting(key, value)
@@ -1178,6 +1214,8 @@ def save_settings(values: dict):
             value = float(value)
         elif key in SHEET_NAME_KEYS:
             value = " ".join(value.split())
+        elif key == "rounding":
+            value = dict(value)
         data[key] = value
     _save_raw(data)
 

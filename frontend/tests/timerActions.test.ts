@@ -12,11 +12,12 @@ const fakeApi = vi.hoisted(() => ({
   get_timer: vi.fn(),
   bootstrap: vi.fn(),
   list_month: vi.fn(),
+  revert_entry: vi.fn(),
 }));
-const spies = vi.hoisted(() => ({ showEntry: vi.fn(), offerRecovery: vi.fn() }));
+const spies = vi.hoisted(() => ({ showEntry: vi.fn(), refreshMonth: vi.fn(), offerRecovery: vi.fn() }));
 
 vi.mock('../src/lib/api/bridge', () => ({ api: fakeApi, ready: Promise.resolve(), isMock: true }));
-vi.mock('../src/lib/stores/entries', () => ({ showEntry: spies.showEntry }));
+vi.mock('../src/lib/stores/entries', () => ({ showEntry: spies.showEntry, refreshMonth: spies.refreshMonth }));
 vi.mock('../src/lib/stores/recovery', async () => {
   const { writable } = await import('svelte/store');
   return { offerRecovery: spies.offerRecovery, pendingRecovery: writable(null) };
@@ -190,6 +191,52 @@ describe('stop (§6.1)', () => {
     expect(t.ms).toBe(12000);
     expect(t.message).toBe('Shift saved — 8h 00m. This shift overlaps another entry:\n• Sales on Thu 29 Oct, 08:00–10:00');
     expect(spies.showEntry).toHaveBeenCalledWith(entry);
+  });
+
+  it('saved rounded → says from what, offers Keep exact for 10 s', async () => {
+    setTimer(running);
+    const entry = { id: 'e1', date: '2026-10-29', job_shift: 'Support', time_in: '09:00', time_out: '17:00', minutes: 480 };
+    const before = { ...entry, time_in: '09:07', time_out: '16:41', minutes: 454 };
+    fakeApi.timer_stop.mockResolvedValueOnce({ ok: true, status: 'saved', timer: idle, entry, rounded: { before, token: 'tok' } });
+    await actions.stopShift('button');
+    const t = get(toasts).at(-1)!;
+    expect(t.message).toBe(`Shift saved — 8h 00m · €${(8 * idle.pay_rate).toFixed(2)} earned. Rounded from 09:07–16:41`);
+    expect([t.tone, t.ms, t.label, t.undo]).toEqual(['success', 10000, 'Keep exact', true]);
+
+    spies.showEntry.mockClear();
+    fakeApi.revert_entry.mockResolvedValueOnce({ ok: true, status: 'saved', entry: before });
+    await t.action!();
+    expect(fakeApi.revert_entry).toHaveBeenCalledWith(before, 'tok');
+    expect(spies.showEntry).toHaveBeenCalledWith(before);
+    expect(get(toasts).at(-1)!.message).toBe('Kept the exact times 09:07–16:41.');
+  });
+
+  it('saved rounded with an overlap → one warning toast with both notes', async () => {
+    setTimer(running);
+    const entry = { id: 'e1', date: '2026-10-29', job_shift: 'Support', time_in: '09:00', time_out: '17:00', minutes: 480 };
+    const before = { ...entry, time_in: '09:07', time_out: '16:41', minutes: 454 };
+    fakeApi.timer_stop.mockResolvedValueOnce({
+      ok: true, status: 'saved', timer: idle, entry, rounded: { before, token: 'tok' },
+      overlap_warning: 'This shift overlaps another entry:\n• Sales on Thu 29 Oct, 08:00–10:00',
+    });
+    await actions.stopShift('button');
+    const t = get(toasts).at(-1)!;
+    expect(t.message).toBe('Shift saved — 8h 00m. Rounded from 09:07–16:41. This shift overlaps another entry:\n• Sales on Thu 29 Oct, 08:00–10:00');
+    expect([t.tone, t.ms, t.label]).toEqual(['warning', 12000, 'Keep exact']);
+  });
+
+  it('Keep exact after the shift changed or went → says so, changes nothing', async () => {
+    const { keepExact } = await import('../src/lib/stores/keepExact');
+    const before = { id: 'e1', date: '2026-10-29', job_shift: 'Support', time_in: '09:07', time_out: '16:41', minutes: 454 };
+    spies.showEntry.mockClear();
+    fakeApi.revert_entry.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'stale', message: '' } });
+    await keepExact({ before, token: 'tok' });
+    expect(get(toasts).at(-1)!.message).toBe('That shift was changed again since, so its times were left as they are.');
+    fakeApi.revert_entry.mockResolvedValueOnce({ ok: false, status: 'error', error: { code: 'not_found', message: '' } });
+    await keepExact({ before, token: 'tok' });
+    expect(spies.refreshMonth).toHaveBeenCalledWith({ commit: false });
+    expect(get(toasts).at(-1)!.message).toBe('That shift no longer exists.');
+    expect(spies.showEntry).not.toHaveBeenCalled();
   });
 
   it('not_running → re-reads the timer, no fx', async () => {

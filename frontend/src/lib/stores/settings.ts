@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS: Settings = {
   export_include_names: false,
   employee_name: '',
   manager_name: '',
+  rounding: { enabled: false, mode: 'nearest', step: 30 },
   ui_prefs: { ...DEFAULT_UI_PREFS },
 };
 
